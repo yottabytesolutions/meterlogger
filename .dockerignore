@@ -1,0 +1,29 @@
+# Artifacts
+out/
+bin/
+*.exe
+*.test
+
+# Go related
+vendor/
+go.sum
+
+# IDE/Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Docker build context
+Dockerfile
+.dockerignore
+Makefile
+README.md
+documentation/
+docker-compose.yaml
+schemas/
+testresponse/
+!go.mod
+!go.sum
+!cmd/
+!internal/

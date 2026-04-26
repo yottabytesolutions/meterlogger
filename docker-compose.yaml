@@ -1,0 +1,12 @@
+services:
+  meterlogger:
+    image: yottabyte/meterlogger
+    build:
+        context: .
+        dockerfile: Dockerfile
+    privileged: true
+    restart: always
+    env_file:
+      - .env
+    devices:
+      - /dev/ttyUSB1:/dev/ttyUSB1

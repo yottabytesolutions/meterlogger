@@ -1,0 +1,8 @@
+.idea/
+.claude
+bin/
+.env
+.meterlogger.yaml
+**/out/
+*.out
+/.output.txt
