@@ -1,0 +1,93 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+    branches:
+      - master
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: [ self-hosted ]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6.0.2
+
+      - name: Set up Go
+        uses: actions/setup-go@v6.4.0
+        with:
+          go-version: '1.26'
+          cache: false
+
+      - name: Run linter
+        uses: golangci/golangci-lint-action@v9.2.0
+        with:
+          version: v2.11.4
+          skip-cache: true
+          skip-save-cache: true
+
+  test:
+    runs-on: [ self-hosted ]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6.0.2
+
+      - name: Set up Go
+        uses: actions/setup-go@v6.4.0
+        with:
+          go-version: '1.26'
+          cache: false
+
+      - name: Run tests
+        run: go test -race ./...
+
+  docker:
+    needs: [ lint, test ]
+    runs-on: [ self-hosted ]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6.0.2
+
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v6.0.0
+        with:
+          images: yottabyte/meterlogger
+          tags: |
+            type=sha,format=long
+            type=ref,event=branch,prefix=branch-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4.0.0
+        with:
+          # Stable builder name so the BuildKit instance (and its cache
+          # mounts for go mod / go-build) persists across runs on this
+          # self-hosted runner.
+          name: meterlogger-builder
+
+      - name: Login to Docker Hub
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v4.1.0
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_ACCESSTOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v7.1.0
+        with:
+          context: .
+          push: ${{ github.event_name == 'push' }}
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: GIT_SHA=${{ github.sha }}

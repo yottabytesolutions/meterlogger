@@ -1,0 +1,261 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<MBusData>
+    <SlaveInformation>
+        <Id>72927502</Id>
+        <Manufacturer>KAM</Manufacturer>
+        <Version>52</Version>
+        <ProductName></ProductName>
+        <Medium>Heat: Inlet</Medium>
+        <AccessNumber>83</AccessNumber>
+        <Status>00</Status>
+        <Signature>0000</Signature>
+    </SlaveInformation>
+
+    <DataRecord id="0">
+        <Function>Instantaneous value</Function>
+        <StorageNumber>0</StorageNumber>
+        <Unit>Energy (MJ)</Unit>
+        <Value>480</Value>
+        <Timestamp>2023-07-22T10:01:26Z</Timestamp>
+    </DataRecord>
+
+    <DataRecord id="1">
+        <Function>Instantaneous value</Function>
+        <StorageNumber>0</StorageNumber>
+        <Unit>Manufacturer specific</Unit>
+        <Value>3002</Value>
+        <Timestamp>2023-07-22T10:01:26Z</Timestamp>
+    </DataRecord>
+
+    <DataRecord id="2">
+        <Function>Instantaneous value</Function>
+        <StorageNumber>0</StorageNumber>
+        <Unit>Manufacturer specific</Unit>
+        <Value>1828</Value>
+        <Timestamp>2023-07-22T10:01:26Z</Timestamp>
+    </DataRecord>
+
+    <DataRecord id="3">
+        <Function>Instantaneous value</Function>
+        <StorageNumber>0</StorageNumber>
+        <Unit>Volume (m m^3)</Unit>
+        <Value>4753</Value>
+        <Timestamp>2023-07-22T10:01:26Z</Timestamp>
+    </DataRecord>
+
+    <DataRecord id="4">
+        <Function>Instantaneous value</Function>
+        <StorageNumber>0</StorageNumber>
+        <Tariff>0</Tariff>
+        <Device>1</Device>
+        <Unit>Volume (1e-2 m^3)</Unit>
+        <Value>0</Value>
+        <Timestamp>2023-07-22T10:01:26Z</Timestamp>
+    </DataRecord>
+
+    <DataRecord id="5">
+        <Function>Instantaneous value</Function>
+        <StorageNumber>0</StorageNumber>
+        <Tariff>0</Tariff>
+        <Device>2</Device>
+        <Unit>Volume (1e-2 m^3)</Unit>
+        <Value>0</Value>
+        <Timestamp>2023-07-22T10:01:26Z</Timestamp>
+    </DataRecord>
+
+    <DataRecord id="6">
+        <Function>Instantaneous value</Function>
+        <StorageNumber>0</StorageNumber>
+        <Unit>On time (hours)</Unit>
+        <Value>3056</Value>
+        <Timestamp>2023-07-22T10:01:26Z</Timestamp>
+    </DataRecord>
+
+    <DataRecord id="7">
+        <Function>Value during error state</Function>
+        <StorageNumber>0</StorageNumber>
+        <Unit>On time (hours)</Unit>
+        <Value>0</Value>
+        <Timestamp>2023-07-22T10:01:26Z</Timestamp>
+    </DataRecord>
+
+    <DataRecord id="8">
+        <Function>Instantaneous value</Function>
+        <StorageNumber>0</StorageNumber>
+        <Unit>Flow temperature (1e-2 deg C)</Unit>
+        <Value>5456</Value>
+        <Timestamp>2023-07-22T10:01:26Z</Timestamp>
+    </DataRecord>
+
+    <DataRecord id="9">
+        <Function>Instantaneous value</Function>
+        <StorageNumber>0</StorageNumber>
+        <Unit>Return temperature (1e-2 deg C)</Unit>
+        <Value>5119</Value>
+        <Timestamp>2023-07-22T10:01:26Z</Timestamp>
+    </DataRecord>
+
+    <DataRecord id="10">
+        <Function>Instantaneous value</Function>
+        <StorageNumber>0</StorageNumber>
+        <Unit>Temperature Difference (1e-2 deg C)</Unit>
+        <Value>337</Value>
+        <Timestamp>2023-07-22T10:01:26Z</Timestamp>
+    </DataRecord>
+
+    <DataRecord id="11">
+        <Function>Instantaneous value</Function>
+        <StorageNumber>0</StorageNumber>
+        <Unit>Power (100 W)</Unit>
+        <Value>0</Value>
+        <Timestamp>2023-07-22T10:01:26Z</Timestamp>
+    </DataRecord>
+
+    <DataRecord id="12">
+        <Function>Maximum value</Function>
+        <StorageNumber>0</StorageNumber>
+        <Unit>Power (100 W)</Unit>
+        <Value>40</Value>
+        <Timestamp>2023-07-22T10:01:26Z</Timestamp>
+    </DataRecord>
+
+    <DataRecord id="13">
+        <Function>Instantaneous value</Function>
+        <StorageNumber>0</StorageNumber>
+        <Unit>Volume flow (m m^3/h)</Unit>
+        <Value>0</Value>
+        <Timestamp>2023-07-22T10:01:26Z</Timestamp>
+    </DataRecord>
+
+    <DataRecord id="14">
+        <Function>Maximum value</Function>
+        <StorageNumber>0</StorageNumber>
+        <Unit>Volume flow (m m^3/h)</Unit>
+        <Value>93</Value>
+        <Timestamp>2023-07-22T10:01:26Z</Timestamp>
+    </DataRecord>
+
+    <DataRecord id="15">
+        <Function>Instantaneous value</Function>
+        <StorageNumber>0</StorageNumber>
+        <Unit>Manufacturer specific</Unit>
+        <Value>0</Value>
+        <Timestamp>2023-07-22T10:01:26Z</Timestamp>
+    </DataRecord>
+
+    <DataRecord id="16">
+        <Function>Instantaneous value</Function>
+        <StorageNumber>0</StorageNumber>
+        <Unit>Time Point (time &amp; date)</Unit>
+        <Value>2023-07-22T10:59:00</Value>
+        <Timestamp>2023-07-22T10:01:26Z</Timestamp>
+    </DataRecord>
+
+    <DataRecord id="17">
+        <Function>Instantaneous value</Function>
+        <StorageNumber>1</StorageNumber>
+        <Unit>Energy (MJ)</Unit>
+        <Value>244</Value>
+        <Timestamp>2023-07-22T10:01:26Z</Timestamp>
+    </DataRecord>
+
+    <DataRecord id="18">
+        <Function>Instantaneous value</Function>
+        <StorageNumber>1</StorageNumber>
+        <Unit>Manufacturer specific</Unit>
+        <Value>1548</Value>
+        <Timestamp>2023-07-22T10:01:26Z</Timestamp>
+    </DataRecord>
+
+    <DataRecord id="19">
+        <Function>Instantaneous value</Function>
+        <StorageNumber>1</StorageNumber>
+        <Unit>Manufacturer specific</Unit>
+        <Value>949</Value>
+        <Timestamp>2023-07-22T10:01:26Z</Timestamp>
+    </DataRecord>
+
+    <DataRecord id="20">
+        <Function>Instantaneous value</Function>
+        <StorageNumber>1</StorageNumber>
+        <Unit>Volume (m m^3)</Unit>
+        <Value>2462</Value>
+        <Timestamp>2023-07-22T10:01:26Z</Timestamp>
+    </DataRecord>
+
+    <DataRecord id="21">
+        <Function>Instantaneous value</Function>
+        <StorageNumber>1</StorageNumber>
+        <Tariff>0</Tariff>
+        <Device>1</Device>
+        <Unit>Volume (1e-2 m^3)</Unit>
+        <Value>0</Value>
+        <Timestamp>2023-07-22T10:01:26Z</Timestamp>
+    </DataRecord>
+
+    <DataRecord id="22">
+        <Function>Instantaneous value</Function>
+        <StorageNumber>1</StorageNumber>
+        <Tariff>0</Tariff>
+        <Device>2</Device>
+        <Unit>Volume (1e-2 m^3)</Unit>
+        <Value>0</Value>
+        <Timestamp>2023-07-22T10:01:26Z</Timestamp>
+    </DataRecord>
+
+    <DataRecord id="23">
+        <Function>Maximum value</Function>
+        <StorageNumber>1</StorageNumber>
+        <Unit>Power (100 W)</Unit>
+        <Value>37</Value>
+        <Timestamp>2023-07-22T10:01:26Z</Timestamp>
+    </DataRecord>
+
+    <DataRecord id="24">
+        <Function>Maximum value</Function>
+        <StorageNumber>1</StorageNumber>
+        <Unit>Volume flow (m m^3/h)</Unit>
+        <Value>93</Value>
+        <Timestamp>2023-07-22T10:01:26Z</Timestamp>
+    </DataRecord>
+
+    <DataRecord id="25">
+        <Function>Instantaneous value</Function>
+        <StorageNumber>1</StorageNumber>
+        <Unit>Time Point (date)</Unit>
+        <Value>2023-07-01</Value>
+        <Timestamp>2023-07-22T10:01:26Z</Timestamp>
+    </DataRecord>
+
+    <DataRecord id="26">
+        <Function>Instantaneous value</Function>
+        <StorageNumber>0</StorageNumber>
+        <Unit>Manufacturer specific</Unit>
+        <Value>6657</Value>
+        <Timestamp>2023-07-22T10:01:26Z</Timestamp>
+    </DataRecord>
+
+    <DataRecord id="27">
+        <Function>Instantaneous value</Function>
+        <StorageNumber>0</StorageNumber>
+        <Unit>Fabrication number</Unit>
+        <Value>72927502</Value>
+        <Timestamp>2023-07-22T10:01:26Z</Timestamp>
+    </DataRecord>
+
+    <DataRecord id="28">
+        <Function>Instantaneous value</Function>
+        <StorageNumber>0</StorageNumber>
+        <Unit>Manufacturer specific</Unit>
+        <Value>2100102</Value>
+        <Timestamp>2023-07-22T10:01:26Z</Timestamp>
+    </DataRecord>
+
+    <DataRecord id="29">
+        <Function>Instantaneous value</Function>
+        <StorageNumber>0</StorageNumber>
+        <Unit>Manufacturer specific</Unit>
+        <Value>17760201</Value>
+        <Timestamp>2023-07-22T10:01:26Z</Timestamp>
+    </DataRecord>
+</MBusData>

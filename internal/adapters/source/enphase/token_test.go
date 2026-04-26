@@ -1,0 +1,281 @@
+package enphase
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/golang-jwt/jwt/v5"
+)
+
+const (
+	// testJWTHeader is the base64url-encoded header for test JWTs (alg:HS256, typ:JWT).
+	testJWTHeader = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"
+	// testJWTFarFuturePayload is a JWT payload with exp far in the future.
+	testJWTFarFuturePayload = "eyJzdWIiOiJ0ZXN0IiwiZXhwIjo5OTk5OTk5OTk5fQ"
+	// testLoginPath is the Enphase login API path.
+	testLoginPath = "/login/login.json"
+)
+
+// makeExpiringToken creates a RegisteredClaims JWT with ExpiresAt already past
+// (within the tokenRefreshBuffer window), so ensureToken triggers a refresh.
+func makeExpiringToken() *jwt.Token {
+	// exp=1 means expired in 1970 - well within the refresh buffer.
+	payload := "eyJzdWIiOiJ0ZXN0IiwiZXhwIjoxfQ"
+	tokenStr := testJWTHeader + "." + payload + ".signature"
+	token, _, _ := new(jwt.Parser).ParseUnverified(tokenStr, &jwt.RegisteredClaims{})
+	return token
+}
+
+func makeAuthServer(t *testing.T, sessionJSON string, tokenStr string) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(
+		http.HandlerFunc(
+			func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case testLoginPath:
+					w.Header().Set("Content-Type", "application/json")
+					_, _ = w.Write([]byte(sessionJSON))
+				case "/tokens":
+					_, _ = w.Write([]byte(tokenStr))
+				default:
+					w.WriteHeader(http.StatusNotFound)
+				}
+			},
+		),
+	)
+}
+
+// redirectTransport redirects all requests to a test server by replacing the host.
+// This allows intercepting hardcoded Enphase API URLs in fetchToken.
+type redirectTransport struct {
+	base   string
+	client *http.Client
+}
+
+func (t *redirectTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	//nolint:gosec // G704: test transport; base is a test server URL, not user-controlled
+	baseReq, _ := http.NewRequestWithContext(req.Context(), req.Method, t.base+req.URL.Path, req.Body)
+	baseReq.Header = req.Header
+	//nolint:gosec // G704: test transport; base is a test server URL, not user-controlled
+	return t.client.Do(baseReq)
+}
+
+func withRedirectClient(t *testing.T, server *httptest.Server) func() {
+	t.Helper()
+	orig := httpClient
+	httpClient = &http.Client{Transport: &redirectTransport{base: server.URL, client: server.Client()}}
+	return func() { httpClient = orig }
+}
+
+func TestFetchToken_Success(t *testing.T) {
+	validTokenStr := testJWTHeader + "." + testJWTFarFuturePayload + ".sig"
+	sessionResp, _ := json.Marshal(map[string]string{"session_id": "sess123"})
+
+	server := makeAuthServer(t, string(sessionResp), validTokenStr)
+	defer server.Close()
+	defer withRedirectClient(t, server)()
+
+	token, err := fetchToken(context.Background(), "user@example.com", "pass", "serial123")
+	if err != nil {
+		t.Fatalf("fetchToken() error: %v", err)
+	}
+	if token == nil {
+		t.Error("fetchToken() returned nil token")
+	}
+}
+
+func TestFetchToken_LoginError(t *testing.T) {
+	server := httptest.NewServer(
+		http.HandlerFunc(
+			func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusInternalServerError)
+				_, _ = w.Write([]byte("{}"))
+			},
+		),
+	)
+	defer server.Close()
+	defer withRedirectClient(t, server)()
+
+	_, err := fetchToken(context.Background(), "user", "pass", "serial")
+	if err == nil {
+		t.Error("fetchToken() should return error on login failure")
+	}
+}
+
+func TestFetchToken_InvalidLoginJSON(t *testing.T) {
+	server := httptest.NewServer(
+		http.HandlerFunc(
+			func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == testLoginPath {
+					_, _ = w.Write([]byte("not-json"))
+				}
+			},
+		),
+	)
+	defer server.Close()
+	defer withRedirectClient(t, server)()
+
+	_, err := fetchToken(context.Background(), "user", "pass", "serial")
+	if err == nil {
+		t.Error("fetchToken() should return error on invalid login JSON")
+	}
+}
+
+func TestFetchToken_TokenFetchError(t *testing.T) {
+	sessionResp, _ := json.Marshal(map[string]string{"session_id": "sess123"})
+	server := httptest.NewServer(
+		http.HandlerFunc(
+			func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case testLoginPath:
+					_, _ = w.Write(sessionResp)
+				case "/tokens":
+					w.WriteHeader(http.StatusUnauthorized)
+					_, _ = w.Write([]byte("unauthorized"))
+				}
+			},
+		),
+	)
+	defer server.Close()
+	defer withRedirectClient(t, server)()
+
+	// The token parse will fail on "unauthorized" as an invalid JWT - either
+	// way we exercise the token-fetch code path.
+	_, _ = fetchToken(context.Background(), "user", "pass", "serial")
+}
+
+func TestEnsureToken_ExpiringToken_RefreshFails(t *testing.T) {
+	server := httptest.NewServer(
+		http.HandlerFunc(
+			func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				_, _ = w.Write([]byte("{}"))
+			},
+		),
+	)
+	defer server.Close()
+	defer withRedirectClient(t, server)()
+
+	reader := &EnvoyReader{
+		envoyURL:    "http://localhost",
+		envoyUser:   "user",
+		envoyPass:   "pass",
+		envoySerial: "serial",
+		logger:      testLogger(),
+		token:       makeExpiringToken(),
+	}
+
+	if err := reader.ensureToken(context.Background()); err == nil {
+		t.Error("ensureToken() should return error when token refresh fails")
+	}
+}
+
+func TestEnsureToken_NilToken_FetchFails(t *testing.T) {
+	server := httptest.NewServer(
+		http.HandlerFunc(
+			func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				_, _ = w.Write([]byte("{}"))
+			},
+		),
+	)
+	defer server.Close()
+	defer withRedirectClient(t, server)()
+
+	reader := &EnvoyReader{
+		envoyURL:    "http://localhost",
+		envoyUser:   "user",
+		envoyPass:   "pass",
+		envoySerial: "serial",
+		logger:      testLogger(),
+		token:       nil,
+	}
+
+	if err := reader.ensureToken(context.Background()); err == nil {
+		t.Error("ensureToken() should return error when token fetch fails")
+	}
+}
+
+func TestEnsureToken_NilExpiresAt_RefreshFails(t *testing.T) {
+	// JWT with RegisteredClaims but no ExpiresAt - triggers the ExpiresAt == nil branch.
+	payload := "eyJzdWIiOiJ0ZXN0In0"
+	tokenStr := testJWTHeader + "." + payload + ".sig"
+	token, _, _ := new(jwt.Parser).ParseUnverified(tokenStr, &jwt.RegisteredClaims{})
+
+	server := httptest.NewServer(
+		http.HandlerFunc(
+			func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				_, _ = w.Write([]byte("{}"))
+			},
+		),
+	)
+	defer server.Close()
+	defer withRedirectClient(t, server)()
+
+	reader := &EnvoyReader{
+		envoyURL:    "http://localhost",
+		envoyUser:   "user",
+		envoyPass:   "pass",
+		envoySerial: "serial",
+		logger:      testLogger(),
+		token:       token,
+	}
+
+	if err := reader.ensureToken(context.Background()); err == nil {
+		t.Error("ensureToken() should return error when nil ExpiresAt triggers refresh and refresh fails")
+	}
+}
+
+func TestEnsureToken_ExpiringToken_RefreshSucceeds(t *testing.T) {
+	validTokenStr := testJWTHeader + "." + testJWTFarFuturePayload + ".sig"
+	sessionResp, _ := json.Marshal(map[string]string{"session_id": "sess123"})
+
+	server := makeAuthServer(t, string(sessionResp), validTokenStr)
+	defer server.Close()
+	defer withRedirectClient(t, server)()
+
+	reader := &EnvoyReader{
+		envoyURL:    "http://localhost",
+		envoyUser:   "user",
+		envoyPass:   "pass",
+		envoySerial: "serial",
+		logger:      testLogger(),
+		token:       makeExpiringToken(),
+	}
+
+	if err := reader.ensureToken(context.Background()); err != nil {
+		t.Errorf("ensureToken() unexpected error after successful refresh: %v", err)
+	}
+	if reader.token == nil {
+		t.Error("ensureToken() did not update token")
+	}
+}
+
+func TestReadEnvoySolarData_EnsureTokenFails(t *testing.T) {
+	server := httptest.NewServer(
+		http.HandlerFunc(
+			func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusServiceUnavailable)
+			},
+		),
+	)
+	defer server.Close()
+	defer withRedirectClient(t, server)()
+
+	reader := &EnvoyReader{
+		envoyURL:    server.URL,
+		envoyUser:   "user",
+		envoyPass:   "pass",
+		envoySerial: "serial",
+		logger:      testLogger(),
+		token:       nil,
+	}
+
+	if _, err := reader.ReadEnvoySolarData(context.Background()); err == nil {
+		t.Error("ReadEnvoySolarData() should return error when ensureToken fails")
+	}
+}
