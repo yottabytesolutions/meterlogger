@@ -158,7 +158,7 @@ Profiling:
 ```
 
 CPU, allocation, goroutine, mutex, and block profiles are pushed to the Pyroscope server. The
-Go SDK is pure-Go, so it works with the distroless static Docker image without any changes.
+Go SDK is pure-Go, so it works with the scratch Docker image without any changes.
 
 ---
 

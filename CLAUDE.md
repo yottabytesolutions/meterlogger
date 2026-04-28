@@ -88,6 +88,7 @@ make build # produces out/meterlogger-linux-amd64, out/meterlogger-linux-arm64, 
 make clean # removes out/
 ```
 
-The Docker image is a two-stage build with `gcr.io/distroless/static-debian12:nonroot` as the
-runtime layer. It contains only `/meterlogger`. The `HEALTHCHECK` instruction runs
+The Docker image is a two-stage scratch build. It contains only `/meterlogger`, plus
+`/etc/passwd`, `/etc/group`, and `/etc/ssl/certs/ca-certificates.crt`. Timezone data is
+embedded in the binary via the `time/tzdata` import. The `HEALTHCHECK` instruction runs
 `meterlogger healthcheck`, which probes `/readyz`.

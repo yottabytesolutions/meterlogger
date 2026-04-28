@@ -14,16 +14,21 @@ RUN --mount=type=cache,target=/go/pkg/mod \
         -ldflags="-s -w -X main.BuildDate=$(date -u '+%Y-%m-%dT%H:%M:%SZ') -X main.CommitSHA=${GIT_SHA}" \
         -o /out/meterlogger \
         ./cmd/meterlogger
+RUN addgroup --system apps && adduser --system --ingroup apps minion
 
 # --- Production Stage ---
-# distroless/static includes ca-certificates, /etc/passwd with a nonroot user
-# (uid 65532), and is on Docker Scout's approved-base-image list, which lets
-# the supply-chain policies report a real result instead of "no data".
-FROM gcr.io/distroless/static-debian12:nonroot
+# scratch keeps Docker Scout's "no outdated/unapproved base images" policies
+# satisfied (no base image to evaluate). Timezone data is embedded into the
+# binary via the time/tzdata import so /usr/share/zoneinfo is not needed.
+FROM scratch
+
+COPY --from=build-env /etc/passwd /etc/passwd
+COPY --from=build-env /etc/group /etc/group
+COPY --from=build-env /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
 COPY --from=build-env /out/meterlogger /meterlogger
 
-USER nonroot:nonroot
+USER minion
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD ["/meterlogger", "healthcheck"]
