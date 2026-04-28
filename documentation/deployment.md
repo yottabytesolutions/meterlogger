@@ -32,9 +32,11 @@ are injected at build time and appear in every log line.
 
 ### Docker image
 
-The Dockerfile is a two-stage build. The build stage compiles all binaries in `cmd/`
-(both `meterlogger` and `healthcheck`). The runtime stage is based on `scratch` - it contains
-only the two binaries, CA certificates, and timezone data.
+The Dockerfile is a two-stage build. The build stage compiles `cmd/meterlogger`
+with `-trimpath -ldflags="-s -w"`. The runtime stage is based on
+`gcr.io/distroless/static-debian12:nonroot`, which provides CA certificates and
+a non-root user; timezone data is embedded into the binary via the `time/tzdata`
+import. The image therefore contains only the meterlogger binary.
 
 ```sh
 docker build --build-arg GIT_SHA=$(git rev-parse --short HEAD) -t yottabyte/meterlogger .
@@ -201,16 +203,16 @@ Every MeterLogger instance starts an HTTP server (default port 8080) with three 
 
 ### Docker HEALTHCHECK
 
-The image includes a `/healthcheck` binary built alongside the main binary. It calls `/readyz`
-on the local instance and exits `0` (healthy) or `1` (unhealthy). Because the runtime image is
-based on `scratch`, there is no shell or `curl` - this binary is the only way to perform an
-in-container probe.
+The `meterlogger` binary has a `healthcheck` subcommand that calls `/readyz` on the local
+instance and exits `0` (healthy) or `1` (unhealthy). Because the runtime image is based on
+distroless static, there is no shell or `curl` - this subcommand is the only way to perform
+an in-container probe.
 
 The `HEALTHCHECK` instruction is already set in the Dockerfile:
 
 ```dockerfile
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-    CMD ["/healthcheck"]
+    CMD ["/meterlogger", "healthcheck"]
 ```
 
 If the port is not the default 8080, set `HTTPSERVER_PORT` in the container environment:
@@ -220,7 +222,7 @@ environment:
   HTTPSERVER_PORT: "9090"
 ```
 
-The `/healthcheck` binary reads this variable automatically.
+The `healthcheck` subcommand reads this variable automatically.
 
 Inspect container health status:
 
