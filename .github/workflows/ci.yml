@@ -91,3 +91,8 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: GIT_SHA=${{ github.sha }}
+          # Supply chain attestations: SBOM + max-mode provenance, attached
+          # to the image manifest so Docker Hub can show the build origin
+          # and dependency inventory.
+          provenance: mode=max
+          sbom: true
