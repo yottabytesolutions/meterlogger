@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	_ "time/tzdata" // embed IANA timezone data so the image needs no /usr/share/zoneinfo
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"

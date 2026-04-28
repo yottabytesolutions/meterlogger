@@ -91,9 +91,9 @@ docker build --build-arg GIT_SHA=$(git rev-parse --short HEAD) -t yottabyte/mete
 docker compose up
 ```
 
-The container is a two-stage scratch build. It contains only `/meterlogger`
-and `/healthcheck`. The `HEALTHCHECK` directive runs `/healthcheck`, which
-probes `/readyz`.
+The container is a two-stage build on `gcr.io/distroless/static-debian12`.
+It contains only `/meterlogger`. The `HEALTHCHECK` directive runs
+`meterlogger healthcheck`, which probes `/readyz`.
 
 See [documentation/deployment.md](documentation/deployment.md) for a full
 multi-source docker-compose example.

@@ -9,23 +9,23 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 COPY . .
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build,id=gobuild-${TARGETARCH} \
-    CGO_ENABLED=0 GOARCH=$TARGETARCH go build -ldflags="-s -w -X main.BuildDate=$(date -u '+%Y-%m-%dT%H:%M:%SZ') -X main.CommitSHA=${GIT_SHA}" -o ./ ./cmd/...
-RUN addgroup --system apps && adduser --system --ingroup apps minion
+    CGO_ENABLED=0 GOARCH=$TARGETARCH go build \
+        -trimpath \
+        -ldflags="-s -w -X main.BuildDate=$(date -u '+%Y-%m-%dT%H:%M:%SZ') -X main.CommitSHA=${GIT_SHA}" \
+        -o /out/meterlogger \
+        ./cmd/meterlogger
 
 # --- Production Stage ---
-FROM scratch
-COPY --from=build-env /etc/passwd /etc/passwd
-COPY --from=build-env /etc/group /etc/group
-COPY --from=build-env /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
-COPY --from=build-env /usr/share/zoneinfo/Europe/Amsterdam /usr/share/zoneinfo/Europe/Amsterdam
+# distroless/static includes ca-certificates, /etc/passwd with a nonroot user
+# (uid 65532), and is on Docker Scout's approved-base-image list, which lets
+# the supply-chain policies report a real result instead of "no data".
+FROM gcr.io/distroless/static-debian12:nonroot
 
-COPY --from=build-env /app/healthcheck /healthcheck
-COPY --from=build-env /app/meterlogger /meterlogger
+COPY --from=build-env /out/meterlogger /meterlogger
 
-USER minion
-ENV ZONEINFO=/opt/zoneinfo.zip
+USER nonroot:nonroot
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-    CMD ["/healthcheck"]
+    CMD ["/meterlogger", "healthcheck"]
 
 ENTRYPOINT ["/meterlogger"]
