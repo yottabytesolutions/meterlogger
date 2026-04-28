@@ -64,7 +64,6 @@ jobs:
           images: yottabyte/meterlogger
           tags: |
             type=sha,format=long
-            type=ref,event=branch,prefix=branch-
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Set up Docker Buildx
