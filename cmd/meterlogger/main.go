@@ -94,6 +94,7 @@ var rootCmd = &cobra.Command{
 func initConfig() {
 	viper.SetDefault("Debug", false)
 	viper.SetDefault("HTTPServer.Port", 8080) //nolint:mnd // well-known default port
+	viper.SetDefault("HTTPServer.LivenessFailureThreshold", healthserver.DefaultLivenessFailureThreshold)
 
 	if cfgFile != "" {
 		viper.SetConfigFile(cfgFile)
@@ -241,7 +242,12 @@ func buildHealthServer(
 	pgDB *postgres.DB, myDB *mysql.DB,
 	tsDB *timescaledb.DB, chDB *clickhouse.DB, tdDB *tdengine.DB,
 ) *healthserver.Server {
-	srv := healthserver.New(fmt.Sprintf(":%d", config.HTTPServer.Port), logger, appMetrics.Registry)
+	srv := healthserver.New(
+		fmt.Sprintf(":%d", config.HTTPServer.Port),
+		logger,
+		appMetrics.Registry,
+		config.HTTPServer.LivenessFailureThreshold,
+	)
 	if pgDB != nil {
 		srv.Register(pgDB)
 	}

@@ -59,13 +59,15 @@ Migration history is tracked in `meterlogger_schema_migrations` - do not drop th
 
 A small HTTP server exposes Kubernetes-friendly endpoints:
 
-| Endpoint   | Purpose                                              |
-|------------|------------------------------------------------------|
-| `/healthz` | Liveness probe - always 200 while the process is up  |
-| `/readyz`  | Readiness probe - 503 if any registered sink is down |
-| `/metrics` | Prometheus metrics in text exposition format         |
+| Endpoint   | Purpose                                                                                                       |
+|------------|---------------------------------------------------------------------------------------------------------------|
+| `/healthz` | Liveness probe - 503 if any registered sink has been failing for `HTTPServer.LivenessFailureThreshold` (90s) |
+| `/readyz`  | Readiness probe - 503 if any registered sink is currently down                                                |
+| `/metrics` | Prometheus metrics in text exposition format                                                                  |
 
-Port defaults to `8080`, configurable via `HTTPServer.Port`.
+Port defaults to `8080`, configurable via `HTTPServer.Port`. The liveness threshold defaults to `90s`,
+configurable via `HTTPServer.LivenessFailureThreshold`. See
+[observability.md - Liveness detail](./observability.md#liveness-detail) for the rationale.
 
 ### Prometheus metrics
 
@@ -91,7 +93,10 @@ FlushInterval: 10s
 
 # ── HTTP health / metrics server ────────────────────────────
 HTTPServer:
-  Port: 8080                 # /healthz, /readyz, /metrics
+  Port: 8080                       # /healthz, /readyz, /metrics
+  LivenessFailureThreshold: 90s    # /healthz flips to 503 once any sink has
+                                   # been continuously unhealthy this long.
+                                   # /readyz still flips on the first failure.
 
 # ── QuestDB sink ─────────────────────────────────────────────
 # Enabled defaults to true; existing configs continue to work.

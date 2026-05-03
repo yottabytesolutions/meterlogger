@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"slices"
 	"sync"
 	"time"
 
@@ -22,6 +23,11 @@ const (
 	idleTimeout     = 60 * time.Second
 	shutdownTimeout = 5 * time.Second
 	checkTimeout    = 1 * time.Second
+
+	// DefaultLivenessFailureThreshold is the default duration a checker must
+	// be continuously unhealthy before /healthz starts returning 503. Six
+	// readiness probes at the standard 15s period.
+	DefaultLivenessFailureThreshold = 90 * time.Second
 )
 
 // Checker reports health for one component.
@@ -31,22 +37,38 @@ type Checker interface {
 }
 
 // Server is a small HTTP server exposing /healthz, /readyz, and /metrics.
+//
+// /readyz reflects the current state of every registered checker. /healthz
+// reflects sustained failure: it stays green through transient blips so the
+// kubelet does not restart pods on every short outage, but flips to 503 once
+// any checker has been continuously unhealthy for livenessThreshold. That
+// turns a stuck Running-but-NotReady pod into a CrashLoopBackOff that the
+// orchestrator can act on.
 type Server struct {
-	addr     string
-	checkers []Checker
-	logger   *slog.Logger
-	mu       sync.RWMutex
-	mux      *http.ServeMux
-	wg       sync.WaitGroup
+	addr              string
+	checkers          []Checker
+	logger            *slog.Logger
+	mu                sync.RWMutex
+	mux               *http.ServeMux
+	wg                sync.WaitGroup
+	livenessThreshold time.Duration
+	failingSince      map[string]time.Time
+	now               func() time.Time
 }
 
 // New creates a Server that will listen on addr (e.g. ":8080").
 // reg is the Prometheus registry to expose on /metrics.
-func New(addr string, logger *slog.Logger, reg *prometheus.Registry) *Server {
+// livenessThreshold is the duration a checker must be continuously unhealthy
+// before /healthz returns 503; pass DefaultLivenessFailureThreshold for the
+// recommended default.
+func New(addr string, logger *slog.Logger, reg *prometheus.Registry, livenessThreshold time.Duration) *Server {
 	s := &Server{
-		addr:   addr,
-		logger: logger,
-		mux:    http.NewServeMux(),
+		addr:              addr,
+		logger:            logger,
+		mux:               http.NewServeMux(),
+		livenessThreshold: livenessThreshold,
+		failingSince:      make(map[string]time.Time),
+		now:               time.Now,
 	}
 	s.mux.HandleFunc("/healthz", s.handleLiveness)
 	s.mux.HandleFunc("/readyz", s.handleReadiness)
@@ -54,7 +76,7 @@ func New(addr string, logger *slog.Logger, reg *prometheus.Registry) *Server {
 	return s
 }
 
-// Register adds a health checker to the readiness probe.
+// Register adds a health checker to both probes.
 func (s *Server) Register(c Checker) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -113,37 +135,101 @@ func (s *Server) Wait() {
 }
 
 type checkResult struct {
-	Name    string `json:"name"`
-	Healthy bool   `json:"healthy"`
-	Error   string `json:"error,omitempty"`
+	Name       string `json:"name"`
+	Healthy    bool   `json:"healthy"`
+	Error      string `json:"error,omitempty"`
+	FailingFor string `json:"failingFor,omitempty"`
+
+	// failingDur is the unexported duration that handlers use to decide
+	// whether the failure has crossed the liveness threshold. encoding/json
+	// ignores unexported fields.
+	failingDur time.Duration
 }
 
-func (s *Server) handleLiveness(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(`{"status":"ok"}`))
-}
-
-func (s *Server) handleReadiness(w http.ResponseWriter, r *http.Request) {
+// runChecks runs every registered checker once, updates per-checker failure
+// state, and returns the results. Both /healthz and /readyz call it so they
+// observe a consistent snapshot.
+func (s *Server) runChecks(ctx context.Context) []checkResult {
 	s.mu.RLock()
-	checkers := make([]Checker, len(s.checkers))
-	copy(checkers, s.checkers)
+	checkers := slices.Clone(s.checkers)
 	s.mu.RUnlock()
 
-	ctx, cancel := context.WithTimeout(r.Context(), checkTimeout)
+	ctx, cancel := context.WithTimeout(ctx, checkTimeout)
 	defer cancel()
 
 	results := make([]checkResult, 0, len(checkers))
-	allHealthy := true
-
 	for _, c := range checkers {
 		res := checkResult{Name: c.Name(), Healthy: true}
 		if checkErr := c.Check(ctx); checkErr != nil {
 			res.Healthy = false
 			res.Error = checkErr.Error()
-			allHealthy = false
 		}
 		results = append(results, res)
+	}
+
+	now := s.now()
+	s.mu.Lock()
+	for i := range results {
+		res := &results[i]
+		if res.Healthy {
+			delete(s.failingSince, res.Name)
+			continue
+		}
+		since, ok := s.failingSince[res.Name]
+		if !ok {
+			since = now
+			s.failingSince[res.Name] = since
+		}
+		res.failingDur = now.Sub(since)
+		res.FailingFor = res.failingDur.String()
+	}
+	s.mu.Unlock()
+
+	return results
+}
+
+func (s *Server) handleLiveness(w http.ResponseWriter, r *http.Request) {
+	results := s.runChecks(r.Context())
+
+	stuck := make([]string, 0)
+	for _, res := range results {
+		if !res.Healthy && res.failingDur >= s.livenessThreshold {
+			stuck = append(stuck, res.Name)
+		}
+	}
+
+	statusStr := "ok"
+	statusCode := http.StatusOK
+	if len(stuck) > 0 {
+		statusStr = "stuck"
+		statusCode = http.StatusServiceUnavailable
+		s.logger.Error(
+			"liveness failing: checker(s) unhealthy beyond threshold",
+			slog.Any("stuck", stuck),
+			slog.Duration("threshold", s.livenessThreshold),
+		)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	_ = json.NewEncoder(w).Encode(
+		map[string]any{
+			"status": statusStr,
+			"stuck":  stuck,
+			"checks": results,
+		},
+	)
+}
+
+func (s *Server) handleReadiness(w http.ResponseWriter, r *http.Request) {
+	results := s.runChecks(r.Context())
+
+	allHealthy := true
+	for _, res := range results {
+		if !res.Healthy {
+			allHealthy = false
+			break
+		}
 	}
 
 	statusStr := "ok"

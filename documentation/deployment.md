@@ -195,11 +195,17 @@ or use a reverse proxy / service mesh to route by path.
 
 Every MeterLogger instance starts an HTTP server (default port 8080) with three endpoints:
 
-| Endpoint   | Purpose                                                                              |
-|------------|--------------------------------------------------------------------------------------|
-| `/healthz` | Liveness - always `200 OK` while the process is running                              |
-| `/readyz`  | Readiness - `200 OK` when all enabled sinks are reachable, `503` if any sink is down |
-| `/metrics` | Prometheus metrics in text exposition format                                         |
+| Endpoint   | Purpose                                                                                                |
+|------------|--------------------------------------------------------------------------------------------------------|
+| `/healthz` | Liveness - `503` once a sink has been continuously down for `HTTPServer.LivenessFailureThreshold` (90s) |
+| `/readyz`  | Readiness - `200 OK` when all enabled sinks are reachable, `503` if any sink is currently down         |
+| `/metrics` | Prometheus metrics in text exposition format                                                           |
+
+The split between liveness and readiness is intentional: a brief sink outage flips `/readyz` so traffic stops
+hitting the pod, but `/healthz` stays green so the kubelet does not restart on every transient blip. Once
+the outage exceeds the liveness threshold the pod restarts itself instead of getting stuck in a permanent
+`Running but NotReady` state. See
+[observability.md - Liveness detail](./observability.md#liveness-detail).
 
 ### Docker HEALTHCHECK
 

@@ -48,6 +48,12 @@ type ProfilingConfig struct {
 // HTTPServerConfig configures the health/metrics HTTP server.
 type HTTPServerConfig struct {
 	Port int
+	// LivenessFailureThreshold is the duration any registered health check
+	// must be continuously failing before /healthz starts returning 503.
+	// /readyz still flips on the first failure; /healthz only flips once
+	// the failure has persisted long enough that the kubelet should
+	// restart the container instead of waiting for self-recovery.
+	LivenessFailureThreshold time.Duration
 }
 
 // EnphaseConfig configures the Enphase Envoy solar reader.
