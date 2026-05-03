@@ -9,11 +9,11 @@ Every container instance - one per source - has its own independent HTTP server.
 
 The health server starts automatically on `HTTPServer.Port` (default `8080`).
 
-| Endpoint   | Method | Description                                                                                                        |
-|------------|--------|--------------------------------------------------------------------------------------------------------------------|
-| `/healthz` | GET    | **Liveness** - returns `200 OK` as long as the process is running                                                  |
-| `/readyz`  | GET    | **Readiness** - returns `200 OK` if all enabled sinks are reachable; `503 Service Unavailable` if any sink is down |
-| `/metrics` | GET    | Prometheus metrics in text exposition format                                                                       |
+| Endpoint   | Method | Description                                                                                                                |
+|------------|--------|----------------------------------------------------------------------------------------------------------------------------|
+| `/healthz` | GET    | **Liveness** - `200 OK` while no sink has been continuously failing for `HTTPServer.LivenessFailureThreshold` (default 90s) |
+| `/readyz`  | GET    | **Readiness** - `200 OK` if all enabled sinks are currently reachable; `503 Service Unavailable` if any sink is down       |
+| `/metrics` | GET    | Prometheus metrics in text exposition format                                                                               |
 
 ### Readiness detail
 
@@ -23,6 +23,20 @@ is required. QuestDB reports the outcome of the most recent `Flush` against its 
 this reuses the already-open connection instead of dialling a new one per probe. Each check runs with a
 1-second timeout; if any sink fails, the endpoint returns `503 Service Unavailable` with details in the JSON
 body.
+
+### Liveness detail
+
+`/healthz` runs the same checks as `/readyz` but stays green through transient failures so the kubelet does
+not restart pods on every brief blip. It only returns `503 Service Unavailable` once a sink has been
+continuously failing for `HTTPServer.LivenessFailureThreshold` (default `90s`, six readiness probes at the
+standard 15s period). Once `/healthz` flips, kubelet restarts the container and the sink connection is
+re-established on startup. This is what turns a stuck `Running but NotReady` pod into a self-healing
+`CrashLoopBackOff`. The response body lists the names of any sinks that have crossed the threshold.
+
+> **Breaking change**: prior versions returned `200 OK` from `/healthz` whenever the process was alive.
+> Probes that depended on that behaviour to detect process crashes still work (a dead process cannot serve
+> a response at all), but operators who want the old "always green while running" behaviour can set
+> `HTTPServer.LivenessFailureThreshold` to a very large value, e.g. `876000h`.
 
 ---
 
@@ -109,6 +123,7 @@ requiring a running metrics stack. Prometheus adds fine-grained signal once the 
 |-------------------------------------------|--------------------------------|----------------------------------------------|
 | Container restart                         | None                           | A source is failing; container is recovering |
 | `/readyz` → 503                           | Any HTTP client                | A sink (DB) is unreachable                   |
+| `/healthz` → 503                          | Any HTTP client                | A sink has been unreachable past the threshold; container restart pending |
 | `meterlogger_read_errors_total`           | Prometheus                     | Read errors by source over time              |
 | `meterlogger_last_read_timestamp_seconds` | Prometheus + Grafana           | Gaps in data collection                      |
 | Docker `HEALTHCHECK` status               | `docker inspect` / `docker ps` | In-container readiness check                 |
