@@ -19,12 +19,13 @@ import (
 var gridTracer = otel.Tracer("grid-meter-service")
 
 type GridLoggingService struct {
-	source        domain.GridTelegramReader
-	sink          domain.GridTelegramRepository
-	flushInterval time.Duration
-	resultChannel chan domain.GridTelegram
-	logger        *slog.Logger
-	metrics       *metrics.Metrics
+	source         domain.GridTelegramReader
+	sink           domain.GridTelegramRepository
+	flushInterval  time.Duration
+	resultChannel  chan domain.GridTelegram
+	logger         *slog.Logger
+	metrics        *metrics.Metrics
+	dataFlowLogged bool
 }
 
 func NewGridLoggingService(
@@ -102,6 +103,10 @@ func (s *GridLoggingService) storeData(ctx context.Context, meterData domain.Gri
 	}
 	if s.metrics != nil {
 		s.metrics.WritesTotal.WithLabelValues("multisink", "grid").Inc()
+	}
+	if !s.dataFlowLogged {
+		s.logger.InfoContext(ctx, "grid meter data flow started successfully", debuglog.GridAttrs(meterData))
+		s.dataFlowLogged = true
 	}
 	return nil
 }

@@ -1,5 +1,6 @@
 .idea/
-.claude
+.claude/
+.junie/
 bin/
 .env
 .meterlogger.yaml

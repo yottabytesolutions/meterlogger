@@ -20,12 +20,13 @@ var heatTracer = otel.Tracer("heat-meter-service")
 const maxConsecutiveHeatErrors = 5
 
 type HeatMeterLoggingService struct {
-	source        domain.HeatMeterReader
-	sink          domain.HeatMeterRepository
-	interval      time.Duration
-	flushInterval time.Duration
-	logger        *slog.Logger
-	metrics       *metrics.Metrics
+	source         domain.HeatMeterReader
+	sink           domain.HeatMeterRepository
+	interval       time.Duration
+	flushInterval  time.Duration
+	logger         *slog.Logger
+	metrics        *metrics.Metrics
+	dataFlowLogged bool
 }
 
 func NewHeatMeterLoggingService(
@@ -127,6 +128,10 @@ func (s *HeatMeterLoggingService) runReadAndStore(ctx context.Context) error {
 	}
 	if s.metrics != nil {
 		s.metrics.WritesTotal.WithLabelValues("multisink", "heat").Inc()
+	}
+	if !s.dataFlowLogged {
+		s.logger.InfoContext(ctx, "heat meter data flow started successfully", debuglog.HeatAttrs(meterData))
+		s.dataFlowLogged = true
 	}
 	return nil
 }

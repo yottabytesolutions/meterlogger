@@ -17,12 +17,13 @@ import (
 var solarTracer = otel.Tracer("solar-meter-service")
 
 type SolarLoggingService struct {
-	source        domain.EnvoySolarReader
-	sink          domain.EnvoySolarRepository
-	interval      time.Duration
-	flushInterval time.Duration
-	logger        *slog.Logger
-	metrics       *metrics.Metrics
+	source         domain.EnvoySolarReader
+	sink           domain.EnvoySolarRepository
+	interval       time.Duration
+	flushInterval  time.Duration
+	logger         *slog.Logger
+	metrics        *metrics.Metrics
+	dataFlowLogged bool
 }
 
 func NewSolarLoggingService(
@@ -102,6 +103,10 @@ func (s *SolarLoggingService) runReadAndStore(ctx context.Context) error {
 	}
 	if s.metrics != nil {
 		s.metrics.WritesTotal.WithLabelValues("multisink", "solar").Inc()
+	}
+	if !s.dataFlowLogged {
+		s.logger.InfoContext(ctx, "solar data flow started successfully")
+		s.dataFlowLogged = true
 	}
 	return nil
 }
