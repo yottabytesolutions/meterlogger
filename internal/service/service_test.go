@@ -1,10 +1,12 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
 	"log/slog"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -238,6 +240,23 @@ func TestHeatMeterLoggingService_Start_StoresTelegram(t *testing.T) {
 	}
 }
 
+func TestHeatMeterLoggingService_RunReadAndStore_LogsSuccessfulDataFlow(t *testing.T) {
+	var logOutput bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logOutput, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	telegram := domain.HeatTelegram{MeterID: "heat-meter-1", SerialNo: "serial-1", Joules: 5000}
+	reader := &mockHeatReader{reading: telegram}
+	repo := &mockHeatRepo{}
+	svc := NewHeatMeterLoggingService(reader, repo, time.Hour, time.Hour, logger)
+
+	if err := svc.runReadAndStore(context.Background()); err != nil {
+		t.Fatalf("runReadAndStore() error = %v", err)
+	}
+
+	if !strings.Contains(logOutput.String(), "heat meter data flow started successfully") {
+		t.Fatalf("expected successful data flow log, got %q", logOutput.String())
+	}
+}
+
 func TestHeatMeterLoggingService_Start_Flushes(t *testing.T) {
 	reader := &mockHeatReader{reading: domain.HeatTelegram{MeterID: "m1"}}
 	repo := &mockHeatRepo{}
@@ -306,6 +325,22 @@ func TestSolarLoggingService_Start_StoresData(t *testing.T) {
 	repo.mu.Unlock()
 	if count == 0 {
 		t.Error("SolarLoggingService did not store any data")
+	}
+}
+
+func TestSolarLoggingService_RunReadAndStore_LogsSuccessfulDataFlow(t *testing.T) {
+	var logOutput bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logOutput, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	reader := &mockSolarReader{data: domain.EnvoySolarData{Watt: 300}}
+	repo := &mockSolarRepo{}
+	svc := NewSolarLoggingService(reader, repo, time.Hour, time.Hour, logger)
+
+	if err := svc.runReadAndStore(context.Background()); err != nil {
+		t.Fatalf("runReadAndStore() error = %v", err)
+	}
+
+	if !strings.Contains(logOutput.String(), "solar data flow started successfully") {
+		t.Fatalf("expected successful data flow log, got %q", logOutput.String())
 	}
 }
 
@@ -390,6 +425,25 @@ func TestGridLoggingService_Start_StoresTelegram(t *testing.T) {
 	}
 }
 
+func TestGridLoggingService_StoreData_LogsSuccessfulDataFlow(t *testing.T) {
+	var logOutput bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logOutput, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	ch := make(chan domain.GridTelegram, 1)
+	done := make(chan struct{})
+	reader := &mockGridReader{done: done}
+	repo := &mockGridRepo{}
+	svc := NewGridLoggingService(reader, repo, time.Hour, ch, logger)
+
+	if err := svc.storeData(context.Background(), domain.GridTelegram{Serienummer: "grid-meter-1"}); err != nil {
+		t.Fatalf("storeData() error = %v", err)
+	}
+	close(done)
+
+	if !strings.Contains(logOutput.String(), "grid meter data flow started successfully") {
+		t.Fatalf("expected successful data flow log, got %q", logOutput.String())
+	}
+}
+
 func TestGridLoggingService_Start_Flushes(t *testing.T) {
 	ch := make(chan domain.GridTelegram, 10)
 	done := make(chan struct{})
@@ -462,6 +516,22 @@ func TestDucoLoggingService_Start_StoresBoxStatus(t *testing.T) {
 	repo.mu.Unlock()
 	if count == 0 {
 		t.Error("DucoLoggingService did not store any box status")
+	}
+}
+
+func TestDucoLoggingService_RunReadAndStore_LogsSuccessfulDataFlow(t *testing.T) {
+	var logOutput bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logOutput, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	reader := &mockDucoReader{boxStatus: domain.DucoBoxStatus{}}
+	repo := &mockDucoRepo{}
+	svc := NewDucoLoggingService(reader, repo, time.Hour, time.Hour, []int{}, logger)
+
+	if err := svc.runReadAndStore(context.Background()); err != nil {
+		t.Fatalf("runReadAndStore() error = %v", err)
+	}
+
+	if !strings.Contains(logOutput.String(), "ventilation data flow started successfully") {
+		t.Fatalf("expected successful data flow log, got %q", logOutput.String())
 	}
 }
 

@@ -19,13 +19,14 @@ var ducoTracer = otel.Tracer("duco-service")
 const maxErrorCount = 20
 
 type DucoLoggingService struct {
-	source        domain.DucoReader
-	sink          domain.DucoRepository
-	interval      time.Duration
-	flushInterval time.Duration
-	logger        *slog.Logger
-	nodes         []int
-	metrics       *metrics.Metrics
+	source         domain.DucoReader
+	sink           domain.DucoRepository
+	interval       time.Duration
+	flushInterval  time.Duration
+	logger         *slog.Logger
+	nodes          []int
+	metrics        *metrics.Metrics
+	dataFlowLogged bool
 }
 
 func NewDucoLoggingService(
@@ -117,6 +118,10 @@ func (s *DucoLoggingService) runReadAndStore(ctx context.Context) error {
 	}
 	if s.metrics != nil {
 		s.metrics.WritesTotal.WithLabelValues("multisink", "ventilation").Inc()
+	}
+	if !s.dataFlowLogged {
+		s.logger.InfoContext(ctx, "ventilation data flow started successfully")
+		s.dataFlowLogged = true
 	}
 
 	for _, nodeID := range s.nodes {
