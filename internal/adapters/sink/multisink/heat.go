@@ -1,11 +1,8 @@
-// Package multisink provides fan-out adapters that write to multiple sinks simultaneously.
-//
-//nolint:dupl // each repository type has distinct sink interfaces; extraction would obscure intent
+//nolint:dupl // heat and grid share the same fan-out shape but operate on distinct domain types
 package multisink
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 
 	"github.com/yottabytesolutions/meterlogger/internal/domain"
@@ -25,40 +22,28 @@ func NewHeatRepository(sinks []domain.HeatMeterRepository, logger *slog.Logger) 
 	return &HeatRepository{sinks: sinks, logger: logger}
 }
 
-// StoreHeatTelegram writes to all sinks and returns a combined error.
+// StoreHeatTelegram writes to all sinks concurrently and returns a combined error.
 func (r *HeatRepository) StoreHeatTelegram(ctx context.Context, t domain.HeatTelegram) error {
 	r.logger.DebugContext(ctx, "multisink: storing heat telegram", slog.Int("sinks", len(r.sinks)))
-	var errs []error
-	for _, s := range r.sinks {
-		if err := s.StoreHeatTelegram(ctx, t); err != nil {
-			r.logger.ErrorContext(ctx, "multisink: heat store failed", slog.Any("error", err))
-			errs = append(errs, err)
-		}
-	}
-	return errors.Join(errs...)
+	return fanOut(ctx, r.sinks, r.logger, "multisink: heat store failed",
+		func(ctx context.Context, s domain.HeatMeterRepository) error {
+			return s.StoreHeatTelegram(ctx, t)
+		})
 }
 
-// Flush flushes all sinks and returns a combined error.
+// Flush flushes all sinks concurrently and returns a combined error.
 func (r *HeatRepository) Flush(ctx context.Context) error {
 	r.logger.DebugContext(ctx, "multisink: flushing heat sinks", slog.Int("sinks", len(r.sinks)))
-	var errs []error
-	for _, s := range r.sinks {
-		if err := s.Flush(ctx); err != nil {
-			r.logger.ErrorContext(ctx, "multisink: heat flush failed", slog.Any("error", err))
-			errs = append(errs, err)
-		}
-	}
-	return errors.Join(errs...)
+	return fanOut(ctx, r.sinks, r.logger, "multisink: heat flush failed",
+		func(ctx context.Context, s domain.HeatMeterRepository) error {
+			return s.Flush(ctx)
+		})
 }
 
-// Close closes all sinks and returns a combined error.
+// Close closes all sinks concurrently and returns a combined error.
 func (r *HeatRepository) Close() error {
-	var errs []error
-	for _, s := range r.sinks {
-		if err := s.Close(); err != nil {
-			r.logger.Error("multisink: heat close failed", slog.Any("error", err))
-			errs = append(errs, err)
-		}
-	}
-	return errors.Join(errs...)
+	return fanOutClose(r.sinks, r.logger, "multisink: heat close failed",
+		func(s domain.HeatMeterRepository) error {
+			return s.Close()
+		})
 }

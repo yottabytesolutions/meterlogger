@@ -61,12 +61,13 @@ func (s *GridLoggingService) Start(ctx context.Context) {
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				return
 			}
-			s.logger.Error("error reading grid meter data", slog.Any("error", err))
+			s.logger.ErrorContext(ctx, "error reading grid meter data", slog.Any("error", err))
 			processKiller()
 		}
 	})
 	defer wg.Wait()
 
+	consecutiveErrors := 0
 	for {
 		select {
 		case meterData := <-s.resultChannel:
@@ -74,7 +75,9 @@ func (s *GridLoggingService) Start(ctx context.Context) {
 				s.metrics.ReadsTotal.WithLabelValues("grid").Inc()
 				s.metrics.LastReadTime.WithLabelValues("grid").SetToCurrentTime()
 			}
-			_ = s.storeData(ctx, meterData)
+			if stop := s.handleStore(ctx, meterData, &consecutiveErrors); stop {
+				return
+			}
 		case <-flushTicker.C:
 			s.logger.DebugContext(ctx, "flushing grid meter data")
 			err := s.sink.Flush(ctx)
@@ -87,13 +90,36 @@ func (s *GridLoggingService) Start(ctx context.Context) {
 	}
 }
 
+// handleStore stores one grid telegram and escalates on repeated failures.
+// Returns true if the service should stop.
+func (s *GridLoggingService) handleStore(
+	ctx context.Context, meterData domain.GridTelegram, consecutiveErrors *int,
+) bool {
+	err := s.storeData(ctx, meterData)
+	if err == nil {
+		*consecutiveErrors = 0
+		return false
+	}
+	*consecutiveErrors++
+	s.logger.ErrorContext(ctx, "error storing grid meter data",
+		slog.Any("error", err),
+		slog.Int("consecutiveErrors", *consecutiveErrors),
+	)
+	if *consecutiveErrors >= maxConsecutiveErrors {
+		s.logger.ErrorContext(ctx, "grid meter: too many consecutive errors, terminating")
+		processKiller()
+		<-ctx.Done()
+		return true
+	}
+	return false
+}
+
 func (s *GridLoggingService) storeData(ctx context.Context, meterData domain.GridTelegram) error {
 	ctx, span := gridTracer.Start(ctx, "StoreData")
 	defer span.End()
 
 	s.logger.DebugContext(ctx, "grid telegram received, storing", debuglog.GridAttrs(meterData))
 	if err := s.sink.StoreGridTelegram(ctx, meterData); err != nil {
-		s.logger.ErrorContext(ctx, "error storing grid meter data", slog.Any("error", err))
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "store grid telegram failed")
 		if s.metrics != nil {

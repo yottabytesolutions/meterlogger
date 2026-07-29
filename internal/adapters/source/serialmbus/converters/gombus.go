@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/jonaz/gombus"
+	"github.com/yottabytesolutions/gombus"
 
 	"github.com/yottabytesolutions/meterlogger/internal/domain"
 )

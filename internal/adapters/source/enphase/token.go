@@ -34,7 +34,10 @@ func fetchToken(ctx context.Context, user string, password string, serial string
 			"email": user, "password": password,
 		},
 	}
-	jsonData, _ := json.Marshal(loginData)
+	jsonData, loginMarshalErr := json.Marshal(loginData)
+	if loginMarshalErr != nil {
+		return nil, loginMarshalErr
+	}
 
 	req, loginErr := http.NewRequestWithContext(
 		ctx, http.MethodPost, enphaseAuthURL, bytes.NewBuffer(jsonData),
@@ -52,7 +55,10 @@ func fetchToken(ctx context.Context, user string, password string, serial string
 		_ = resp.Body.Close()
 	}()
 
-	body, _ := io.ReadAll(resp.Body)
+	body, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		return nil, readErr
+	}
 
 	var result map[string]any
 	if unmarshalErr := json.Unmarshal(body, &result); unmarshalErr != nil {
@@ -97,7 +103,10 @@ func fetchToken(ctx context.Context, user string, password string, serial string
 		_ = resp2.Body.Close()
 	}()
 
-	body, _ = io.ReadAll(resp2.Body)
+	body, readErr = io.ReadAll(resp2.Body)
+	if readErr != nil {
+		return nil, readErr
+	}
 	tokenstring := string(body)
 	token, _, err := new(jwt.Parser).ParseUnverified(tokenstring, &jwt.RegisteredClaims{})
 	return token, err

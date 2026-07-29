@@ -100,7 +100,7 @@ func runVentilation(
 	repo := multisink.NewDucoRepository(sinks, l)
 	defer func() {
 		if err := repo.Close(); err != nil {
-			l.Error("ventilation repo close error", slog.Any("error", err))
+			l.ErrorContext(ctx, "ventilation repo close error", slog.Any("error", err))
 		}
 	}()
 

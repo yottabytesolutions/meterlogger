@@ -5,6 +5,11 @@ import (
 	"testing"
 )
 
+const (
+	testCaseSingleByte    = "single byte"
+	testCaseMultipleBytes = "multiple bytes"
+)
+
 func TestBcdToDec(t *testing.T) {
 	type args struct {
 		bcd []byte
@@ -52,7 +57,7 @@ func TestComputeChecksum(t *testing.T) {
 			want: 0,
 		},
 		{
-			name: "single byte",
+			name: testCaseSingleByte,
 			data: []byte{0x10},
 			want: 0x10,
 		},
@@ -62,7 +67,7 @@ func TestComputeChecksum(t *testing.T) {
 			want: 0x00,
 		},
 		{
-			name: "multiple bytes",
+			name: testCaseMultipleBytes,
 			data: []byte{0x40, 0x30, 0x05},
 			want: byte((0x40 + 0x30 + 0x05) % 256),
 		},
@@ -91,7 +96,7 @@ func TestComputeLRC(t *testing.T) {
 			want: 0,
 		},
 		{
-			name: "single byte",
+			name: testCaseSingleByte,
 			data: []byte{0xAB},
 			want: 0xAB,
 		},
@@ -101,7 +106,7 @@ func TestComputeLRC(t *testing.T) {
 			want: 0x00,
 		},
 		{
-			name: "multiple bytes",
+			name: testCaseMultipleBytes,
 			data: []byte{0x01, 0x02, 0x04},
 			want: 0x07,
 		},
@@ -130,12 +135,12 @@ func TestFormatBytesSlice(t *testing.T) {
 			want:  "[]",
 		},
 		{
-			name:  "single byte",
+			name:  testCaseSingleByte,
 			slice: []byte{0x0A},
 			want:  "[ 0A ]",
 		},
 		{
-			name:  "multiple bytes",
+			name:  testCaseMultipleBytes,
 			slice: []byte{0x10, 0xFF, 0x00},
 			want:  "[ 10 FF 00 ]",
 		},

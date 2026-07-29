@@ -17,8 +17,6 @@ import (
 //nolint:gochecknoglobals // OTel tracer initialised at package level per OTel convention
 var heatTracer = otel.Tracer("heat-meter-service")
 
-const maxConsecutiveHeatErrors = 5
-
 type HeatMeterLoggingService struct {
 	source         domain.HeatMeterReader
 	sink           domain.HeatMeterRepository
@@ -93,9 +91,10 @@ func (s *HeatMeterLoggingService) handleTick(ctx context.Context, consecutiveErr
 	if s.metrics != nil {
 		s.metrics.ReadErrorsTotal.WithLabelValues("heat").Inc()
 	}
-	if *consecutiveErrors >= maxConsecutiveHeatErrors {
+	if *consecutiveErrors >= maxConsecutiveErrors {
 		s.logger.ErrorContext(ctx, "heat meter: too many consecutive errors, terminating")
 		processKiller()
+		<-ctx.Done()
 		return true
 	}
 	return false

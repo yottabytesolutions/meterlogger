@@ -39,6 +39,9 @@ const (
 	httpDialKeepAlive       = 60 * time.Second
 	httpTLSHandshakeTimeout = 5 * time.Second
 	httpExpectContinue      = 1 * time.Second
+
+	productionTypeInverters = "inverters"
+	deviceTypePCU           = "PCU"
 )
 
 type EnvoyReader struct {
@@ -105,7 +108,7 @@ func (e *EnvoyReader) ReadEnvoySolarData(ctx context.Context) (domain.EnvoySolar
 
 	var inverterProductionData *Production
 	for _, production := range meterData.Production {
-		if production.Type == "inverters" {
+		if production.Type == productionTypeInverters {
 			inverterProductionData = &production
 			break
 		}
@@ -113,7 +116,7 @@ func (e *EnvoyReader) ReadEnvoySolarData(ctx context.Context) (domain.EnvoySolar
 
 	serialLookup := make(map[string]Device)
 	for _, device := range *inventoryData {
-		if device.Type == "PCU" {
+		if device.Type == deviceTypePCU {
 			for _, inv := range device.Devices {
 				serialLookup[inv.SerialNum] = inv
 			}
@@ -125,7 +128,7 @@ func (e *EnvoyReader) ReadEnvoySolarData(ctx context.Context) (domain.EnvoySolar
 		return domain.EnvoySolarData{}, errors.New("inverters data not found")
 	}
 
-	inverters := make([]domain.InverterDetails, inverterProductionData.ActiveCount)
+	inverters := make([]domain.InverterDetails, len(*inverterData))
 	for i, inverter := range *inverterData {
 		invDetails := serialLookup[inverter.SerialNumber]
 		inverters[i] = domain.InverterDetails{
@@ -224,7 +227,7 @@ func queryEnvoy(ctx context.Context, url string, token string, logger *slog.Logg
 	}
 	defer func() {
 		if closeErr := response.Body.Close(); closeErr != nil {
-			logger.Error("Failed to close response body", slog.Any("error", closeErr))
+			logger.ErrorContext(ctx, "Failed to close response body", slog.Any("error", closeErr))
 		}
 	}()
 

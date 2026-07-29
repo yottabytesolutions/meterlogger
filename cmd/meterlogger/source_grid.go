@@ -99,7 +99,7 @@ func runGridMeter(
 	repo := multisink.NewGridRepository(sinks, l)
 	defer func() {
 		if err := repo.Close(); err != nil {
-			l.Error("grid repo close error", slog.Any("error", err))
+			l.ErrorContext(ctx, "grid repo close error", slog.Any("error", err))
 		}
 	}()
 

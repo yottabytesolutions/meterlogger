@@ -2,7 +2,6 @@ package stdout
 
 import (
 	"context"
-	"io"
 	"log/slog"
 	"testing"
 	"time"
@@ -11,7 +10,7 @@ import (
 )
 
 func newTestStore() *Store {
-	return NewStdoutStore(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	return NewStdoutStore(slog.New(slog.DiscardHandler))
 }
 
 func TestStoreHeatTelegram(t *testing.T) {
@@ -54,7 +53,7 @@ func TestStoreEnvoySolarData(t *testing.T) {
 }
 
 func TestNewStdoutStore(t *testing.T) {
-	store := NewStdoutStore(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	store := NewStdoutStore(slog.New(slog.DiscardHandler))
 	if store == nil {
 		t.Error("NewStdoutStore() returned nil")
 	}

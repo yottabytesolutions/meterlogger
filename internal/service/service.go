@@ -12,6 +12,12 @@ package service
 
 import "context"
 
+// maxConsecutiveErrors is the number of consecutive read/store failures a
+// polling service tolerates before escalating via processKiller. Shared by
+// the heat, grid, and solar services. DucoLoggingService uses its own,
+// more tolerant threshold for read errors specifically.
+const maxConsecutiveErrors = 5
+
 // Service is the common shape for every per-source polling loop. Start runs
 // until ctx is cancelled. Implementations are constructed once per process
 // and own a single reader and a single repository.

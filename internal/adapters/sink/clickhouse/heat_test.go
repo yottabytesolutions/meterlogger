@@ -3,7 +3,6 @@ package clickhouse_test
 import (
 	"context"
 	"errors"
-	"io"
 	"log/slog"
 	"testing"
 	"time"
@@ -15,7 +14,7 @@ import (
 )
 
 func testLogger() *slog.Logger {
-	return slog.New(slog.NewTextHandler(io.Discard, nil))
+	return slog.New(slog.DiscardHandler)
 }
 
 func testDB(t *testing.T) (*clickhouse.DB, sqlmock.Sqlmock) {

@@ -228,11 +228,11 @@ func mapRFSensorStatus(dto rfSensorStatusDTO) domain.DucoRFSensorStatus {
 	}
 	// Apply device-type quirk correction.
 	switch strings.ToUpper(dto.DevType) {
-	case "UCRH":
+	case devTypeUCRH:
 		if result.Co2 > 0 && result.Rh == 0 {
 			result.Rh, result.Co2 = result.Co2, 0
 		}
-	case "UCCO2":
+	case devTypeUCCO2:
 		if result.Rh > 0 && result.Co2 == 0 {
 			result.Co2, result.Rh = result.Rh, 0
 		}

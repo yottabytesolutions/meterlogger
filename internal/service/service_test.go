@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"io"
 	"log/slog"
 	"strings"
 	"sync"
@@ -185,7 +184,7 @@ func (m *mockDucoRepo) Flush(_ context.Context) error {
 func (m *mockDucoRepo) Close() error { return nil }
 
 func testLogger() *slog.Logger {
-	return slog.New(slog.NewTextHandler(io.Discard, nil))
+	return slog.New(slog.DiscardHandler)
 }
 
 // --- HeatMeterLoggingService tests ---
@@ -676,22 +675,32 @@ func TestHeatMeterLoggingService_Start_ReadError(t *testing.T) {
 	repo := &mockHeatRepo{}
 	svc := NewHeatMeterLoggingService(reader, repo, 10*time.Millisecond, time.Hour, testLogger())
 
+	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
-		svc.Start(t.Context())
+		svc.Start(ctx)
 		close(done)
 	}()
 
-	// Service must call processKiller and exit after maxConsecutiveHeatErrors.
+	// Service must call processKiller after maxConsecutiveErrors, then block until
+	// ctx is cancelled (mirroring the real SIGTERM-then-ctx.Done() sequence).
+	select {
+	case <-killerCalled:
+	case <-time.After(time.Second):
+		t.Fatal("processKiller was not called after too many consecutive errors")
+	}
+
+	select {
+	case <-done:
+		t.Error("HeatMeterLoggingService returned before ctx was cancelled")
+	default:
+	}
+
+	cancel()
 	select {
 	case <-done:
 	case <-time.After(time.Second):
-		t.Error("HeatMeterLoggingService did not exit after too many consecutive errors")
-	}
-	select {
-	case <-killerCalled:
-	default:
-		t.Error("processKiller was not called")
+		t.Error("HeatMeterLoggingService did not exit after ctx cancellation")
 	}
 }
 
@@ -795,6 +804,44 @@ func TestSolarLoggingService_Start_StoreError(_ *testing.T) {
 	)
 }
 
+// Solar service escalates via processKiller after maxConsecutiveErrors
+// consecutive store failures, then blocks until ctx is cancelled.
+func TestSolarLoggingService_Start_StoreErrorEscalates(t *testing.T) {
+	killerCalled := make(chan struct{}, 1)
+	orig := processKiller
+	processKiller = func() {
+		select {
+		case killerCalled <- struct{}{}:
+		default:
+		}
+	}
+	defer func() { processKiller = orig }()
+
+	reader := &mockSolarReader{data: domain.EnvoySolarData{Watt: 100}}
+	repo := &mockSolarRepo{storeErr: errors.New("store failure")}
+	svc := NewSolarLoggingService(reader, repo, time.Millisecond, time.Hour, testLogger())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		svc.Start(ctx)
+		close(done)
+	}()
+
+	select {
+	case <-killerCalled:
+	case <-time.After(time.Second):
+		t.Fatal("processKiller was not called after too many consecutive store errors")
+	}
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Error("SolarLoggingService did not return after ctx cancellation")
+	}
+}
+
 func TestSolarLoggingService_Start_FlushError(_ *testing.T) {
 	withNoopKiller(
 		func() {
@@ -856,6 +903,51 @@ func TestGridLoggingService_Start_StoreError(_ *testing.T) {
 	)
 }
 
+// Grid service escalates via processKiller after maxConsecutiveErrors
+// consecutive store failures, then blocks until ctx is cancelled.
+func TestGridLoggingService_Start_StoreErrorEscalates(t *testing.T) {
+	killerCalled := make(chan struct{}, 1)
+	orig := processKiller
+	processKiller = func() {
+		select {
+		case killerCalled <- struct{}{}:
+		default:
+		}
+	}
+	defer func() { processKiller = orig }()
+
+	ch := make(chan domain.GridTelegram, maxConsecutiveErrors)
+	readerDone := make(chan struct{})
+	reader := &mockGridReader{done: readerDone}
+	repo := &mockGridRepo{storeErr: errors.New("store failure")}
+	svc := NewGridLoggingService(reader, repo, time.Hour, ch, testLogger())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		svc.Start(ctx)
+		close(done)
+	}()
+
+	for range maxConsecutiveErrors {
+		ch <- domain.GridTelegram{}
+	}
+
+	select {
+	case <-killerCalled:
+	case <-time.After(time.Second):
+		t.Fatal("processKiller was not called after too many consecutive store errors")
+	}
+
+	cancel()
+	close(readerDone)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Error("GridLoggingService did not return after ctx cancellation")
+	}
+}
+
 func TestGridLoggingService_Start_FlushError(_ *testing.T) {
 	withNoopKiller(
 		func() {
@@ -878,75 +970,107 @@ func TestGridLoggingService_Start_FlushError(_ *testing.T) {
 }
 
 func TestDucoLoggingService_Start_FlushError(t *testing.T) {
-	withNoopKiller(
-		func() {
-			reader := &mockDucoReader{}
-			repo := &mockDucoRepo{flushErr: errors.New("flush failure")}
-			svc := NewDucoLoggingService(reader, repo, time.Hour, 10*time.Millisecond, []int{}, testLogger())
+	killerCalled := make(chan struct{}, 1)
+	orig := processKiller
+	processKiller = func() { killerCalled <- struct{}{} }
+	defer func() { processKiller = orig }()
 
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-			done := make(chan struct{})
-			go func() {
-				svc.Start(ctx)
-				close(done)
-			}()
+	reader := &mockDucoReader{}
+	repo := &mockDucoRepo{flushErr: errors.New("flush failure")}
+	svc := NewDucoLoggingService(reader, repo, time.Hour, 10*time.Millisecond, []int{}, testLogger())
 
-			select {
-			case <-done:
-			case <-time.After(2 * time.Second):
-				t.Error("DucoLoggingService did not return after flush error")
-			}
-		},
-	)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		svc.Start(ctx)
+		close(done)
+	}()
+
+	select {
+	case <-killerCalled:
+	case <-time.After(2 * time.Second):
+		t.Fatal("processKiller was not called after flush error")
+	}
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Error("DucoLoggingService did not return after ctx cancellation")
+	}
+}
+
+// withSafeKillerSignal replaces processKiller with a variant that signals
+// killerCalled (non-blocking, so repeated calls before the service actually
+// stops never deadlock the service loop) and restores the original after fn
+// returns.
+func withSafeKillerSignal(fn func(killerCalled <-chan struct{})) {
+	killerCalled := make(chan struct{}, 1)
+	orig := processKiller
+	processKiller = func() {
+		select {
+		case killerCalled <- struct{}{}:
+		default:
+		}
+	}
+	defer func() { processKiller = orig }()
+	fn(killerCalled)
 }
 
 func TestDucoLoggingService_Start_StoreBoxError(t *testing.T) {
-	withNoopKiller(
-		func() {
-			reader := &mockDucoReader{boxStatus: domain.DucoBoxStatus{}}
-			repo := &mockDucoRepo{storeBoxErr: errors.New("store box failure")}
-			svc := NewDucoLoggingService(reader, repo, 10*time.Millisecond, time.Hour, []int{}, testLogger())
+	withSafeKillerSignal(func(killerCalled <-chan struct{}) {
+		reader := &mockDucoReader{boxStatus: domain.DucoBoxStatus{}}
+		repo := &mockDucoRepo{storeBoxErr: errors.New("store box failure")}
+		svc := NewDucoLoggingService(reader, repo, 10*time.Millisecond, time.Hour, []int{}, testLogger())
 
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-			done := make(chan struct{})
-			go func() {
-				svc.Start(ctx)
-				close(done)
-			}()
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan struct{})
+		go func() {
+			svc.Start(ctx)
+			close(done)
+		}()
 
-			select {
-			case <-done:
-			case <-time.After(2 * time.Second):
-				t.Error("DucoLoggingService did not return after store box error")
-			}
-		},
-	)
+		select {
+		case <-killerCalled:
+		case <-time.After(2 * time.Second):
+			t.Fatal("processKiller was not called after store box error")
+		}
+
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			t.Error("DucoLoggingService did not return after ctx cancellation")
+		}
+	})
 }
 
 func TestDucoLoggingService_Start_TooManyBoxErrors(t *testing.T) {
-	withNoopKiller(
-		func() {
-			reader := &mockDucoReader{boxErr: errors.New("persistent failure")}
-			repo := &mockDucoRepo{}
-			svc := NewDucoLoggingService(reader, repo, time.Millisecond, time.Hour, []int{}, testLogger())
+	withSafeKillerSignal(func(killerCalled <-chan struct{}) {
+		reader := &mockDucoReader{boxErr: errors.New("persistent failure")}
+		repo := &mockDucoRepo{}
+		svc := NewDucoLoggingService(reader, repo, time.Millisecond, time.Hour, []int{}, testLogger())
 
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-			done := make(chan struct{})
-			go func() {
-				svc.Start(ctx)
-				close(done)
-			}()
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan struct{})
+		go func() {
+			svc.Start(ctx)
+			close(done)
+		}()
 
-			select {
-			case <-done:
-			case <-time.After(5 * time.Second):
-				t.Error("DucoLoggingService did not return after too many errors")
-			}
-		},
-	)
+		select {
+		case <-killerCalled:
+		case <-time.After(5 * time.Second):
+			t.Fatal("processKiller was not called after too many errors")
+		}
+
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			t.Error("DucoLoggingService did not return after ctx cancellation")
+		}
+	})
 }
 
 // --- WithMetrics tests ---
@@ -1028,29 +1152,33 @@ func TestHeatMeterLoggingService_Start_MetricsIncremented(t *testing.T) {
 
 // TestDucoLoggingService_NodeStoreError exercises the node store error path in runReadAndStore.
 func TestDucoLoggingService_NodeStoreError(t *testing.T) {
-	withNoopKiller(
-		func() {
-			reader := &mockDucoReader{
-				boxStatus: domain.DucoBoxStatus{},
-				nodeData:  domain.DucoNodeBoxStatus{},
-			}
-			repo := &mockDucoRepo{storeNodeErr: errors.New("node store failure")}
-			svc := NewDucoLoggingService(reader, repo, 10*time.Millisecond, time.Hour, []int{1}, testLogger())
+	withSafeKillerSignal(func(killerCalled <-chan struct{}) {
+		reader := &mockDucoReader{
+			boxStatus: domain.DucoBoxStatus{},
+			nodeData:  domain.DucoNodeBoxStatus{},
+		}
+		repo := &mockDucoRepo{storeNodeErr: errors.New("node store failure")}
+		svc := NewDucoLoggingService(reader, repo, 10*time.Millisecond, time.Hour, []int{1}, testLogger())
 
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-			done := make(chan struct{})
-			go func() {
-				svc.Start(ctx)
-				close(done)
-			}()
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan struct{})
+		go func() {
+			svc.Start(ctx)
+			close(done)
+		}()
 
-			select {
-			case <-done:
-				// processKiller was called - expected behaviour on node store error.
-			case <-time.After(2 * time.Second):
-				t.Error("DucoLoggingService did not return after node store error")
-			}
-		},
-	)
+		select {
+		case <-killerCalled:
+			// processKiller was called - expected behaviour on node store error.
+		case <-time.After(2 * time.Second):
+			t.Fatal("processKiller was not called after node store error")
+		}
+
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			t.Error("DucoLoggingService did not return after ctx cancellation")
+		}
+	})
 }

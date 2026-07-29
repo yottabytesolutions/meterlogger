@@ -109,9 +109,9 @@ func (s *Server) Start(ctx context.Context) (string, error) {
 	}
 
 	s.wg.Go(func() {
-		s.logger.Info("health server started", slog.String("addr", addr))
+		s.logger.InfoContext(ctx, "health server started", slog.String("addr", addr))
 		if serveErr := srv.Serve(ln); serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
-			s.logger.Error("health server error", slog.Any("error", serveErr))
+			s.logger.ErrorContext(ctx, "health server error", slog.Any("error", serveErr))
 		}
 	})
 
@@ -120,7 +120,7 @@ func (s *Server) Start(ctx context.Context) (string, error) {
 		shutCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 		defer cancel()
 		if shutErr := srv.Shutdown(shutCtx); shutErr != nil {
-			s.logger.Warn("health server shutdown error", slog.Any("error", shutErr))
+			s.logger.WarnContext(shutCtx, "health server shutdown error", slog.Any("error", shutErr))
 		}
 	})
 
@@ -203,7 +203,8 @@ func (s *Server) handleLiveness(w http.ResponseWriter, r *http.Request) {
 	if len(stuck) > 0 {
 		statusStr = "stuck"
 		statusCode = http.StatusServiceUnavailable
-		s.logger.Error(
+		s.logger.ErrorContext(
+			r.Context(),
 			"liveness failing: checker(s) unhealthy beyond threshold",
 			slog.Any("stuck", stuck),
 			slog.Duration("threshold", s.livenessThreshold),
