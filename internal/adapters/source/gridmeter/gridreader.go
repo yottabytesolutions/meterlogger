@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -23,12 +24,21 @@ import (
 )
 
 const (
-	gridBaudRate    = 115200
-	gridReadTimeout = 1 * time.Second
-	gridDataBits    = 8
-	crc16Polynomial = 0xA001
-	milliToUnit     = 1000
+	gridBaudRate      = 115200
+	gridReadTimeout   = 1 * time.Second
+	gridDataBits      = 8
+	crc16Polynomial   = 0xA001
+	milliToUnit       = 1000
+	gridMeterTimezone = "Europe/Amsterdam"
 )
+
+// loadGridMeterLocation loads the grid meter's timezone once and caches it,
+// instead of re-parsing tzdata on every telegram.
+//
+//nolint:gochecknoglobals // sync.OnceValues cache, same pattern as enphase's shared httpClient
+var loadGridMeterLocation = sync.OnceValues(func() (*time.Location, error) {
+	return time.LoadLocation(gridMeterTimezone)
+})
 
 type GridReader struct {
 	logger        *slog.Logger
@@ -67,7 +77,7 @@ func (gr *GridReader) ReadGridTelegrams(ctx context.Context) error {
 		}
 		defer func() {
 			if closeErr := port.Close(); closeErr != nil {
-				gr.logger.Error("Failed to close serial port", slog.Any("error", closeErr))
+				gr.logger.ErrorContext(ctx, "Failed to close serial port", slog.Any("error", closeErr))
 			}
 		}()
 		src = port
@@ -201,7 +211,7 @@ func parseTelegram(message string) (domain.GridTelegram, error) {
 		return domain.GridTelegram{}, errors.New("invalid timestamp format")
 	}
 	timestampStr = timestampStr[:12]
-	location, err := time.LoadLocation("Europe/Amsterdam")
+	location, err := loadGridMeterLocation()
 	if err != nil {
 		return domain.GridTelegram{}, err
 	}

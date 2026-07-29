@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -17,10 +16,17 @@ import (
 const (
 	testProductionPath = "/production.json"
 	testInventoryPath  = "/inventory.json"
+
+	testProductionTypeInverters = "inverters"
+	testDeviceTypePCU           = "PCU"
+	testEnvoyUser               = "user"
+	testEnvoyPass               = "pass"
+	testEnvoyURL                = "http://localhost"
+	testEnvoySerial             = "serial"
 )
 
 func testLogger() *slog.Logger {
-	return slog.New(slog.NewTextHandler(io.Discard, nil))
+	return slog.New(slog.DiscardHandler)
 }
 
 // makeTestToken creates a JWT token with MapClaims (not StandardClaims)
@@ -32,7 +38,7 @@ func makeTestToken() *jwt.Token {
 }
 
 func TestNewEnvoyReader(t *testing.T) {
-	reader := NewEnvoyReader("http://localhost", "user", "pass", "serial", testLogger())
+	reader := NewEnvoyReader(testEnvoyURL, testEnvoyUser, testEnvoyPass, testEnvoySerial, testLogger())
 	if reader == nil {
 		t.Error("NewEnvoyReader returned nil")
 	}
@@ -69,7 +75,7 @@ func TestUnmarshalInverterData_Invalid(t *testing.T) {
 func TestUnmarshalMeterReading_Valid(t *testing.T) {
 	data := MeterReading{
 		Production: []Production{
-			{Type: "inverters", ActiveCount: 10, WNow: 250.0, WhLifetime: 5000.0},
+			{Type: testProductionTypeInverters, ActiveCount: 10, WNow: 250.0, WhLifetime: 5000.0},
 		},
 	}
 	body, err := json.Marshal(data)
@@ -84,7 +90,7 @@ func TestUnmarshalMeterReading_Valid(t *testing.T) {
 	if len(result.Production) != 1 {
 		t.Errorf("Production count = %d, want 1", len(result.Production))
 	}
-	if result.Production[0].Type != "inverters" {
+	if result.Production[0].Type != testProductionTypeInverters {
 		t.Errorf("Type = %q, want inverters", result.Production[0].Type)
 	}
 }
@@ -99,7 +105,7 @@ func TestUnmarshalMeterReading_Invalid(t *testing.T) {
 func TestUnmarshalInventoryData_Valid(t *testing.T) {
 	data := InventoryData{
 		{
-			Type: "PCU",
+			Type: testDeviceTypePCU,
 			Devices: []Device{
 				{SerialNum: "dev1", Producing: true},
 			},
@@ -130,12 +136,15 @@ func TestReadEnvoySolarData_Success(t *testing.T) {
 	// Set up mock HTTP responses
 	meterData := MeterReading{
 		Production: []Production{
-			{Type: "inverters", ActiveCount: 2, WNow: 300.0, WhLifetime: 10000.0, ReadingTime: int(time.Now().Unix())},
+			{
+				Type: testProductionTypeInverters, ActiveCount: 2, WNow: 300.0,
+				WhLifetime: 10000.0, ReadingTime: int(time.Now().Unix()),
+			},
 		},
 	}
 	inventoryData := InventoryData{
 		{
-			Type: "PCU",
+			Type: testDeviceTypePCU,
 			Devices: []Device{
 				{SerialNum: "inv001", Producing: true, Operating: true, Communicating: true, Phase: "A", Chaneid: 1},
 				{SerialNum: "inv002", Producing: true, Operating: true, Communicating: true, Phase: "B", Chaneid: 2},
@@ -177,8 +186,8 @@ func TestReadEnvoySolarData_Success(t *testing.T) {
 
 	reader := &EnvoyReader{
 		envoyURL:    server.URL,
-		envoyUser:   "user",
-		envoyPass:   "pass",
+		envoyUser:   testEnvoyUser,
+		envoyPass:   testEnvoyPass,
 		envoySerial: "serial123",
 		logger:      testLogger(),
 		token:       makeTestToken(),
@@ -280,7 +289,7 @@ func TestReadEnvoySolarData_MeterDataError(t *testing.T) {
 func TestReadEnvoySolarData_InventoryError(t *testing.T) {
 	meterData := MeterReading{
 		Production: []Production{
-			{Type: "inverters", ActiveCount: 1, WNow: 100},
+			{Type: testProductionTypeInverters, ActiveCount: 1, WNow: 100},
 		},
 	}
 	meterBody, _ := json.Marshal(meterData)
@@ -318,7 +327,7 @@ func TestReadEnvoySolarData_InventoryError(t *testing.T) {
 func TestReadEnvoySolarData_InverterDataError(t *testing.T) {
 	meterData := MeterReading{
 		Production: []Production{
-			{Type: "inverters", ActiveCount: 1, WNow: 100},
+			{Type: testProductionTypeInverters, ActiveCount: 1, WNow: 100},
 		},
 	}
 	inventoryData := InventoryData{}
@@ -381,7 +390,7 @@ func TestQueryEnvoy_InvalidJSON(t *testing.T) {
 
 func TestEnsureToken_WithExistingToken(t *testing.T) {
 	reader := &EnvoyReader{
-		envoyURL: "http://localhost",
+		envoyURL: testEnvoyURL,
 		logger:   testLogger(),
 		token:    makeTestToken(),
 	}
@@ -475,7 +484,7 @@ func TestEnsureToken_WithValidStandardClaims(t *testing.T) {
 	token, _, _ := new(jwt.Parser).ParseUnverified(tokenStr, &jwt.RegisteredClaims{})
 
 	reader := &EnvoyReader{
-		envoyURL: "http://localhost",
+		envoyURL: testEnvoyURL,
 		logger:   testLogger(),
 		token:    token,
 	}

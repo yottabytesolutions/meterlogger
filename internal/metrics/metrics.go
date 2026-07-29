@@ -6,6 +6,11 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
+const (
+	namespace   = "meterlogger"
+	labelSource = "source"
+)
+
 // Metrics holds all Prometheus metrics for meterlogger.
 type Metrics struct {
 	ReadsTotal       *prometheus.CounterVec
@@ -27,42 +32,42 @@ func New() *Metrics {
 
 		ReadsTotal: f.NewCounterVec(
 			prometheus.CounterOpts{
-				Namespace: "meterlogger",
+				Namespace: namespace,
 				Name:      "reads_total",
 				Help:      "Total number of successful reads per source.",
-			}, []string{"source"},
+			}, []string{labelSource},
 		),
 
 		ReadErrorsTotal: f.NewCounterVec(
 			prometheus.CounterOpts{
-				Namespace: "meterlogger",
+				Namespace: namespace,
 				Name:      "read_errors_total",
 				Help:      "Total number of read errors per source.",
-			}, []string{"source"},
+			}, []string{labelSource},
 		),
 
 		WriteErrorsTotal: f.NewCounterVec(
 			prometheus.CounterOpts{
-				Namespace: "meterlogger",
+				Namespace: namespace,
 				Name:      "write_errors_total",
 				Help:      "Total number of write errors per sink and source.",
-			}, []string{"sink", "source"},
+			}, []string{"sink", labelSource},
 		),
 
 		WritesTotal: f.NewCounterVec(
 			prometheus.CounterOpts{
-				Namespace: "meterlogger",
+				Namespace: namespace,
 				Name:      "writes_total",
 				Help:      "Total number of successful writes per sink and source.",
-			}, []string{"sink", "source"},
+			}, []string{"sink", labelSource},
 		),
 
 		LastReadTime: f.NewGaugeVec(
 			prometheus.GaugeOpts{
-				Namespace: "meterlogger",
+				Namespace: namespace,
 				Name:      "last_read_timestamp_seconds",
 				Help:      "Unix timestamp of the last successful read per source.",
-			}, []string{"source"},
+			}, []string{labelSource},
 		),
 	}
 }

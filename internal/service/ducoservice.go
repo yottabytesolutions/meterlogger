@@ -65,6 +65,7 @@ func (s *DucoLoggingService) Start(ctx context.Context) {
 			if err := s.sink.Flush(ctx); err != nil {
 				s.logger.ErrorContext(ctx, "error flushing data", slog.Any("error", err))
 				processKiller()
+				<-ctx.Done()
 				return
 			}
 		case <-ticker.C:
@@ -72,6 +73,7 @@ func (s *DucoLoggingService) Start(ctx context.Context) {
 				if errorCounter >= maxErrorCount {
 					s.logger.ErrorContext(ctx, "too many errors, stopping service")
 					processKiller()
+					<-ctx.Done()
 					return
 				}
 				errorCounter++

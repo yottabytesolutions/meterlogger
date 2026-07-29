@@ -2,7 +2,6 @@ package tdengine_test
 
 import (
 	"context"
-	"io"
 	"log/slog"
 	"testing"
 	"time"
@@ -14,7 +13,7 @@ import (
 )
 
 func testLogger() *slog.Logger {
-	return slog.New(slog.NewTextHandler(io.Discard, nil))
+	return slog.New(slog.DiscardHandler)
 }
 
 func testDB(t *testing.T) (*tdengine.DB, sqlmock.Sqlmock) {

@@ -3,7 +3,6 @@ package healthserver_test
 import (
 	"context"
 	"errors"
-	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -16,10 +15,13 @@ import (
 	"github.com/yottabytesolutions/meterlogger/internal/healthserver"
 )
 
-const testThreshold = 90 * time.Second
+const (
+	testThreshold   = 90 * time.Second
+	testCheckerName = "questdb"
+)
 
 func testLogger() *slog.Logger {
-	return slog.New(slog.NewTextHandler(io.Discard, nil))
+	return slog.New(slog.DiscardHandler)
 }
 
 type healthyChecker struct{ name string }
@@ -98,7 +100,7 @@ func TestLiveness_TransientFailureStaysGreen(t *testing.T) {
 	now := time.Now()
 	clock := func() time.Time { return now }
 	srv := newServerWithClock(t, testThreshold, clock)
-	srv.Register(&unhealthyChecker{name: "questdb"})
+	srv.Register(&unhealthyChecker{name: testCheckerName})
 
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, newGetRequest(t, "/healthz"))
@@ -114,7 +116,7 @@ func TestLiveness_SustainedFailureTrips(t *testing.T) {
 	current := time.Now()
 	clock := func() time.Time { return current }
 	srv := newServerWithClock(t, testThreshold, clock)
-	srv.Register(&unhealthyChecker{name: "questdb"})
+	srv.Register(&unhealthyChecker{name: testCheckerName})
 
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, newGetRequest(t, "/healthz"))
@@ -132,7 +134,7 @@ func TestLiveness_SustainedFailureTrips(t *testing.T) {
 	if !strings.Contains(w.Body.String(), `"status":"stuck"`) {
 		t.Errorf("body should contain stuck: %s", w.Body.String())
 	}
-	if !strings.Contains(w.Body.String(), "questdb") {
+	if !strings.Contains(w.Body.String(), testCheckerName) {
 		t.Errorf("body should name failing checker: %s", w.Body.String())
 	}
 }
@@ -145,7 +147,7 @@ func TestLiveness_RecoveryClearsState(t *testing.T) {
 	clock := func() time.Time { return current }
 	srv := newServerWithClock(t, testThreshold, clock)
 
-	flaky := &flakyChecker{name: "questdb"}
+	flaky := &flakyChecker{name: testCheckerName}
 	flaky.unhealthy = true
 	srv.Register(flaky)
 
@@ -169,7 +171,7 @@ func TestLiveness_RecoveryClearsState(t *testing.T) {
 // does not wait for the threshold; a single failure flips it to 503.
 func TestReadiness_FlipsImmediately(t *testing.T) {
 	srv := healthserver.New(":0", testLogger(), prometheus.NewRegistry(), testThreshold)
-	srv.Register(&unhealthyChecker{name: "questdb"})
+	srv.Register(&unhealthyChecker{name: testCheckerName})
 
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, newGetRequest(t, "/readyz"))

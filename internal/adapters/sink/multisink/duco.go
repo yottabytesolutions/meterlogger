@@ -2,7 +2,6 @@ package multisink
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 
 	"github.com/yottabytesolutions/meterlogger/internal/domain"
@@ -22,50 +21,34 @@ func NewDucoRepository(sinks []domain.DucoRepository, logger *slog.Logger) *Duco
 	return &DucoRepository{sinks: sinks, logger: logger}
 }
 
-// StoreBoxStatus writes to all sinks and returns a combined error.
+// StoreBoxStatus writes to all sinks concurrently and returns a combined error.
 func (r *DucoRepository) StoreBoxStatus(ctx context.Context, b domain.DucoBoxStatus) error {
-	var errs []error
-	for _, s := range r.sinks {
-		if err := s.StoreBoxStatus(ctx, b); err != nil {
-			r.logger.ErrorContext(ctx, "multisink: duco box store failed", slog.Any("error", err))
-			errs = append(errs, err)
-		}
-	}
-	return errors.Join(errs...)
+	return fanOut(ctx, r.sinks, r.logger, "multisink: duco box store failed",
+		func(ctx context.Context, s domain.DucoRepository) error {
+			return s.StoreBoxStatus(ctx, b)
+		})
 }
 
-// StoreNodeData writes to all sinks and returns a combined error.
+// StoreNodeData writes to all sinks concurrently and returns a combined error.
 func (r *DucoRepository) StoreNodeData(ctx context.Context, nodeData domain.DucoNodeStatus) error {
-	var errs []error
-	for _, s := range r.sinks {
-		if err := s.StoreNodeData(ctx, nodeData); err != nil {
-			r.logger.ErrorContext(ctx, "multisink: duco node store failed", slog.Any("error", err))
-			errs = append(errs, err)
-		}
-	}
-	return errors.Join(errs...)
+	return fanOut(ctx, r.sinks, r.logger, "multisink: duco node store failed",
+		func(ctx context.Context, s domain.DucoRepository) error {
+			return s.StoreNodeData(ctx, nodeData)
+		})
 }
 
-// Flush flushes all sinks and returns a combined error.
+// Flush flushes all sinks concurrently and returns a combined error.
 func (r *DucoRepository) Flush(ctx context.Context) error {
-	var errs []error
-	for _, s := range r.sinks {
-		if err := s.Flush(ctx); err != nil {
-			r.logger.ErrorContext(ctx, "multisink: duco flush failed", slog.Any("error", err))
-			errs = append(errs, err)
-		}
-	}
-	return errors.Join(errs...)
+	return fanOut(ctx, r.sinks, r.logger, "multisink: duco flush failed",
+		func(ctx context.Context, s domain.DucoRepository) error {
+			return s.Flush(ctx)
+		})
 }
 
-// Close closes all sinks and returns a combined error.
+// Close closes all sinks concurrently and returns a combined error.
 func (r *DucoRepository) Close() error {
-	var errs []error
-	for _, s := range r.sinks {
-		if err := s.Close(); err != nil {
-			r.logger.Error("multisink: duco close failed", slog.Any("error", err))
-			errs = append(errs, err)
-		}
-	}
-	return errors.Join(errs...)
+	return fanOutClose(r.sinks, r.logger, "multisink: duco close failed",
+		func(s domain.DucoRepository) error {
+			return s.Close()
+		})
 }

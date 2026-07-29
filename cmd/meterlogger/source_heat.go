@@ -99,7 +99,7 @@ func runHeatMeter(
 	repo := multisink.NewHeatRepository(sinks, l)
 	defer func() {
 		if err := repo.Close(); err != nil {
-			l.Error("heat repo close error", slog.Any("error", err))
+			l.ErrorContext(ctx, "heat repo close error", slog.Any("error", err))
 		}
 	}()
 

@@ -3,7 +3,6 @@ package schemastore_test
 import (
 	"context"
 	"errors"
-	"io"
 	"log/slog"
 	"testing"
 
@@ -13,8 +12,17 @@ import (
 )
 
 func testLogger() *slog.Logger {
-	return slog.New(slog.NewTextHandler(io.Discard, nil))
+	return slog.New(slog.DiscardHandler)
 }
+
+// Shared test fixtures for migrator tests across clickhouse_test.go, sql_test.go, and tdengine_test.go.
+const (
+	versionColumn               = "version"
+	descriptionAlreadyApplied   = "already applied"
+	descriptionCreateTable      = "create table"
+	descriptionFailingMigration = "failing migration"
+	descriptionShouldNotRun     = "should not run"
+)
 
 func TestSQLMigrator_NoOutstandingMigrations(t *testing.T) {
 	db, mock, err := sqlmock.New()
@@ -27,13 +35,13 @@ func TestSQLMigrator_NoOutstandingMigrations(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectQuery("SELECT COALESCE").
 		WithArgs("timescaledb_heat").
-		WillReturnRows(sqlmock.NewRows([]string{"version"}).AddRow(1))
+		WillReturnRows(sqlmock.NewRows([]string{versionColumn}).AddRow(1))
 
 	m := schemastore.NewSQLMigrator(db, schemastore.DollarPlaceholder, testLogger())
 
 	mg := schemastore.Migration{
 		Version:     1,
-		Description: "already applied",
+		Description: descriptionAlreadyApplied,
 		Up: func(_ context.Context) error {
 			t.Error("should not be called")
 			return nil
@@ -60,7 +68,7 @@ func TestSQLMigrator_AppliesNewMigration(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectQuery("SELECT COALESCE").
 		WithArgs("timescaledb_heat").
-		WillReturnRows(sqlmock.NewRows([]string{"version"}).AddRow(0))
+		WillReturnRows(sqlmock.NewRows([]string{versionColumn}).AddRow(0))
 	mock.ExpectExec("CREATE TABLE").
 		WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectExec("INSERT INTO meterlogger_schema_migrations").
@@ -71,7 +79,7 @@ func TestSQLMigrator_AppliesNewMigration(t *testing.T) {
 	capturedDB := db
 	mg := schemastore.Migration{
 		Version:     1,
-		Description: "create table",
+		Description: descriptionCreateTable,
 		Up: func(ctx context.Context) error {
 			called = true
 			_, execErr := capturedDB.ExecContext(ctx, "CREATE TABLE foo(id INT)")
@@ -103,19 +111,19 @@ func TestSQLMigrator_UpErrorStopsFurtherMigrations(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectQuery("SELECT COALESCE").
 		WithArgs("timescaledb_heat").
-		WillReturnRows(sqlmock.NewRows([]string{"version"}).AddRow(0))
+		WillReturnRows(sqlmock.NewRows([]string{versionColumn}).AddRow(0))
 
 	upErr := errors.New("migration failed")
 	secondCalled := false
 	migrations := []schemastore.Migration{
 		{
 			Version:     1,
-			Description: "failing migration",
+			Description: descriptionFailingMigration,
 			Up:          func(_ context.Context) error { return upErr },
 		},
 		{
 			Version:     2,
-			Description: "should not run",
+			Description: descriptionShouldNotRun,
 			Up: func(_ context.Context) error {
 				secondCalled = true
 				return nil
@@ -147,14 +155,14 @@ func TestSQLMigrator_QuestionPlaceholder(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectQuery("SELECT COALESCE").
 		WithArgs("mysql_heat").
-		WillReturnRows(sqlmock.NewRows([]string{"version"}).AddRow(0))
+		WillReturnRows(sqlmock.NewRows([]string{versionColumn}).AddRow(0))
 	mock.ExpectExec("INSERT INTO meterlogger_schema_migrations").
 		WithArgs("mysql_heat", 1).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
 	mg := schemastore.Migration{
 		Version:     1,
-		Description: "create table",
+		Description: descriptionCreateTable,
 		Up:          func(_ context.Context) error { return nil },
 	}
 

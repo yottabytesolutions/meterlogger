@@ -14,6 +14,9 @@ import (
 	"go.bug.st/serial"
 )
 
+// testPort is a placeholder serial port name used across reader tests.
+const testPort = "test"
+
 // zeroThenDataPort returns n=0 for the first `zeroReads` reads, then returns data.
 type zeroThenDataPort struct {
 	mockSerialPort
@@ -140,7 +143,7 @@ func TestReadWithRetry_ZeroRead_ThenData(t *testing.T) {
 		zeroReads:      1,
 	}
 	r := &Reader{
-		port:       "test",
+		port:       testPort,
 		serialPort: port,
 		logger:     testLogger(),
 		initDelay:  0,
@@ -163,7 +166,7 @@ func TestReadWithRetry_ZeroRead_ContextCancelled(t *testing.T) {
 		zeroReads:      1000,
 	}
 	r := &Reader{
-		port:       "test",
+		port:       testPort,
 		serialPort: alwaysZero,
 		logger:     testLogger(),
 		initDelay:  0,
@@ -188,7 +191,7 @@ func TestWriteWithRetry_EINTRRetry(t *testing.T) {
 		mockSerialPort: mockSerialPort{readData: []byte{0xE5}},
 	}
 	r := &Reader{
-		port:       "test",
+		port:       testPort,
 		serialPort: port,
 		logger:     testLogger(),
 	}
@@ -207,7 +210,7 @@ func TestDrainWithRetry_EINTRRetry(t *testing.T) {
 		mockSerialPort: mockSerialPort{readData: []byte{0xE5}},
 	}
 	r := &Reader{
-		port:       "test",
+		port:       testPort,
 		serialPort: port,
 		logger:     testLogger(),
 	}
@@ -225,7 +228,7 @@ func TestReadWithRetry_EINTRRetry(t *testing.T) {
 		mockSerialPort: mockSerialPort{readData: []byte{0xE5}},
 	}
 	r := &Reader{
-		port:       "test",
+		port:       testPort,
 		serialPort: port,
 		logger:     testLogger(),
 	}
@@ -245,7 +248,7 @@ func TestNewReaderFromPort_NonEOFInitError(t *testing.T) {
 	port := &mockSerialPort{readErr: nonEOFErr}
 	l := testLogger()
 	mode := &serial.Mode{BaudRate: mbusBaudRate}
-	r := newReaderFromPort(context.Background(), "test", 0x01, l, mode, port)
+	r := newReaderFromPort(context.Background(), testPort, 0x01, l, mode, port)
 	if r == nil {
 		t.Error("newReaderFromPort should return a reader even when init fails with non-EOF error")
 	}

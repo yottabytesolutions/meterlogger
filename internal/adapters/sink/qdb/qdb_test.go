@@ -3,7 +3,6 @@ package qdb
 import (
 	"context"
 	"errors"
-	"io"
 	"log/slog"
 	"math/big"
 	"testing"
@@ -54,7 +53,7 @@ func newTestDBClient() *DBClient {
 }
 
 func testLogger() *slog.Logger {
-	return slog.New(slog.NewTextHandler(io.Discard, nil))
+	return slog.New(slog.DiscardHandler)
 }
 
 // --- HeatTelegramStore tests ---

@@ -3,7 +3,6 @@ package ducobox
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -13,12 +12,12 @@ import (
 )
 
 func testLogger() *slog.Logger {
-	return slog.New(slog.NewTextHandler(io.Discard, nil))
+	return slog.New(slog.DiscardHandler)
 }
 
 func TestParseDucoNodeStatus_Box(t *testing.T) {
 	node := nodeBoxStatusDTO{
-		baseNodeStatusDTO: baseNodeStatusDTO{Node: 1, DevType: "BOX"},
+		baseNodeStatusDTO: baseNodeStatusDTO{Node: 1, DevType: devTypeBox},
 		Trgt:              100,
 		Actl:              80,
 		Rh:                55.5,
@@ -37,7 +36,7 @@ func TestParseDucoNodeStatus_Box(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected DucoNodeBoxStatus, got %T", result)
 	}
-	if parsed.DevType != "BOX" {
+	if parsed.DevType != devTypeBox {
 		t.Errorf("DevType = %q, want BOX", parsed.DevType)
 	}
 	if parsed.Rh != 55.5 {
@@ -63,7 +62,7 @@ func TestParseDucoNodeStatus_BoxLowercase(t *testing.T) {
 
 func TestParseDucoNodeStatus_VLV(t *testing.T) {
 	node := nodeBoxValveStatusDTO{
-		baseNodeStatusDTO: baseNodeStatusDTO{Node: 2, DevType: "VLV"},
+		baseNodeStatusDTO: baseNodeStatusDTO{Node: 2, DevType: devTypeValve},
 		Trgt:              50,
 		Actl:              45,
 	}
@@ -81,14 +80,14 @@ func TestParseDucoNodeStatus_VLV(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected DucoNodeBoxValveStatus, got %T", result)
 	}
-	if parsed.DevType != "VLV" {
+	if parsed.DevType != devTypeValve {
 		t.Errorf("DevType = %q, want VLV", parsed.DevType)
 	}
 }
 
 func TestParseDucoNodeStatus_UCCO2(t *testing.T) {
 	node := rfSensorStatusDTO{
-		baseNodeStatusDTO: baseNodeStatusDTO{Node: 3, DevType: "UCCO2"},
+		baseNodeStatusDTO: baseNodeStatusDTO{Node: 3, DevType: devTypeUCCO2},
 		Co2:               800.0,
 		Rh:                0,
 	}
@@ -113,7 +112,7 @@ func TestParseDucoNodeStatus_UCCO2(t *testing.T) {
 
 func TestParseDucoNodeStatus_UCRH(t *testing.T) {
 	node := rfSensorStatusDTO{
-		baseNodeStatusDTO: baseNodeStatusDTO{Node: 4, DevType: "UCRH"},
+		baseNodeStatusDTO: baseNodeStatusDTO{Node: 4, DevType: devTypeUCRH},
 		Co2:               0,
 		Rh:                65.0,
 	}
@@ -259,7 +258,7 @@ func TestDucoReader_ReadBoxStatus_InvalidJSON(t *testing.T) {
 
 func TestDucoReader_ReadNodeStatus_Success(t *testing.T) {
 	node := nodeBoxStatusDTO{
-		baseNodeStatusDTO: baseNodeStatusDTO{Node: 1, DevType: "BOX"},
+		baseNodeStatusDTO: baseNodeStatusDTO{Node: 1, DevType: devTypeBox},
 		Trgt:              100,
 	}
 	body, _ := json.Marshal(node)

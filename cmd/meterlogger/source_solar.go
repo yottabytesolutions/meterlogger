@@ -99,7 +99,7 @@ func runSolarMeter(
 	repo := multisink.NewSolarRepository(sinks, l)
 	defer func() {
 		if err := repo.Close(); err != nil {
-			l.Error("solar repo close error", slog.Any("error", err))
+			l.ErrorContext(ctx, "solar repo close error", slog.Any("error", err))
 		}
 	}()
 

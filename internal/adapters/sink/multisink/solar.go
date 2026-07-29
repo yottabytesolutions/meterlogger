@@ -2,7 +2,6 @@ package multisink
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 
 	"github.com/yottabytesolutions/meterlogger/internal/domain"
@@ -22,38 +21,26 @@ func NewSolarRepository(sinks []domain.EnvoySolarRepository, logger *slog.Logger
 	return &SolarRepository{sinks: sinks, logger: logger}
 }
 
-// StoreEnvoySolarData writes to all sinks and returns a combined error.
+// StoreEnvoySolarData writes to all sinks concurrently and returns a combined error.
 func (r *SolarRepository) StoreEnvoySolarData(ctx context.Context, d domain.EnvoySolarData) error {
-	var errs []error
-	for _, s := range r.sinks {
-		if err := s.StoreEnvoySolarData(ctx, d); err != nil {
-			r.logger.ErrorContext(ctx, "multisink: solar store failed", slog.Any("error", err))
-			errs = append(errs, err)
-		}
-	}
-	return errors.Join(errs...)
+	return fanOut(ctx, r.sinks, r.logger, "multisink: solar store failed",
+		func(ctx context.Context, s domain.EnvoySolarRepository) error {
+			return s.StoreEnvoySolarData(ctx, d)
+		})
 }
 
-// Flush flushes all sinks and returns a combined error.
+// Flush flushes all sinks concurrently and returns a combined error.
 func (r *SolarRepository) Flush(ctx context.Context) error {
-	var errs []error
-	for _, s := range r.sinks {
-		if err := s.Flush(ctx); err != nil {
-			r.logger.ErrorContext(ctx, "multisink: solar flush failed", slog.Any("error", err))
-			errs = append(errs, err)
-		}
-	}
-	return errors.Join(errs...)
+	return fanOut(ctx, r.sinks, r.logger, "multisink: solar flush failed",
+		func(ctx context.Context, s domain.EnvoySolarRepository) error {
+			return s.Flush(ctx)
+		})
 }
 
-// Close closes all sinks and returns a combined error.
+// Close closes all sinks concurrently and returns a combined error.
 func (r *SolarRepository) Close() error {
-	var errs []error
-	for _, s := range r.sinks {
-		if err := s.Close(); err != nil {
-			r.logger.Error("multisink: solar close failed", slog.Any("error", err))
-			errs = append(errs, err)
-		}
-	}
-	return errors.Join(errs...)
+	return fanOutClose(r.sinks, r.logger, "multisink: solar close failed",
+		func(s domain.EnvoySolarRepository) error {
+			return s.Close()
+		})
 }

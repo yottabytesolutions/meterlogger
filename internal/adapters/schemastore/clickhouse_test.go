@@ -21,13 +21,13 @@ func TestClickHouseMigrator_NoOutstandingMigrations(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectQuery("SELECT COALESCE").
 		WithArgs("clickhouse_heat").
-		WillReturnRows(sqlmock.NewRows([]string{"version"}).AddRow(1))
+		WillReturnRows(sqlmock.NewRows([]string{versionColumn}).AddRow(1))
 
 	m := schemastore.NewClickHouseMigrator(db, testLogger())
 
 	mg := schemastore.Migration{
 		Version:     1,
-		Description: "already applied",
+		Description: descriptionAlreadyApplied,
 		Up: func(_ context.Context) error {
 			t.Error("should not be called")
 			return nil
@@ -54,7 +54,7 @@ func TestClickHouseMigrator_AppliesNewMigration(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectQuery("SELECT COALESCE").
 		WithArgs("clickhouse_heat").
-		WillReturnRows(sqlmock.NewRows([]string{"version"}).AddRow(0))
+		WillReturnRows(sqlmock.NewRows([]string{versionColumn}).AddRow(0))
 	mock.ExpectExec("CREATE TABLE").
 		WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectExec("INSERT INTO meterlogger_schema_migrations").
@@ -65,7 +65,7 @@ func TestClickHouseMigrator_AppliesNewMigration(t *testing.T) {
 	capturedDB := db
 	mg := schemastore.Migration{
 		Version:     1,
-		Description: "create table",
+		Description: descriptionCreateTable,
 		Up: func(ctx context.Context) error {
 			called = true
 			_, execErr := capturedDB.ExecContext(ctx, "CREATE TABLE foo(id INT)")
@@ -98,19 +98,19 @@ func TestClickHouseMigrator_UpErrorStopsFurtherMigrations(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectQuery("SELECT COALESCE").
 		WithArgs("clickhouse_heat").
-		WillReturnRows(sqlmock.NewRows([]string{"version"}).AddRow(0))
+		WillReturnRows(sqlmock.NewRows([]string{versionColumn}).AddRow(0))
 
 	upErr := errors.New("migration failed")
 	secondCalled := false
 	migrations := []schemastore.Migration{
 		{
 			Version:     1,
-			Description: "failing migration",
+			Description: descriptionFailingMigration,
 			Up:          func(_ context.Context) error { return upErr },
 		},
 		{
 			Version:     2,
-			Description: "should not run",
+			Description: descriptionShouldNotRun,
 			Up: func(_ context.Context) error {
 				secondCalled = true
 				return nil

@@ -2,11 +2,15 @@ package converters
 
 import (
 	"errors"
-	"io"
 	"log/slog"
 	"testing"
 
-	"github.com/jonaz/gombus"
+	"github.com/yottabytesolutions/gombus"
+)
+
+const (
+	maxVal     = "Maximum value"
+	instantVal = "Instantaneous value"
 )
 
 // makeRecord creates a DecodedDataRecord for testing.
@@ -22,9 +26,6 @@ func makeRecord(unitType int, function string, value float64) gombus.DecodedData
 
 // fullFrame creates a DecodedFrame with all records needed for GombusToDomain.
 func fullFrame() *gombus.DecodedFrame {
-	const maxVal = "Maximum value"
-	const instantVal = "Instantaneous value"
-
 	return &gombus.DecodedFrame{
 		SerialNumber: 123456,
 		Manufacturer: "TST",
@@ -103,7 +104,7 @@ func TestGombusToDomain_MissingMaxFlow(t *testing.T) {
 func TestGombusToDomain_MissingMaxPower(t *testing.T) {
 	frame := &gombus.DecodedFrame{
 		DataRecords: []gombus.DecodedDataRecord{
-			makeRecord(63, "Maximum value", 100.5), // MaxFlow present
+			makeRecord(63, maxVal, 100.5), // MaxFlow present
 			// MaxPower (unit 47, max) missing
 		},
 	}
@@ -116,8 +117,8 @@ func TestGombusToDomain_MissingMaxPower(t *testing.T) {
 func TestGombusToDomain_MissingSecondsCounter(t *testing.T) {
 	frame := &gombus.DecodedFrame{
 		DataRecords: []gombus.DecodedDataRecord{
-			makeRecord(63, "Maximum value", 100.5),
-			makeRecord(47, "Maximum value", 5000),
+			makeRecord(63, maxVal, 100.5),
+			makeRecord(47, maxVal, 5000),
 			// SecondsCounter (unit 35, instant) missing
 		},
 	}
@@ -130,9 +131,9 @@ func TestGombusToDomain_MissingSecondsCounter(t *testing.T) {
 func TestGombusToDomain_MissingVolume(t *testing.T) {
 	frame := &gombus.DecodedFrame{
 		DataRecords: []gombus.DecodedDataRecord{
-			makeRecord(63, "Maximum value", 100.5),
-			makeRecord(47, "Maximum value", 5000),
-			makeRecord(35, "Instantaneous value", 3600),
+			makeRecord(63, maxVal, 100.5),
+			makeRecord(47, maxVal, 5000),
+			makeRecord(35, instantVal, 3600),
 			// Volume (unit 23, instant) missing
 		},
 	}
@@ -145,10 +146,10 @@ func TestGombusToDomain_MissingVolume(t *testing.T) {
 func TestGombusToDomain_MissingTforward(t *testing.T) {
 	frame := &gombus.DecodedFrame{
 		DataRecords: []gombus.DecodedDataRecord{
-			makeRecord(63, "Maximum value", 100.5),
-			makeRecord(47, "Maximum value", 5000),
-			makeRecord(35, "Instantaneous value", 3600),
-			makeRecord(23, "Instantaneous value", 500),
+			makeRecord(63, maxVal, 100.5),
+			makeRecord(47, maxVal, 5000),
+			makeRecord(35, instantVal, 3600),
+			makeRecord(23, instantVal, 500),
 			// Tforward (unit 91, instant) missing
 		},
 	}
@@ -161,11 +162,11 @@ func TestGombusToDomain_MissingTforward(t *testing.T) {
 func TestGombusToDomain_MissingTreturn(t *testing.T) {
 	frame := &gombus.DecodedFrame{
 		DataRecords: []gombus.DecodedDataRecord{
-			makeRecord(63, "Maximum value", 100.5),
-			makeRecord(47, "Maximum value", 5000),
-			makeRecord(35, "Instantaneous value", 3600),
-			makeRecord(23, "Instantaneous value", 500),
-			makeRecord(91, "Instantaneous value", 45),
+			makeRecord(63, maxVal, 100.5),
+			makeRecord(47, maxVal, 5000),
+			makeRecord(35, instantVal, 3600),
+			makeRecord(23, instantVal, 500),
+			makeRecord(91, instantVal, 45),
 			// Treturn (unit 95, instant) missing
 		},
 	}
@@ -178,12 +179,12 @@ func TestGombusToDomain_MissingTreturn(t *testing.T) {
 func TestGombusToDomain_MissingTdiff(t *testing.T) {
 	frame := &gombus.DecodedFrame{
 		DataRecords: []gombus.DecodedDataRecord{
-			makeRecord(63, "Maximum value", 100.5),
-			makeRecord(47, "Maximum value", 5000),
-			makeRecord(35, "Instantaneous value", 3600),
-			makeRecord(23, "Instantaneous value", 500),
-			makeRecord(91, "Instantaneous value", 45),
-			makeRecord(95, "Instantaneous value", 35),
+			makeRecord(63, maxVal, 100.5),
+			makeRecord(47, maxVal, 5000),
+			makeRecord(35, instantVal, 3600),
+			makeRecord(23, instantVal, 500),
+			makeRecord(91, instantVal, 45),
+			makeRecord(95, instantVal, 35),
 			// Tdiff (unit 99, instant) missing
 		},
 	}
@@ -196,13 +197,13 @@ func TestGombusToDomain_MissingTdiff(t *testing.T) {
 func TestGombusToDomain_MissingJoules(t *testing.T) {
 	frame := &gombus.DecodedFrame{
 		DataRecords: []gombus.DecodedDataRecord{
-			makeRecord(63, "Maximum value", 100.5),
-			makeRecord(47, "Maximum value", 5000),
-			makeRecord(35, "Instantaneous value", 3600),
-			makeRecord(23, "Instantaneous value", 500),
-			makeRecord(91, "Instantaneous value", 45),
-			makeRecord(95, "Instantaneous value", 35),
-			makeRecord(99, "Instantaneous value", 10),
+			makeRecord(63, maxVal, 100.5),
+			makeRecord(47, maxVal, 5000),
+			makeRecord(35, instantVal, 3600),
+			makeRecord(23, instantVal, 500),
+			makeRecord(91, instantVal, 45),
+			makeRecord(95, instantVal, 35),
+			makeRecord(99, instantVal, 10),
 			// Joules (unit 15, instant) missing
 		},
 	}
@@ -215,14 +216,14 @@ func TestGombusToDomain_MissingJoules(t *testing.T) {
 func TestGombusToDomain_MissingActualFlow(t *testing.T) {
 	frame := &gombus.DecodedFrame{
 		DataRecords: []gombus.DecodedDataRecord{
-			makeRecord(63, "Maximum value", 100.5),
-			makeRecord(47, "Maximum value", 5000),
-			makeRecord(35, "Instantaneous value", 3600),
-			makeRecord(23, "Instantaneous value", 500),
-			makeRecord(91, "Instantaneous value", 45),
-			makeRecord(95, "Instantaneous value", 35),
-			makeRecord(99, "Instantaneous value", 10),
-			makeRecord(15, "Instantaneous value", 1e9),
+			makeRecord(63, maxVal, 100.5),
+			makeRecord(47, maxVal, 5000),
+			makeRecord(35, instantVal, 3600),
+			makeRecord(23, instantVal, 500),
+			makeRecord(91, instantVal, 45),
+			makeRecord(95, instantVal, 35),
+			makeRecord(99, instantVal, 10),
+			makeRecord(15, instantVal, 1e9),
 			// ActualFlow (unit 63, instant) missing
 		},
 	}
@@ -235,15 +236,15 @@ func TestGombusToDomain_MissingActualFlow(t *testing.T) {
 func TestGombusToDomain_MissingActualPower(t *testing.T) {
 	frame := &gombus.DecodedFrame{
 		DataRecords: []gombus.DecodedDataRecord{
-			makeRecord(63, "Maximum value", 100.5),
-			makeRecord(47, "Maximum value", 5000),
-			makeRecord(35, "Instantaneous value", 3600),
-			makeRecord(23, "Instantaneous value", 500),
-			makeRecord(91, "Instantaneous value", 45),
-			makeRecord(95, "Instantaneous value", 35),
-			makeRecord(99, "Instantaneous value", 10),
-			makeRecord(15, "Instantaneous value", 1e9),
-			makeRecord(63, "Instantaneous value", 50.5),
+			makeRecord(63, maxVal, 100.5),
+			makeRecord(47, maxVal, 5000),
+			makeRecord(35, instantVal, 3600),
+			makeRecord(23, instantVal, 500),
+			makeRecord(91, instantVal, 45),
+			makeRecord(95, instantVal, 35),
+			makeRecord(99, instantVal, 10),
+			makeRecord(15, instantVal, 1e9),
+			makeRecord(63, instantVal, 50.5),
 			// ActualPower (unit 47, instant) missing
 		},
 	}
@@ -257,21 +258,21 @@ func TestFindDataRecordValue_Found(t *testing.T) {
 	records := []gombus.DecodedDataRecord{
 		{
 			Unit:          gombus.Unit{Type: 15},
-			Function:      "Instantaneous value",
+			Function:      instantVal,
 			StorageNumber: 0,
 			Device:        0,
 			Value:         42.0,
 		},
 		{
 			Unit:          gombus.Unit{Type: 63},
-			Function:      "Maximum value",
+			Function:      maxVal,
 			StorageNumber: 0,
 			Device:        0,
 			Value:         100.5,
 		},
 	}
 
-	record, err := FindDataRecordValue(&records, 15, "Instantaneous value")
+	record, err := FindDataRecordValue(&records, 15, instantVal)
 	if err != nil {
 		t.Fatalf("FindDataRecordValue() unexpected error: %v", err)
 	}
@@ -284,14 +285,14 @@ func TestFindDataRecordValue_MaxValue(t *testing.T) {
 	records := []gombus.DecodedDataRecord{
 		{
 			Unit:          gombus.Unit{Type: 63},
-			Function:      "Maximum value",
+			Function:      maxVal,
 			StorageNumber: 0,
 			Device:        0,
 			Value:         100.5,
 		},
 	}
 
-	record, err := FindDataRecordValue(&records, 63, "Maximum value")
+	record, err := FindDataRecordValue(&records, 63, maxVal)
 	if err != nil {
 		t.Fatalf("FindDataRecordValue() unexpected error: %v", err)
 	}
@@ -303,7 +304,7 @@ func TestFindDataRecordValue_MaxValue(t *testing.T) {
 func TestFindDataRecordValue_NotFound(t *testing.T) {
 	records := []gombus.DecodedDataRecord{}
 
-	_, err := FindDataRecordValue(&records, 15, "Instantaneous value")
+	_, err := FindDataRecordValue(&records, 15, instantVal)
 	if err == nil {
 		t.Error("FindDataRecordValue() should return error when not found")
 	}
@@ -316,13 +317,13 @@ func TestFindDataRecordValue_WrongUnitType(t *testing.T) {
 	records := []gombus.DecodedDataRecord{
 		{
 			Unit:          gombus.Unit{Type: 99},
-			Function:      "Instantaneous value",
+			Function:      instantVal,
 			StorageNumber: 0,
 			Device:        0,
 		},
 	}
 
-	_, err := FindDataRecordValue(&records, 15, "Instantaneous value")
+	_, err := FindDataRecordValue(&records, 15, instantVal)
 	if !errors.Is(err, ErrRecordNotFound) {
 		t.Errorf("FindDataRecordValue() should return ErrRecordNotFound for wrong unit type")
 	}
@@ -332,13 +333,13 @@ func TestFindDataRecordValue_WrongFunction(t *testing.T) {
 	records := []gombus.DecodedDataRecord{
 		{
 			Unit:          gombus.Unit{Type: 15},
-			Function:      "Maximum value",
+			Function:      maxVal,
 			StorageNumber: 0,
 			Device:        0,
 		},
 	}
 
-	_, err := FindDataRecordValue(&records, 15, "Instantaneous value")
+	_, err := FindDataRecordValue(&records, 15, instantVal)
 	if !errors.Is(err, ErrRecordNotFound) {
 		t.Errorf("FindDataRecordValue() should return ErrRecordNotFound for wrong function")
 	}
@@ -348,13 +349,13 @@ func TestFindDataRecordValue_WrongStorageNumber(t *testing.T) {
 	records := []gombus.DecodedDataRecord{
 		{
 			Unit:          gombus.Unit{Type: 15},
-			Function:      "Instantaneous value",
+			Function:      instantVal,
 			StorageNumber: 1,
 			Device:        0,
 		},
 	}
 
-	_, err := FindDataRecordValue(&records, 15, "Instantaneous value")
+	_, err := FindDataRecordValue(&records, 15, instantVal)
 	if !errors.Is(err, ErrRecordNotFound) {
 		t.Errorf("FindDataRecordValue() should return ErrRecordNotFound for non-zero storage number")
 	}
@@ -364,13 +365,13 @@ func TestFindDataRecordValue_WrongDevice(t *testing.T) {
 	records := []gombus.DecodedDataRecord{
 		{
 			Unit:          gombus.Unit{Type: 15},
-			Function:      "Instantaneous value",
+			Function:      instantVal,
 			StorageNumber: 0,
 			Device:        1,
 		},
 	}
 
-	_, err := FindDataRecordValue(&records, 15, "Instantaneous value")
+	_, err := FindDataRecordValue(&records, 15, instantVal)
 	if !errors.Is(err, ErrRecordNotFound) {
 		t.Errorf("FindDataRecordValue() should return ErrRecordNotFound for non-zero device")
 	}
@@ -378,16 +379,16 @@ func TestFindDataRecordValue_WrongDevice(t *testing.T) {
 
 func TestLogAllDataRecords_Empty(_ *testing.T) {
 	records := []gombus.DecodedDataRecord{}
-	LogAllDataRecords(&records, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	LogAllDataRecords(&records, slog.New(slog.DiscardHandler))
 }
 
 func TestLogAllDataRecords_WithRecords(_ *testing.T) {
 	records := []gombus.DecodedDataRecord{
 		{
 			Unit:     gombus.Unit{Type: 15},
-			Function: "Instantaneous value",
+			Function: instantVal,
 			Value:    42.0,
 		},
 	}
-	LogAllDataRecords(&records, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	LogAllDataRecords(&records, slog.New(slog.DiscardHandler))
 }

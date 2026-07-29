@@ -53,6 +53,7 @@ func (s *SolarLoggingService) Start(ctx context.Context) {
 	defer ticker.Stop()
 	flushTicker := time.NewTicker(s.flushInterval)
 	defer flushTicker.Stop()
+	consecutiveErrors := 0
 	for {
 		select {
 		case <-flushTicker.C:
@@ -61,20 +62,40 @@ func (s *SolarLoggingService) Start(ctx context.Context) {
 				s.logger.ErrorContext(ctx, "error flushing envoy data", slog.Any("error", err))
 			}
 		case <-ticker.C:
-			err := s.runReadAndStore(ctx)
-			if err != nil {
-				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-					return
-				}
-				s.logger.ErrorContext(ctx, "error processing envoy data", slog.Any("error", err))
-				if s.metrics != nil {
-					s.metrics.ReadErrorsTotal.WithLabelValues("solar").Inc()
-				}
+			if stop := s.handleTick(ctx, &consecutiveErrors); stop {
+				return
 			}
 		case <-ctx.Done():
 			return
 		}
 	}
+}
+
+// handleTick runs one read-and-store cycle. Returns true if the service should stop.
+func (s *SolarLoggingService) handleTick(ctx context.Context, consecutiveErrors *int) bool {
+	err := s.runReadAndStore(ctx)
+	if err == nil {
+		*consecutiveErrors = 0
+		return false
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	*consecutiveErrors++
+	s.logger.ErrorContext(ctx, "error processing envoy data",
+		slog.Any("error", err),
+		slog.Int("consecutiveErrors", *consecutiveErrors),
+	)
+	if s.metrics != nil {
+		s.metrics.ReadErrorsTotal.WithLabelValues("solar").Inc()
+	}
+	if *consecutiveErrors >= maxConsecutiveErrors {
+		s.logger.ErrorContext(ctx, "solar: too many consecutive errors, terminating")
+		processKiller()
+		<-ctx.Done()
+		return true
+	}
+	return false
 }
 
 func (s *SolarLoggingService) runReadAndStore(ctx context.Context) error {

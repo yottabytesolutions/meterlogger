@@ -35,6 +35,14 @@ const (
 	httpExpectContinue      = 1 * time.Second
 )
 
+// Device type strings returned by the DucoBox API in the "devtype" field.
+const (
+	devTypeBox   = "BOX"
+	devTypeValve = "VLV"
+	devTypeUCCO2 = "UCCO2"
+	devTypeUCRH  = "UCRH"
+)
+
 type DucoReader struct {
 	BaseURL string
 	Logger  *slog.Logger
@@ -142,19 +150,19 @@ func ParseDucoNodeStatus(data []byte) (domain.DucoNodeStatus, error) {
 	}
 
 	switch strings.ToUpper(base.DevType) {
-	case "BOX":
+	case devTypeBox:
 		var dto nodeBoxStatusDTO
 		if err := json.Unmarshal(data, &dto); err != nil {
 			return nil, err
 		}
 		return mapNodeBoxStatus(dto), nil
-	case "VLV":
+	case devTypeValve:
 		var dto nodeBoxValveStatusDTO
 		if err := json.Unmarshal(data, &dto); err != nil {
 			return nil, err
 		}
 		return mapNodeBoxValveStatus(dto), nil
-	case "UCCO2", "UCRH":
+	case devTypeUCCO2, devTypeUCRH:
 		var dto rfSensorStatusDTO
 		if err := json.Unmarshal(data, &dto); err != nil {
 			return nil, err

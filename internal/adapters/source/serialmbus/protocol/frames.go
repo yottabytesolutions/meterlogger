@@ -5,7 +5,7 @@
 package protocol
 
 import (
-	"github.com/jonaz/gombus"
+	"github.com/yottabytesolutions/gombus"
 )
 
 const (

@@ -17,6 +17,10 @@ const (
 	testJWTFarFuturePayload = "eyJzdWIiOiJ0ZXN0IiwiZXhwIjo5OTk5OTk5OTk5fQ"
 	// testLoginPath is the Enphase login API path.
 	testLoginPath = "/login/login.json"
+	// testSessionID is a fake Enphase session identifier used in mock login responses.
+	testSessionID = "sess123"
+	// testSessionIDKey is the JSON key for the session identifier in login responses.
+	testSessionIDKey = "session_id"
 )
 
 // makeExpiringToken creates a RegisteredClaims JWT with ExpiresAt already past
@@ -72,7 +76,7 @@ func withRedirectClient(t *testing.T, server *httptest.Server) func() {
 
 func TestFetchToken_Success(t *testing.T) {
 	validTokenStr := testJWTHeader + "." + testJWTFarFuturePayload + ".sig"
-	sessionResp, _ := json.Marshal(map[string]string{"session_id": "sess123"})
+	sessionResp, _ := json.Marshal(map[string]string{testSessionIDKey: testSessionID})
 
 	server := makeAuthServer(t, string(sessionResp), validTokenStr)
 	defer server.Close()
@@ -99,7 +103,7 @@ func TestFetchToken_LoginError(t *testing.T) {
 	defer server.Close()
 	defer withRedirectClient(t, server)()
 
-	_, err := fetchToken(context.Background(), "user", "pass", "serial")
+	_, err := fetchToken(context.Background(), testEnvoyUser, testEnvoyPass, testEnvoySerial)
 	if err == nil {
 		t.Error("fetchToken() should return error on login failure")
 	}
@@ -118,14 +122,14 @@ func TestFetchToken_InvalidLoginJSON(t *testing.T) {
 	defer server.Close()
 	defer withRedirectClient(t, server)()
 
-	_, err := fetchToken(context.Background(), "user", "pass", "serial")
+	_, err := fetchToken(context.Background(), testEnvoyUser, testEnvoyPass, testEnvoySerial)
 	if err == nil {
 		t.Error("fetchToken() should return error on invalid login JSON")
 	}
 }
 
 func TestFetchToken_TokenFetchError(t *testing.T) {
-	sessionResp, _ := json.Marshal(map[string]string{"session_id": "sess123"})
+	sessionResp, _ := json.Marshal(map[string]string{testSessionIDKey: testSessionID})
 	server := httptest.NewServer(
 		http.HandlerFunc(
 			func(w http.ResponseWriter, r *http.Request) {
@@ -144,7 +148,7 @@ func TestFetchToken_TokenFetchError(t *testing.T) {
 
 	// The token parse will fail on "unauthorized" as an invalid JWT - either
 	// way we exercise the token-fetch code path.
-	_, _ = fetchToken(context.Background(), "user", "pass", "serial")
+	_, _ = fetchToken(context.Background(), testEnvoyUser, testEnvoyPass, testEnvoySerial)
 }
 
 func TestEnsureToken_ExpiringToken_RefreshFails(t *testing.T) {
@@ -160,10 +164,10 @@ func TestEnsureToken_ExpiringToken_RefreshFails(t *testing.T) {
 	defer withRedirectClient(t, server)()
 
 	reader := &EnvoyReader{
-		envoyURL:    "http://localhost",
-		envoyUser:   "user",
-		envoyPass:   "pass",
-		envoySerial: "serial",
+		envoyURL:    testEnvoyURL,
+		envoyUser:   testEnvoyUser,
+		envoyPass:   testEnvoyPass,
+		envoySerial: testEnvoySerial,
 		logger:      testLogger(),
 		token:       makeExpiringToken(),
 	}
@@ -186,10 +190,10 @@ func TestEnsureToken_NilToken_FetchFails(t *testing.T) {
 	defer withRedirectClient(t, server)()
 
 	reader := &EnvoyReader{
-		envoyURL:    "http://localhost",
-		envoyUser:   "user",
-		envoyPass:   "pass",
-		envoySerial: "serial",
+		envoyURL:    testEnvoyURL,
+		envoyUser:   testEnvoyUser,
+		envoyPass:   testEnvoyPass,
+		envoySerial: testEnvoySerial,
 		logger:      testLogger(),
 		token:       nil,
 	}
@@ -217,10 +221,10 @@ func TestEnsureToken_NilExpiresAt_RefreshFails(t *testing.T) {
 	defer withRedirectClient(t, server)()
 
 	reader := &EnvoyReader{
-		envoyURL:    "http://localhost",
-		envoyUser:   "user",
-		envoyPass:   "pass",
-		envoySerial: "serial",
+		envoyURL:    testEnvoyURL,
+		envoyUser:   testEnvoyUser,
+		envoyPass:   testEnvoyPass,
+		envoySerial: testEnvoySerial,
 		logger:      testLogger(),
 		token:       token,
 	}
@@ -232,17 +236,17 @@ func TestEnsureToken_NilExpiresAt_RefreshFails(t *testing.T) {
 
 func TestEnsureToken_ExpiringToken_RefreshSucceeds(t *testing.T) {
 	validTokenStr := testJWTHeader + "." + testJWTFarFuturePayload + ".sig"
-	sessionResp, _ := json.Marshal(map[string]string{"session_id": "sess123"})
+	sessionResp, _ := json.Marshal(map[string]string{testSessionIDKey: testSessionID})
 
 	server := makeAuthServer(t, string(sessionResp), validTokenStr)
 	defer server.Close()
 	defer withRedirectClient(t, server)()
 
 	reader := &EnvoyReader{
-		envoyURL:    "http://localhost",
-		envoyUser:   "user",
-		envoyPass:   "pass",
-		envoySerial: "serial",
+		envoyURL:    testEnvoyURL,
+		envoyUser:   testEnvoyUser,
+		envoyPass:   testEnvoyPass,
+		envoySerial: testEnvoySerial,
 		logger:      testLogger(),
 		token:       makeExpiringToken(),
 	}
@@ -268,9 +272,9 @@ func TestReadEnvoySolarData_EnsureTokenFails(t *testing.T) {
 
 	reader := &EnvoyReader{
 		envoyURL:    server.URL,
-		envoyUser:   "user",
-		envoyPass:   "pass",
-		envoySerial: "serial",
+		envoyUser:   testEnvoyUser,
+		envoyPass:   testEnvoyPass,
+		envoySerial: testEnvoySerial,
 		logger:      testLogger(),
 		token:       nil,
 	}
