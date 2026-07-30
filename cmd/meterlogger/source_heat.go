@@ -23,15 +23,16 @@ import (
 func buildHeatSinks(
 	ctx context.Context, l *slog.Logger,
 	healthSrv *healthserver.Server,
-	pgDB *postgres.DB, myDB *mysql.DB,
-	tsDB *timescaledb.DB, chDB *clickhouse.DB, tdDB *tdengine.DB,
+	dbs dbConnections,
 ) []domain.HeatMeterRepository {
 	var sinks []domain.HeatMeterRepository
 	if config.QuestDB.Enabled {
-		client, err := qdb.NewDBClient(
-			ctx, config.QuestDB.Host, config.QuestDB.Port,
-			config.QuestDB.User, config.QuestDB.Password, l,
-		)
+		client, err := qdb.NewDBClient(ctx, qdb.Config{
+			Host:     config.QuestDB.Host,
+			Port:     config.QuestDB.Port,
+			User:     config.QuestDB.User,
+			Password: config.QuestDB.Password,
+		}, l)
 		if err != nil {
 			l.ErrorContext(ctx, "failed to create QuestDB client", slog.Any("error", err))
 			os.Exit(1)
@@ -41,40 +42,40 @@ func buildHeatSinks(
 		}
 		sinks = append(sinks, qdb.NewQuestDBHeatTelegramWriter(client, config.Heat.Measurement, l))
 	}
-	if pgDB != nil {
-		store, err := postgres.NewHeatStore(ctx, pgDB, config.Heat.Measurement, l)
+	if dbs.postgres != nil {
+		store, err := postgres.NewHeatStore(ctx, dbs.postgres, config.Heat.Measurement, l)
 		if err != nil {
 			l.ErrorContext(ctx, "postgres heat store init failed", slog.Any("error", err))
 			os.Exit(1)
 		}
 		sinks = append(sinks, store)
 	}
-	if myDB != nil {
-		store, err := mysql.NewHeatStore(ctx, myDB, config.Heat.Measurement, l)
+	if dbs.mysql != nil {
+		store, err := mysql.NewHeatStore(ctx, dbs.mysql, config.Heat.Measurement, l)
 		if err != nil {
 			l.ErrorContext(ctx, "mysql heat store init failed", slog.Any("error", err))
 			os.Exit(1)
 		}
 		sinks = append(sinks, store)
 	}
-	if tsDB != nil {
-		store, err := timescaledb.NewHeatStore(ctx, tsDB, config.Heat.Measurement, l)
+	if dbs.timescaledb != nil {
+		store, err := timescaledb.NewHeatStore(ctx, dbs.timescaledb, config.Heat.Measurement, l)
 		if err != nil {
 			l.ErrorContext(ctx, "timescaledb heat store init failed", slog.Any("error", err))
 			os.Exit(1)
 		}
 		sinks = append(sinks, store)
 	}
-	if chDB != nil {
-		store, err := clickhouse.NewHeatStore(ctx, chDB, config.Heat.Measurement, l)
+	if dbs.clickhouse != nil {
+		store, err := clickhouse.NewHeatStore(ctx, dbs.clickhouse, config.Heat.Measurement, l)
 		if err != nil {
 			l.ErrorContext(ctx, "clickhouse heat store init failed", slog.Any("error", err))
 			os.Exit(1)
 		}
 		sinks = append(sinks, store)
 	}
-	if tdDB != nil {
-		store, err := tdengine.NewHeatStore(ctx, tdDB, config.Heat.Measurement, l)
+	if dbs.tdengine != nil {
+		store, err := tdengine.NewHeatStore(ctx, dbs.tdengine, config.Heat.Measurement, l)
 		if err != nil {
 			l.ErrorContext(ctx, "tdengine heat store init failed", slog.Any("error", err))
 			os.Exit(1)
@@ -88,10 +89,9 @@ func runHeatMeter(
 	ctx context.Context, l *slog.Logger,
 	healthSrv *healthserver.Server,
 	appMetrics *metrics.Metrics,
-	pgDB *postgres.DB, myDB *mysql.DB,
-	tsDB *timescaledb.DB, chDB *clickhouse.DB, tdDB *tdengine.DB,
+	dbs dbConnections,
 ) {
-	sinks := buildHeatSinks(ctx, l, healthSrv, pgDB, myDB, tsDB, chDB, tdDB)
+	sinks := buildHeatSinks(ctx, l, healthSrv, dbs)
 	if len(sinks) == 0 {
 		l.WarnContext(ctx, "heat source enabled but no sinks available; skipping")
 		return

@@ -1,0 +1,134 @@
+# Example MeterLogger configuration.
+#
+# Copy this file and edit it for your setup:
+#   cp config.example.yaml config.yaml
+#
+# Then point meterlogger at it:
+#   meterlogger --config ./config.yaml --source grid
+#
+# Every field can also be set via environment variable (dots become
+# underscores, e.g. Grid.SerialInterface -> GRID_SERIALINTERFACE) or, for the
+# handful of flag-backed fields, via CLI flags. See documentation/configuration.md
+# for the full field reference, defaults, and precedence order.
+#
+# Only Grid + QuestDB are enabled below as a minimal working example. Enable
+# and fill in the other sources/sinks you actually use; leave the rest as-is.
+
+# Enable debug-level logging.
+Debug: false
+
+# How often to flush buffered data to the sinks.
+FlushInterval: 10s
+
+# ── HTTP health / metrics server ────────────────────────────
+HTTPServer:
+  Port: 8080
+  LivenessFailureThreshold: 90s
+
+# ── QuestDB sink ─────────────────────────────────────────────
+QuestDB:
+  Enabled: true
+  Host: questdb
+  Port: 9009
+  User: admin
+  Password: quest
+
+# ── PostgreSQL sink ──────────────────────────────────────────
+# Tables are created/migrated automatically on startup.
+Postgres:
+  Enabled: false
+  Host: localhost
+  Port: 5432
+  User: meterlogger
+  Password: secret
+  Database: meterlogger
+  SSLMode: disable # disable | require | verify-full
+
+# ── MySQL sink ───────────────────────────────────────────────
+# Tables are created/migrated automatically on startup.
+MySQL:
+  Enabled: false
+  Host: localhost
+  Port: 3306
+  User: meterlogger
+  Password: secret
+  Database: meterlogger
+
+# ── TimescaleDB sink ─────────────────────────────────────────
+# PostgreSQL-compatible; uses the same schema as Postgres.
+TimescaleDB:
+  Enabled: false
+  Host: localhost
+  Port: 5432
+  User: meterlogger
+  Password: secret
+  Database: meterlogger
+  SSLMode: disable # disable | require | verify-full
+
+# ── ClickHouse sink ───────────────────────────────────────────
+ClickHouse:
+  Enabled: false
+  Host: localhost
+  Port: 9000
+  User: default
+  Password: ""
+  Database: meterlogger
+
+# ── TDEngine sink ─────────────────────────────────────────────
+TDEngine:
+  Enabled: false
+  Host: localhost
+  Port: 6041
+  User: root
+  Password: taosdata
+  Database: meterlogger
+
+# ── OpenTelemetry tracing ──────────────────────────────────
+OTEL:
+  Enabled: false
+  CollectorAddr: "otel-collector:4317" # gRPC, no TLS
+  ServiceName: "meterlogger-grid"
+
+# ── Continuous profiling (Grafana Pyroscope) ────────────────
+Profiling:
+  Enabled: false
+  ServerAddr: "http://pyroscope:4040"
+  ServiceName: "meterlogger-grid"
+  BasicAuthUser: ""
+  BasicAuthPassword: ""
+
+# ── Heat meter (M-Bus over serial) ─────────────────────────
+Heat:
+  Enabled: false
+  Measurement: heat_meter
+  SerialInterface: /dev/ttyUSB0
+  MbusAddress: 1 # M-Bus device address (1-250)
+  ScrapeInterval: 30s
+
+# ── Grid meter (DSMR P1 over serial) ───────────────────────
+Grid:
+  Enabled: true
+  Measurement: grid_meter
+  SerialInterface: /dev/ttyUSB0
+  # No ScrapeInterval: the meter pushes data every second
+
+# ── Solar (Enphase Envoy HTTP API) ─────────────────────────
+Enphase:
+  Enabled: false
+  Measurement: solar
+  EnvoyURL: https://192.168.1.100
+  User: owner@example.com
+  Password: secret
+  Serial: 122140012345 # Envoy gateway serial number
+  ScrapeInterval: 5m
+
+# ── Ventilation (DucoBox HTTP API) ─────────────────────────
+Ventilation:
+  Enabled: false
+  MeasurementBaseName: ventilation
+  ScrapeInterval: 1m
+  HostURL: http://192.168.1.200:8080
+  Nodes:
+    - 1
+    - 2
+    - 3

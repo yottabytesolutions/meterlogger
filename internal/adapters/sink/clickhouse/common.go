@@ -29,17 +29,22 @@ type DB struct {
 	logger *slog.Logger
 }
 
+// Config holds the connection parameters for a ClickHouse sink. Passed as a
+// single value instead of positional strings to eliminate the risk of
+// silently transposing user/password/dbname at a call site.
+type Config struct {
+	Host     string
+	Port     int
+	User     string
+	Password string
+	Database string
+}
+
 // New opens and pings a ClickHouse connection.
-func New(
-	ctx context.Context,
-	host string,
-	port int,
-	user, password, dbname string,
-	logger *slog.Logger,
-) (*DB, error) {
+func New(ctx context.Context, cfg Config, logger *slog.Logger) (*DB, error) {
 	dsn := fmt.Sprintf(
 		"clickhouse://%s:%s@%s/%s?dial_timeout=5s",
-		user, password, net.JoinHostPort(host, strconv.Itoa(port)), dbname,
+		cfg.User, cfg.Password, net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port)), cfg.Database,
 	)
 	db, err := sql.Open("clickhouse", dsn)
 	if err != nil {
@@ -50,7 +55,7 @@ func New(
 		_ = db.Close()
 		return nil, fmt.Errorf("ping clickhouse: %w", pingErr)
 	}
-	logger.InfoContext(ctx, "connected to ClickHouse", slog.String("host", host), slog.String("db", dbname))
+	logger.InfoContext(ctx, "connected to ClickHouse", slog.String("host", cfg.Host), slog.String("db", cfg.Database))
 	return &DB{db: db, logger: logger}, nil
 }
 

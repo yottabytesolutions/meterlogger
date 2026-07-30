@@ -32,13 +32,16 @@ func testLogger() *slog.Logger {
 // makeTestToken creates a JWT token with MapClaims (not StandardClaims)
 // so that ensureToken's type assertion fails and returns nil without network calls.
 func makeTestToken() *jwt.Token {
-	tokenStr := "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0ZXN0In0.signature" //nolint:gosec // G101: test token, not a real credential
+	tokenStr := "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0ZXN0In0.signature" //nolint:gosec // G101: test token, not a real credential // gitleaks:allow
 	token, _, _ := new(jwt.Parser).ParseUnverified(tokenStr, jwt.MapClaims{})
 	return token
 }
 
 func TestNewEnvoyReader(t *testing.T) {
-	reader := NewEnvoyReader(testEnvoyURL, testEnvoyUser, testEnvoyPass, testEnvoySerial, testLogger())
+	reader := NewEnvoyReader(
+		Config{EnvoyURL: testEnvoyURL, User: testEnvoyUser, Password: testEnvoyPass, Serial: testEnvoySerial},
+		testLogger(),
+	)
 	if reader == nil {
 		t.Error("NewEnvoyReader returned nil")
 	}
@@ -185,12 +188,9 @@ func TestReadEnvoySolarData_Success(t *testing.T) {
 	defer func() { httpClient = originalClient }()
 
 	reader := &EnvoyReader{
-		envoyURL:    server.URL,
-		envoyUser:   testEnvoyUser,
-		envoyPass:   testEnvoyPass,
-		envoySerial: "serial123",
-		logger:      testLogger(),
-		token:       makeTestToken(),
+		cfg:    Config{EnvoyURL: server.URL, User: testEnvoyUser, Password: testEnvoyPass, Serial: "serial123"},
+		logger: testLogger(),
+		token:  makeTestToken(),
 	}
 
 	result, err := reader.ReadEnvoySolarData(context.Background())
@@ -249,9 +249,9 @@ func TestReadEnvoySolarData_MissingInvertersProduction(t *testing.T) {
 	defer func() { httpClient = originalClient }()
 
 	reader := &EnvoyReader{
-		envoyURL: server.URL,
-		logger:   testLogger(),
-		token:    makeTestToken(),
+		cfg:    Config{EnvoyURL: server.URL},
+		logger: testLogger(),
+		token:  makeTestToken(),
 	}
 
 	_, err := reader.ReadEnvoySolarData(context.Background())
@@ -275,9 +275,9 @@ func TestReadEnvoySolarData_MeterDataError(t *testing.T) {
 	defer func() { httpClient = originalClient }()
 
 	reader := &EnvoyReader{
-		envoyURL: server.URL,
-		logger:   testLogger(),
-		token:    makeTestToken(),
+		cfg:    Config{EnvoyURL: server.URL},
+		logger: testLogger(),
+		token:  makeTestToken(),
 	}
 
 	_, err := reader.ReadEnvoySolarData(context.Background())
@@ -313,9 +313,9 @@ func TestReadEnvoySolarData_InventoryError(t *testing.T) {
 	defer func() { httpClient = originalClient }()
 
 	reader := &EnvoyReader{
-		envoyURL: server.URL,
-		logger:   testLogger(),
-		token:    makeTestToken(),
+		cfg:    Config{EnvoyURL: server.URL},
+		logger: testLogger(),
+		token:  makeTestToken(),
 	}
 
 	_, err := reader.ReadEnvoySolarData(context.Background())
@@ -355,9 +355,9 @@ func TestReadEnvoySolarData_InverterDataError(t *testing.T) {
 	defer func() { httpClient = originalClient }()
 
 	reader := &EnvoyReader{
-		envoyURL: server.URL,
-		logger:   testLogger(),
-		token:    makeTestToken(),
+		cfg:    Config{EnvoyURL: server.URL},
+		logger: testLogger(),
+		token:  makeTestToken(),
 	}
 
 	_, err := reader.ReadEnvoySolarData(context.Background())
@@ -390,9 +390,9 @@ func TestQueryEnvoy_InvalidJSON(t *testing.T) {
 
 func TestEnsureToken_WithExistingToken(t *testing.T) {
 	reader := &EnvoyReader{
-		envoyURL: testEnvoyURL,
-		logger:   testLogger(),
-		token:    makeTestToken(),
+		cfg:    Config{EnvoyURL: testEnvoyURL},
+		logger: testLogger(),
+		token:  makeTestToken(),
 	}
 	err := reader.ensureToken(context.Background())
 	if err != nil {
@@ -484,9 +484,9 @@ func TestEnsureToken_WithValidStandardClaims(t *testing.T) {
 	token, _, _ := new(jwt.Parser).ParseUnverified(tokenStr, &jwt.RegisteredClaims{})
 
 	reader := &EnvoyReader{
-		envoyURL: testEnvoyURL,
-		logger:   testLogger(),
-		token:    token,
+		cfg:    Config{EnvoyURL: testEnvoyURL},
+		logger: testLogger(),
+		token:  token,
 	}
 	err := reader.ensureToken(context.Background())
 	if err != nil {

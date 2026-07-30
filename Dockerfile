@@ -1,5 +1,5 @@
 ARG GIT_SHA="no-sha"
-FROM --platform=$BUILDPLATFORM golang:1.26 AS build-env
+FROM --platform=$BUILDPLATFORM golang:1.26.5 AS build-env
 WORKDIR /app
 ARG GIT_SHA
 ARG TARGETARCH

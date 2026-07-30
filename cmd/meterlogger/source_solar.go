@@ -23,15 +23,16 @@ import (
 func buildSolarSinks(
 	ctx context.Context, l *slog.Logger,
 	healthSrv *healthserver.Server,
-	pgDB *postgres.DB, myDB *mysql.DB,
-	tsDB *timescaledb.DB, chDB *clickhouse.DB, tdDB *tdengine.DB,
+	dbs dbConnections,
 ) []domain.EnvoySolarRepository {
 	var sinks []domain.EnvoySolarRepository
 	if config.QuestDB.Enabled {
-		client, err := qdb.NewDBClient(
-			ctx, config.QuestDB.Host, config.QuestDB.Port,
-			config.QuestDB.User, config.QuestDB.Password, l,
-		)
+		client, err := qdb.NewDBClient(ctx, qdb.Config{
+			Host:     config.QuestDB.Host,
+			Port:     config.QuestDB.Port,
+			User:     config.QuestDB.User,
+			Password: config.QuestDB.Password,
+		}, l)
 		if err != nil {
 			l.ErrorContext(ctx, "failed to create QuestDB client", slog.Any("error", err))
 			os.Exit(1)
@@ -41,40 +42,40 @@ func buildSolarSinks(
 		}
 		sinks = append(sinks, qdb.NewQuestDBSolarWriter(client, config.Enphase.Measurement, l))
 	}
-	if pgDB != nil {
-		store, err := postgres.NewSolarStore(ctx, pgDB, config.Enphase.Measurement, l)
+	if dbs.postgres != nil {
+		store, err := postgres.NewSolarStore(ctx, dbs.postgres, config.Enphase.Measurement, l)
 		if err != nil {
 			l.ErrorContext(ctx, "postgres solar store init failed", slog.Any("error", err))
 			os.Exit(1)
 		}
 		sinks = append(sinks, store)
 	}
-	if myDB != nil {
-		store, err := mysql.NewSolarStore(ctx, myDB, config.Enphase.Measurement, l)
+	if dbs.mysql != nil {
+		store, err := mysql.NewSolarStore(ctx, dbs.mysql, config.Enphase.Measurement, l)
 		if err != nil {
 			l.ErrorContext(ctx, "mysql solar store init failed", slog.Any("error", err))
 			os.Exit(1)
 		}
 		sinks = append(sinks, store)
 	}
-	if tsDB != nil {
-		store, err := timescaledb.NewSolarStore(ctx, tsDB, config.Enphase.Measurement, l)
+	if dbs.timescaledb != nil {
+		store, err := timescaledb.NewSolarStore(ctx, dbs.timescaledb, config.Enphase.Measurement, l)
 		if err != nil {
 			l.ErrorContext(ctx, "timescaledb solar store init failed", slog.Any("error", err))
 			os.Exit(1)
 		}
 		sinks = append(sinks, store)
 	}
-	if chDB != nil {
-		store, err := clickhouse.NewSolarStore(ctx, chDB, config.Enphase.Measurement, l)
+	if dbs.clickhouse != nil {
+		store, err := clickhouse.NewSolarStore(ctx, dbs.clickhouse, config.Enphase.Measurement, l)
 		if err != nil {
 			l.ErrorContext(ctx, "clickhouse solar store init failed", slog.Any("error", err))
 			os.Exit(1)
 		}
 		sinks = append(sinks, store)
 	}
-	if tdDB != nil {
-		store, err := tdengine.NewSolarStore(ctx, tdDB, config.Enphase.Measurement, l)
+	if dbs.tdengine != nil {
+		store, err := tdengine.NewSolarStore(ctx, dbs.tdengine, config.Enphase.Measurement, l)
 		if err != nil {
 			l.ErrorContext(ctx, "tdengine solar store init failed", slog.Any("error", err))
 			os.Exit(1)
@@ -88,10 +89,9 @@ func runSolarMeter(
 	ctx context.Context, l *slog.Logger,
 	healthSrv *healthserver.Server,
 	appMetrics *metrics.Metrics,
-	pgDB *postgres.DB, myDB *mysql.DB,
-	tsDB *timescaledb.DB, chDB *clickhouse.DB, tdDB *tdengine.DB,
+	dbs dbConnections,
 ) {
-	sinks := buildSolarSinks(ctx, l, healthSrv, pgDB, myDB, tsDB, chDB, tdDB)
+	sinks := buildSolarSinks(ctx, l, healthSrv, dbs)
 	if len(sinks) == 0 {
 		l.WarnContext(ctx, "solar source enabled but no sinks available; skipping")
 		return
@@ -106,10 +106,12 @@ func runSolarMeter(
 	startService(
 		ctx, l, "Solar Meter", service.NewSolarLoggingService(
 			enphase.NewEnvoyReader(
-				config.Enphase.EnvoyURL,
-				config.Enphase.User,
-				config.Enphase.Password,
-				config.Enphase.Serial,
+				enphase.Config{
+					EnvoyURL: config.Enphase.EnvoyURL,
+					User:     config.Enphase.User,
+					Password: config.Enphase.Password,
+					Serial:   config.Enphase.Serial,
+				},
 				l,
 			),
 			repo,

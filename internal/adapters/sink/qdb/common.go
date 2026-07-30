@@ -28,22 +28,25 @@ type DBClient struct {
 	lastFlushErr error
 }
 
+// Config holds the connection parameters for a QuestDB ILP client. Passed as
+// a single value instead of positional strings to eliminate the risk of
+// silently transposing user/password at a call site.
+type Config struct {
+	Host     string
+	Port     int
+	User     string
+	Password string
+}
+
 // NewDBClient opens a persistent ILP/TCP line sender to QuestDB.
-func NewDBClient(
-	ctx context.Context,
-	serverAddress string,
-	serverPort int,
-	user string,
-	password string,
-	logger *slog.Logger,
-) (*DBClient, error) {
-	addr := net.JoinHostPort(serverAddress, strconv.Itoa(serverPort))
-	logger.InfoContext(ctx, "NewDBClient, connecting", slog.String("host", serverAddress))
+func NewDBClient(ctx context.Context, cfg Config, logger *slog.Logger) (*DBClient, error) {
+	addr := net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port))
+	logger.InfoContext(ctx, "NewDBClient, connecting", slog.String("host", cfg.Host))
 	sender, err := qdb.NewLineSender(
 		ctx,
 		qdb.WithTcp(),
 		qdb.WithAddress(addr),
-		qdb.WithBasicAuth(user, password),
+		qdb.WithBasicAuth(cfg.User, cfg.Password),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create QuestDB line sender: %w", err)

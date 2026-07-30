@@ -27,20 +27,26 @@ type DB struct {
 	logger *slog.Logger
 }
 
+// Config holds the connection parameters for a PostgreSQL sink. Passed as a
+// single value instead of positional strings to eliminate the risk of
+// silently transposing user/password/dbname/sslmode at a call site.
+type Config struct {
+	Host     string
+	Port     int
+	User     string
+	Password string
+	Database string
+	SSLMode  string
+}
+
 // New opens and pings a PostgreSQL connection.
-func New(
-	ctx context.Context,
-	host string,
-	port int,
-	user, password, dbname, sslmode string,
-	logger *slog.Logger,
-) (*DB, error) {
-	if sslmode == "" {
-		sslmode = "disable"
+func New(ctx context.Context, cfg Config, logger *slog.Logger) (*DB, error) {
+	if cfg.SSLMode == "" {
+		cfg.SSLMode = "disable"
 	}
 	dsn := fmt.Sprintf(
 		"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
-		host, port, user, password, dbname, sslmode,
+		cfg.Host, cfg.Port, cfg.User, cfg.Password, cfg.Database, cfg.SSLMode,
 	)
 	db, err := sql.Open("pgx", dsn)
 	if err != nil {
@@ -51,7 +57,7 @@ func New(
 		_ = db.Close()
 		return nil, fmt.Errorf("ping postgres: %w", pingErr)
 	}
-	logger.InfoContext(ctx, "connected to PostgreSQL", slog.String("host", host), slog.String("db", dbname))
+	logger.InfoContext(ctx, "connected to PostgreSQL", slog.String("host", cfg.Host), slog.String("db", cfg.Database))
 	return &DB{db: db, logger: logger}, nil
 }
 

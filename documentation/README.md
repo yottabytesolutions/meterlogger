@@ -14,6 +14,7 @@ providing fault isolation and visible restarts. See [deployment.md](./deployment
 | [data-model.md](./data-model.md)       | Domain types and database table schemas                            |
 | [deployment.md](./deployment.md)       | Building, running locally, Docker, docker-compose, OTel, Pyroscope |
 | [observability.md](./observability.md) | Health endpoints, Prometheus metrics, tracing, profiling, alerting |
+| [troubleshooting.md](./troubleshooting.md) | Common first-run problems and how to diagnose them             |
 
 ## Supported meter types
 
