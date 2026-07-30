@@ -28,15 +28,23 @@ type DB struct {
 	logger *slog.Logger
 }
 
+// Config holds the connection parameters for a TDEngine sink. Passed as a
+// single value instead of positional strings to eliminate the risk of
+// silently transposing user/password/dbname at a call site.
+type Config struct {
+	Host     string
+	Port     int
+	User     string
+	Password string
+	Database string
+}
+
 // New opens and pings a TDEngine connection.
-func New(
-	ctx context.Context,
-	host string,
-	port int,
-	user, password, dbname string,
-	logger *slog.Logger,
-) (*DB, error) {
-	dsn := fmt.Sprintf("%s:%s@http(%s:%d)/%s?readBufferSize=52428800", user, password, host, port, dbname)
+func New(ctx context.Context, cfg Config, logger *slog.Logger) (*DB, error) {
+	dsn := fmt.Sprintf(
+		"%s:%s@http(%s:%d)/%s?readBufferSize=52428800",
+		cfg.User, cfg.Password, cfg.Host, cfg.Port, cfg.Database,
+	)
 	db, err := sql.Open("taosRestful", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open tdengine: %w", err)
@@ -46,7 +54,7 @@ func New(
 		_ = db.Close()
 		return nil, fmt.Errorf("ping tdengine: %w", pingErr)
 	}
-	logger.InfoContext(ctx, "connected to TDEngine", slog.String("host", host), slog.String("db", dbname))
+	logger.InfoContext(ctx, "connected to TDEngine", slog.String("host", cfg.Host), slog.String("db", cfg.Database))
 	return &DB{db: db, logger: logger}, nil
 }
 

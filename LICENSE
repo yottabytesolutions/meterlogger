@@ -1,74 +1,21 @@
-Yottabyte Solutions Source Available License
-Version 1.0, 2026
+MIT License
 
-Copyright (c) Yottabyte Solutions. All rights reserved.
+Copyright (c) 2026 Yottabyte Solutions
 
-This source code is published for transparency, security review, and to allow
-the community to propose improvements through pull requests. It is not open
-source software as defined by the Open Source Initiative.
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-1. Permitted use
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
 
-   You may:
-
-   a. View, read, and study the source code in this repository.
-   b. Clone or fork the repository for the sole purpose of preparing and
-      submitting a pull request to the official upstream repository at
-      https://github.com/yottabytesolutions/meterlogger.
-   c. Run the unmodified, official binaries published by Yottabyte Solutions
-      under any separate terms that accompany those binaries.
-
-2. Restrictions
-
-   You may not, without prior written permission from Yottabyte Solutions:
-
-   a. Copy, redistribute, sublicense, sell, or otherwise transfer the source
-      code, in whole or in part, to any third party.
-   b. Use the source code, or any derivative of it, to build, run, host,
-      offer, or distribute any product, service, or internal system.
-   c. Publish, mirror, or republish the source code on any other repository
-      or website.
-   d. Remove or alter any copyright, license, or attribution notices.
-   e. Use the names "Yottabyte", "Yottabyte Solutions", "MeterLogger", or
-      any associated logos, except as required to identify the origin of
-      the code.
-
-3. Contributions
-
-   By submitting a pull request, patch, issue, or other contribution to this
-   repository ("Contribution"), you agree that:
-
-   a. You are the sole author of the Contribution, or you have the right to
-      submit it under these terms.
-   b. You grant Yottabyte Solutions a perpetual, worldwide, irrevocable,
-      royalty-free, sublicensable license to use, modify, distribute, and
-      relicense the Contribution as part of this project or any other
-      project, under any license Yottabyte Solutions chooses.
-   c. Your Contribution is provided "as is", with no warranty.
-
-4. Third-party code
-
-   This project includes third-party code that is licensed separately. See
-   the NOTICE file for attributions and the licenses that govern those
-   components.
-
-5. No warranty
-
-   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-   OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT.
-   IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-   CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
-   TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION WITH THE
-   SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-6. Termination
-
-   Any breach of these terms terminates your rights under this license
-   automatically. Sections 2, 3, 5, and 6 survive termination.
-
-7. Contact
-
-   For commercial licensing or any other use not granted above, contact
-   Yottabyte Solutions at the address listed at
-   https://github.com/yottabytesolutions/meterlogger.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

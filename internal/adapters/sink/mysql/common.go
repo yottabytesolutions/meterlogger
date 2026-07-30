@@ -27,17 +27,22 @@ type DB struct {
 	logger *slog.Logger
 }
 
+// Config holds the connection parameters for a MySQL sink. Passed as a
+// single value instead of positional strings to eliminate the risk of
+// silently transposing user/password/dbname at a call site.
+type Config struct {
+	Host     string
+	Port     int
+	User     string
+	Password string
+	Database string
+}
+
 // New opens and pings a MySQL connection.
-func New(
-	ctx context.Context,
-	host string,
-	port int,
-	user, password, dbname string,
-	logger *slog.Logger,
-) (*DB, error) {
+func New(ctx context.Context, cfg Config, logger *slog.Logger) (*DB, error) {
 	dsn := fmt.Sprintf(
 		"%s:%s@tcp(%s:%d)/%s?parseTime=true&multiStatements=true",
-		user, password, host, port, dbname,
+		cfg.User, cfg.Password, cfg.Host, cfg.Port, cfg.Database,
 	)
 	db, err := sql.Open("mysql", dsn)
 	if err != nil {
@@ -48,7 +53,7 @@ func New(
 		_ = db.Close()
 		return nil, fmt.Errorf("ping mysql: %w", pingErr)
 	}
-	logger.InfoContext(ctx, "connected to MySQL", slog.String("host", host), slog.String("db", dbname))
+	logger.InfoContext(ctx, "connected to MySQL", slog.String("host", cfg.Host), slog.String("db", cfg.Database))
 	return &DB{db: db, logger: logger}, nil
 }
 

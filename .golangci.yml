@@ -295,10 +295,6 @@ linters:
     gomoddirectives:
       # Allow local `replace` directives for patching upstream dependencies.
       replace-local: true
-      # Whitelist modules whose imports we may pin to a fork while an
-      # upstream PR is in review.
-      replace-allow-list:
-        - github.com/jonaz/gombus
 
     funlen:
       # Checks the number of lines in a function.

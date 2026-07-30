@@ -82,7 +82,9 @@ func TestFetchToken_Success(t *testing.T) {
 	defer server.Close()
 	defer withRedirectClient(t, server)()
 
-	token, err := fetchToken(context.Background(), "user@example.com", "pass", "serial123")
+	token, err := fetchToken(
+		context.Background(), Config{User: "user@example.com", Password: "pass", Serial: testEnvoySerial},
+	)
 	if err != nil {
 		t.Fatalf("fetchToken() error: %v", err)
 	}
@@ -103,7 +105,9 @@ func TestFetchToken_LoginError(t *testing.T) {
 	defer server.Close()
 	defer withRedirectClient(t, server)()
 
-	_, err := fetchToken(context.Background(), testEnvoyUser, testEnvoyPass, testEnvoySerial)
+	_, err := fetchToken(
+		context.Background(), Config{User: testEnvoyUser, Password: testEnvoyPass, Serial: testEnvoySerial},
+	)
 	if err == nil {
 		t.Error("fetchToken() should return error on login failure")
 	}
@@ -122,7 +126,9 @@ func TestFetchToken_InvalidLoginJSON(t *testing.T) {
 	defer server.Close()
 	defer withRedirectClient(t, server)()
 
-	_, err := fetchToken(context.Background(), testEnvoyUser, testEnvoyPass, testEnvoySerial)
+	_, err := fetchToken(
+		context.Background(), Config{User: testEnvoyUser, Password: testEnvoyPass, Serial: testEnvoySerial},
+	)
 	if err == nil {
 		t.Error("fetchToken() should return error on invalid login JSON")
 	}
@@ -148,7 +154,7 @@ func TestFetchToken_TokenFetchError(t *testing.T) {
 
 	// The token parse will fail on "unauthorized" as an invalid JWT - either
 	// way we exercise the token-fetch code path.
-	_, _ = fetchToken(context.Background(), testEnvoyUser, testEnvoyPass, testEnvoySerial)
+	_, _ = fetchToken(context.Background(), Config{User: testEnvoyUser, Password: testEnvoyPass, Serial: testEnvoySerial})
 }
 
 func TestEnsureToken_ExpiringToken_RefreshFails(t *testing.T) {
@@ -164,12 +170,9 @@ func TestEnsureToken_ExpiringToken_RefreshFails(t *testing.T) {
 	defer withRedirectClient(t, server)()
 
 	reader := &EnvoyReader{
-		envoyURL:    testEnvoyURL,
-		envoyUser:   testEnvoyUser,
-		envoyPass:   testEnvoyPass,
-		envoySerial: testEnvoySerial,
-		logger:      testLogger(),
-		token:       makeExpiringToken(),
+		cfg:    Config{EnvoyURL: testEnvoyURL, User: testEnvoyUser, Password: testEnvoyPass, Serial: testEnvoySerial},
+		logger: testLogger(),
+		token:  makeExpiringToken(),
 	}
 
 	if err := reader.ensureToken(context.Background()); err == nil {
@@ -190,12 +193,9 @@ func TestEnsureToken_NilToken_FetchFails(t *testing.T) {
 	defer withRedirectClient(t, server)()
 
 	reader := &EnvoyReader{
-		envoyURL:    testEnvoyURL,
-		envoyUser:   testEnvoyUser,
-		envoyPass:   testEnvoyPass,
-		envoySerial: testEnvoySerial,
-		logger:      testLogger(),
-		token:       nil,
+		cfg:    Config{EnvoyURL: testEnvoyURL, User: testEnvoyUser, Password: testEnvoyPass, Serial: testEnvoySerial},
+		logger: testLogger(),
+		token:  nil,
 	}
 
 	if err := reader.ensureToken(context.Background()); err == nil {
@@ -221,12 +221,9 @@ func TestEnsureToken_NilExpiresAt_RefreshFails(t *testing.T) {
 	defer withRedirectClient(t, server)()
 
 	reader := &EnvoyReader{
-		envoyURL:    testEnvoyURL,
-		envoyUser:   testEnvoyUser,
-		envoyPass:   testEnvoyPass,
-		envoySerial: testEnvoySerial,
-		logger:      testLogger(),
-		token:       token,
+		cfg:    Config{EnvoyURL: testEnvoyURL, User: testEnvoyUser, Password: testEnvoyPass, Serial: testEnvoySerial},
+		logger: testLogger(),
+		token:  token,
 	}
 
 	if err := reader.ensureToken(context.Background()); err == nil {
@@ -243,12 +240,9 @@ func TestEnsureToken_ExpiringToken_RefreshSucceeds(t *testing.T) {
 	defer withRedirectClient(t, server)()
 
 	reader := &EnvoyReader{
-		envoyURL:    testEnvoyURL,
-		envoyUser:   testEnvoyUser,
-		envoyPass:   testEnvoyPass,
-		envoySerial: testEnvoySerial,
-		logger:      testLogger(),
-		token:       makeExpiringToken(),
+		cfg:    Config{EnvoyURL: testEnvoyURL, User: testEnvoyUser, Password: testEnvoyPass, Serial: testEnvoySerial},
+		logger: testLogger(),
+		token:  makeExpiringToken(),
 	}
 
 	if err := reader.ensureToken(context.Background()); err != nil {
@@ -271,12 +265,9 @@ func TestReadEnvoySolarData_EnsureTokenFails(t *testing.T) {
 	defer withRedirectClient(t, server)()
 
 	reader := &EnvoyReader{
-		envoyURL:    server.URL,
-		envoyUser:   testEnvoyUser,
-		envoyPass:   testEnvoyPass,
-		envoySerial: testEnvoySerial,
-		logger:      testLogger(),
-		token:       nil,
+		cfg:    Config{EnvoyURL: server.URL, User: testEnvoyUser, Password: testEnvoyPass, Serial: testEnvoySerial},
+		logger: testLogger(),
+		token:  nil,
 	}
 
 	if _, err := reader.ReadEnvoySolarData(context.Background()); err == nil {

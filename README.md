@@ -1,9 +1,13 @@
 # MeterLogger
 
+[![CI](https://github.com/yottabytesolutions/meterlogger/actions/workflows/ci.yml/badge.svg)](https://github.com/yottabytesolutions/meterlogger/actions/workflows/ci.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/yottabytesolutions/meterlogger)](https://goreportcard.com/report/github.com/yottabytesolutions/meterlogger)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 A Go service that reads data from utility meters and writes it to one or more
 time-series or relational databases.
 
-This is source-available software. See [LICENSE](LICENSE) and
+Open source under the MIT license. See [LICENSE](LICENSE) and
 [CONTRIBUTING.md](CONTRIBUTING.md). Pull requests are welcome.
 
 ## What it does
@@ -141,12 +145,10 @@ and sink implementations are injected at startup and are interchangeable.
 | ClickHouse     | [clickhouse-go](https://github.com/ClickHouse/clickhouse-go)       |
 | TDEngine       | [taosdata/driver-go](https://github.com/taosdata/driver-go)        |
 | Serial port    | [go.bug.st/serial](https://pkg.go.dev/go.bug.st/serial)            |
-| M-Bus decoding | [jonaz/gombus](https://github.com/jonaz/gombus) (vendored fork)    |
+| M-Bus decoding | [yottabytesolutions/gombus](https://github.com/yottabytesolutions/gombus) (project's own maintained fork) |
 | JWT            | [golang-jwt/jwt](https://github.com/golang-jwt/jwt)                |
 | Tests          | [DATA-DOG/go-sqlmock](https://github.com/DATA-DOG/go-sqlmock)      |
 
 ## License
 
-[Yottabyte Solutions Source Available License](LICENSE). Copyright Yottabyte
-Solutions. Source visible for review and contribution. No copying, no
-production use, no redistribution without permission.
+[MIT](LICENSE). Copyright (c) 2026 Yottabyte Solutions.

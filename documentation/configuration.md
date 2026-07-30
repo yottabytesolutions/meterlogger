@@ -5,6 +5,15 @@
 MeterLogger is configured via a YAML file (default: `~/.meterlogger.yaml`) with optional overrides from environment
 variables and CLI flags. [Viper](https://github.com/spf13/viper) is used for loading; keys are case-insensitive.
 
+A ready-to-copy starting point covering every source and sink is provided at
+[`config.example.yaml`](../config.example.yaml) in the repo root:
+
+```sh
+cp config.example.yaml config.yaml
+# edit config.yaml, then:
+meterlogger --config ./config.yaml --source grid
+```
+
 ## Precedence order (highest → lowest)
 
 1. CLI flags (`--envoy-url`, `--debug`)

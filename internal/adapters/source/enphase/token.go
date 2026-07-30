@@ -27,11 +27,11 @@ type TokenData struct {
 	Username  string `json:"username"`
 }
 
-func fetchToken(ctx context.Context, user string, password string, serial string) (*jwt.Token, error) {
+func fetchToken(ctx context.Context, cfg Config) (*jwt.Token, error) {
 	// Retrieve session id
 	loginData := LoginData{
 		User: map[string]string{
-			"email": user, "password": password,
+			"email": cfg.User, "password": cfg.Password,
 		},
 	}
 	jsonData, loginMarshalErr := json.Marshal(loginData)
@@ -77,8 +77,8 @@ func fetchToken(ctx context.Context, user string, password string, serial string
 	jsonData, marshalErr := json.Marshal(
 		TokenData{
 			SessionID: sessionID,
-			SerialNum: serial,
-			Username:  user,
+			SerialNum: cfg.Serial,
+			Username:  cfg.User,
 		},
 	)
 

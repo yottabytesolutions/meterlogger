@@ -1,26 +1,21 @@
-name: CI Pipeline
+name: Release
 
 on:
   push:
-    branches:
-      - '**'
-  pull_request:
-    branches:
-      - master
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+    tags:
+      - 'v*.*.*'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  lint:
+  release:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v7.0.0
@@ -28,38 +23,16 @@ jobs:
           go-version: '1.26.5'
           cache: false
 
-      - name: Run linter
-        uses: golangci/golangci-lint-action@v9.3.0
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v7.2.3
         with:
-          version: v2.12.2
-          skip-cache: true
-          skip-save-cache: true
-
-      - name: Scan for secrets
-        # gitleaks/gitleaks-action requires a paid license for GitHub
-        # organizations. Run the underlying OSS (MIT) gitleaks CLI directly
-        # via its official image instead, which needs no license.
-        uses: docker://ghcr.io/gitleaks/gitleaks:v8.30.1
-        with:
-          args: detect --source=. --no-git --verbose --redact
-
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v7.0.1
-
-      - name: Set up Go
-        uses: actions/setup-go@v7.0.0
-        with:
-          go-version: '1.26.5'
-          cache: false
-
-      - name: Run tests
-        run: go test -race ./...
+          distribution: goreleaser
+          version: latest
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   docker:
-    needs: [ lint, test ]
     runs-on: [ self-hosted ]
     steps:
       - name: Checkout code
@@ -71,8 +44,10 @@ jobs:
         with:
           images: yottabyte/meterlogger
           tags: |
-            type=sha,format=long
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4.2.0
@@ -83,7 +58,6 @@ jobs:
           name: meterlogger-builder
 
       - name: Login to Docker Hub
-        if: github.event_name != 'pull_request'
         uses: docker/login-action@v4.6.0
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
@@ -93,7 +67,7 @@ jobs:
         uses: docker/build-push-action@v7.3.0
         with:
           context: .
-          push: ${{ github.event_name == 'push' }}
+          push: true
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

@@ -23,15 +23,16 @@ import (
 func buildVentilationSinks(
 	ctx context.Context, l *slog.Logger,
 	healthSrv *healthserver.Server,
-	pgDB *postgres.DB, myDB *mysql.DB,
-	tsDB *timescaledb.DB, chDB *clickhouse.DB, tdDB *tdengine.DB,
+	dbs dbConnections,
 ) []domain.DucoRepository {
 	var sinks []domain.DucoRepository
 	if config.QuestDB.Enabled {
-		client, err := qdb.NewDBClient(
-			ctx, config.QuestDB.Host, config.QuestDB.Port,
-			config.QuestDB.User, config.QuestDB.Password, l,
-		)
+		client, err := qdb.NewDBClient(ctx, qdb.Config{
+			Host:     config.QuestDB.Host,
+			Port:     config.QuestDB.Port,
+			User:     config.QuestDB.User,
+			Password: config.QuestDB.Password,
+		}, l)
 		if err != nil {
 			l.ErrorContext(ctx, "failed to create QuestDB client", slog.Any("error", err))
 			os.Exit(1)
@@ -41,40 +42,40 @@ func buildVentilationSinks(
 		}
 		sinks = append(sinks, qdb.NewDucoQuestDBRepository(client, config.Ventilation.MeasurementBaseName, l))
 	}
-	if pgDB != nil {
-		store, err := postgres.NewDucoStore(ctx, pgDB, config.Ventilation.MeasurementBaseName, l)
+	if dbs.postgres != nil {
+		store, err := postgres.NewDucoStore(ctx, dbs.postgres, config.Ventilation.MeasurementBaseName, l)
 		if err != nil {
 			l.ErrorContext(ctx, "postgres duco store init failed", slog.Any("error", err))
 			os.Exit(1)
 		}
 		sinks = append(sinks, store)
 	}
-	if myDB != nil {
-		store, err := mysql.NewDucoStore(ctx, myDB, config.Ventilation.MeasurementBaseName, l)
+	if dbs.mysql != nil {
+		store, err := mysql.NewDucoStore(ctx, dbs.mysql, config.Ventilation.MeasurementBaseName, l)
 		if err != nil {
 			l.ErrorContext(ctx, "mysql duco store init failed", slog.Any("error", err))
 			os.Exit(1)
 		}
 		sinks = append(sinks, store)
 	}
-	if tsDB != nil {
-		store, err := timescaledb.NewDucoStore(ctx, tsDB, config.Ventilation.MeasurementBaseName, l)
+	if dbs.timescaledb != nil {
+		store, err := timescaledb.NewDucoStore(ctx, dbs.timescaledb, config.Ventilation.MeasurementBaseName, l)
 		if err != nil {
 			l.ErrorContext(ctx, "timescaledb duco store init failed", slog.Any("error", err))
 			os.Exit(1)
 		}
 		sinks = append(sinks, store)
 	}
-	if chDB != nil {
-		store, err := clickhouse.NewDucoStore(ctx, chDB, config.Ventilation.MeasurementBaseName, l)
+	if dbs.clickhouse != nil {
+		store, err := clickhouse.NewDucoStore(ctx, dbs.clickhouse, config.Ventilation.MeasurementBaseName, l)
 		if err != nil {
 			l.ErrorContext(ctx, "clickhouse duco store init failed", slog.Any("error", err))
 			os.Exit(1)
 		}
 		sinks = append(sinks, store)
 	}
-	if tdDB != nil {
-		store, err := tdengine.NewDucoStore(ctx, tdDB, config.Ventilation.MeasurementBaseName, l)
+	if dbs.tdengine != nil {
+		store, err := tdengine.NewDucoStore(ctx, dbs.tdengine, config.Ventilation.MeasurementBaseName, l)
 		if err != nil {
 			l.ErrorContext(ctx, "tdengine duco store init failed", slog.Any("error", err))
 			os.Exit(1)
@@ -88,11 +89,10 @@ func runVentilation(
 	ctx context.Context, l *slog.Logger,
 	healthSrv *healthserver.Server,
 	appMetrics *metrics.Metrics,
-	pgDB *postgres.DB, myDB *mysql.DB,
-	tsDB *timescaledb.DB, chDB *clickhouse.DB, tdDB *tdengine.DB,
+	dbs dbConnections,
 ) {
 	conf := config.Ventilation
-	sinks := buildVentilationSinks(ctx, l, healthSrv, pgDB, myDB, tsDB, chDB, tdDB)
+	sinks := buildVentilationSinks(ctx, l, healthSrv, dbs)
 	if len(sinks) == 0 {
 		l.WarnContext(ctx, "ventilation source enabled but no sinks available; skipping")
 		return

@@ -1,12 +1,39 @@
+# Minimal "try it out" Compose file: one source (grid meter) writing to one
+# sink (QuestDB). For the full multi-source, multi-sink model - one
+# container per source, unprivileged device access, Kubernetes examples,
+# and every supported sink - see documentation/deployment.md.
+#
+# Before running:
+#   cp config.example.yaml config.yaml   # then edit Grid.SerialInterface etc.
+#   docker compose up
 services:
-  meterlogger:
+  meterlogger-grid:
     image: yottabyte/meterlogger
     build:
-        context: .
-        dockerfile: Dockerfile
-    privileged: true
+      context: .
+      dockerfile: Dockerfile
+    command: ["--source", "grid"]
     restart: always
-    env_file:
-      - .env
+    depends_on:
+      - questdb
+    volumes:
+      - ./config.yaml:/root/.meterlogger.yaml:ro
+    # Unprivileged serial device access: grant read/write on the USB serial
+    # major device number instead of `privileged: true`.
     devices:
-      - /dev/ttyUSB1:/dev/ttyUSB1
+      - /dev/ttyUSB0:/dev/ttyUSB0
+    device_cgroup_rules:
+      - 'c 188:* rmw'
+    ports:
+      - "8081:8080"
+
+  questdb:
+    image: questdb/questdb:latest
+    ports:
+      - "9000:9000" # web console
+      - "9009:9009" # ILP ingestion (used by meterlogger)
+    volumes:
+      - questdb-data:/root/.questdb
+
+volumes:
+  questdb-data:

@@ -2,7 +2,7 @@
 
 Thanks for taking an interest. Pull requests are welcome.
 
-This project is published under the [Yottabyte Solutions Source Available License](LICENSE). It is not open source. You can read the code, fork it for the purpose of preparing a pull request, and submit changes back. You cannot use the code in your own products or services.
+This project is open source under the [MIT license](LICENSE). You can use, fork, modify, and redistribute it freely. Pull requests are welcome.
 
 ## Before you start
 
@@ -24,13 +24,7 @@ A change is likely out of scope if it:
 
 ## Contributor terms
 
-By submitting a pull request, you agree to the contribution terms in section 3 of the [LICENSE](LICENSE):
-
-- You are the author of the change, or you have the right to submit it.
-- You grant Yottabyte Solutions a perpetual, worldwide, royalty-free, sublicensable license to use and relicense your contribution.
-- You provide the contribution as is, without warranty.
-
-A separate CLA is not required at this time.
+No CLA is required. By submitting a pull request, you confirm that you have the right to submit the change, and you agree that your contribution is licensed under the project's [MIT license](LICENSE) (inbound = outbound). You provide the contribution as is, without warranty.
 
 ## Development setup
 

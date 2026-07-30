@@ -44,13 +44,20 @@ const (
 	deviceTypePCU           = "PCU"
 )
 
+// Config holds the connection parameters for an Enphase Envoy gateway.
+// Passed as a single value instead of positional strings to eliminate the
+// risk of silently transposing user/password/serial at a call site.
+type Config struct {
+	EnvoyURL string
+	User     string
+	Password string
+	Serial   string
+}
+
 type EnvoyReader struct {
-	envoyURL    string
-	envoyUser   string
-	envoyPass   string
-	envoySerial string
-	logger      *slog.Logger
-	token       *jwt.Token
+	cfg    Config
+	logger *slog.Logger
+	token  *jwt.Token
 }
 
 //nolint:gochecknoglobals // shared HTTP client for all Enphase requests
@@ -150,14 +157,14 @@ func (e *EnvoyReader) ReadEnvoySolarData(ctx context.Context) (domain.EnvoySolar
 		ProductionWh: inverterProductionData.WhLifetime,
 		Watt:         inverterProductionData.WNow,
 		PanelCount:   inverterProductionData.ActiveCount,
-		EnvoySerial:  e.envoySerial,
+		EnvoySerial:  e.cfg.Serial,
 		Inverters:    inverters,
 	}, nil
 }
 
 func (e *EnvoyReader) ensureToken(ctx context.Context) error {
 	if e.token == nil {
-		token, err := fetchToken(ctx, e.envoyUser, e.envoyPass, e.envoySerial)
+		token, err := fetchToken(ctx, e.cfg)
 		if err != nil {
 			return err
 		}
@@ -180,7 +187,7 @@ func (e *EnvoyReader) refreshIfExpiring(ctx context.Context) error {
 		validUntil = claims.ExpiresAt.Time.Format(time.RFC3339)
 	}
 	e.logger.InfoContext(ctx, "Token is about to expire, refreshing", slog.String("validUntil", validUntil))
-	token, err := fetchToken(ctx, e.envoyUser, e.envoyPass, e.envoySerial)
+	token, err := fetchToken(ctx, e.cfg)
 	if err != nil {
 		return err
 	}
@@ -189,7 +196,7 @@ func (e *EnvoyReader) refreshIfExpiring(ctx context.Context) error {
 }
 
 func (e *EnvoyReader) getInverterData(ctx context.Context) (*InverterData, error) {
-	rawInverterData, err := queryEnvoy(ctx, fmt.Sprintf(inverterDataURL, e.envoyURL), e.token.Raw, e.logger)
+	rawInverterData, err := queryEnvoy(ctx, fmt.Sprintf(inverterDataURL, e.cfg.EnvoyURL), e.token.Raw, e.logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get inverter data: %w", err)
 	}
@@ -198,7 +205,7 @@ func (e *EnvoyReader) getInverterData(ctx context.Context) (*InverterData, error
 }
 
 func (e *EnvoyReader) getInventoryData(ctx context.Context) (*InventoryData, error) {
-	rawInventory, err := queryEnvoy(ctx, fmt.Sprintf(inventoryDataURL, e.envoyURL), e.token.Raw, e.logger)
+	rawInventory, err := queryEnvoy(ctx, fmt.Sprintf(inventoryDataURL, e.cfg.EnvoyURL), e.token.Raw, e.logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get inventory data: %w", err)
 	}
@@ -207,7 +214,7 @@ func (e *EnvoyReader) getInventoryData(ctx context.Context) (*InventoryData, err
 }
 
 func (e *EnvoyReader) getMeterData(ctx context.Context) (*MeterReading, error) {
-	rawProductionData, err := queryEnvoy(ctx, fmt.Sprintf(productionDataURL, e.envoyURL), e.token.Raw, e.logger)
+	rawProductionData, err := queryEnvoy(ctx, fmt.Sprintf(productionDataURL, e.cfg.EnvoyURL), e.token.Raw, e.logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get meter data: %w", err)
 	}
@@ -267,19 +274,10 @@ func unmarshalInventoryData(body []byte) (*InventoryData, error) {
 	return &data, nil
 }
 
-func NewEnvoyReader(
-	envoyURL string,
-	envoyUser string,
-	envoyPass string,
-	envoySerial string,
-	logger *slog.Logger,
-) *EnvoyReader {
+func NewEnvoyReader(cfg Config, logger *slog.Logger) *EnvoyReader {
 	return &EnvoyReader{
-		envoyURL:    envoyURL,
-		envoyUser:   envoyUser,
-		envoyPass:   envoyPass,
-		envoySerial: envoySerial,
-		logger:      logger,
+		cfg:    cfg,
+		logger: logger,
 	}
 }
 
