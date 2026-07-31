@@ -208,8 +208,8 @@ github.com/tklauser/numcpus v0.12.0 h1:NR85qdvHA9pFse3x3weVZ0r0ST8R6l5RHbZrlRaqo
 github.com/tklauser/numcpus v0.12.0/go.mod h1:ABHeXzJnr/qqwguhClkZKT1/8VABcYrsyUiUGobwWJg=
 github.com/xyproto/randomstring v1.0.5 h1:YtlWPoRdgMu3NZtP45drfy1GKoojuR7hmRcnhZqKjWU=
 github.com/xyproto/randomstring v1.0.5/go.mod h1:rgmS5DeNXLivK7YprL0pY+lTuhNQW3iGxZ18UQApw/E=
-github.com/yottabytesolutions/gombus v0.0.0-20260731180647-4f0b6289f931 h1:XVHiFRDrWZooLVULmFQmH0xIC/PqkR5efROe2KSkn6A=
-github.com/yottabytesolutions/gombus v0.0.0-20260731180647-4f0b6289f931/go.mod h1:ECsY31LyiD2e2feS9pznZeZg6K3cmMZf9vetGfJobfk=
+github.com/yottabytesolutions/gombus v0.0.0-20260731181401-76c8c1e2956a h1:gHGQH7P+2osdTigwPbvllLvSzT5w0qtGnkL+rstAFCk=
+github.com/yottabytesolutions/gombus v0.0.0-20260731181401-76c8c1e2956a/go.mod h1:ECsY31LyiD2e2feS9pznZeZg6K3cmMZf9vetGfJobfk=
 github.com/yusufpapurcu/wmi v1.2.4 h1:zFUKzehAFReQwLys1b/iSMl+JQGSCSjtVqQn9bBrPo0=
 github.com/yusufpapurcu/wmi v1.2.4/go.mod h1:SBZ9tNy3G9/m5Oi98Zks0QjeHVDvuK0qfxQmPyzfmi0=
 go.bug.st/serial v1.8.0 h1:ZtnmN8aYXtPlTghwSvDWPHKBHL9TM6oFDa+KpSn4SQE=

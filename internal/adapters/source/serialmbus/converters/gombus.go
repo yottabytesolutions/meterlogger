@@ -6,7 +6,6 @@ package converters
 import (
 	"errors"
 	"fmt"
-	"log/slog"
 	"strconv"
 	"time"
 
@@ -82,36 +81,11 @@ func GombusToDomain(frame *gombus.DecodedFrame) (domain.HeatTelegram, error) {
 	}
 
 	for _, f := range heatFields() {
-		record, err := FindDataRecordValue(&frame.DataRecords, f.unitType, f.function)
-		if err != nil {
-			return result, fmt.Errorf("%s: %w", f.name, err)
+		value, ok := frame.Value(f.unitType, f.function)
+		if !ok {
+			return result, fmt.Errorf("%s: %w", f.name, ErrRecordNotFound)
 		}
-		f.assign(&result, record.Value)
+		f.assign(&result, value)
 	}
 	return result, nil
-}
-
-func FindDataRecordValue(
-	records *[]gombus.DecodedDataRecord,
-	unitType int,
-	measurementType string,
-) (gombus.DecodedDataRecord, error) {
-	const storageNo = 0
-	const deviceID = 0
-	for _, record := range *records {
-		if record.Unit.Type == unitType &&
-			record.Function == measurementType &&
-			record.StorageNumber == storageNo &&
-			record.Device == deviceID {
-			return record, nil
-		}
-	}
-
-	return gombus.DecodedDataRecord{}, ErrRecordNotFound
-}
-
-func LogAllDataRecords(records *[]gombus.DecodedDataRecord, logger *slog.Logger) {
-	for _, record := range *records {
-		logger.Info("Record", slog.Any("record", record))
-	}
 }
