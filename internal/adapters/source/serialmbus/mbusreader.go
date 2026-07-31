@@ -1,96 +1,116 @@
 // Package serialmbus implements the M-Bus heat meter reader over a serial
-// port. The package speaks the EN 13757 application layer using the
-// yottabytesolutions/gombus fork, decodes the response into a
-// domain.HeatTelegram, and recovers from common transient errors (EOF on
-// init, framing errors, port hiccups). Frame parsing helpers and unit
-// converters live in subpackages.
+// port. It opens the port at the meter's settings (9600 baud, even parity),
+// adapts it to gombus.Conn, and drives the EN 13757 exchange through the
+// yottabytesolutions/gombus client: SND_NKE init, REQ_UD2 request, long frame
+// decode. The decoded frame is mapped to a domain.HeatTelegram by the
+// converters subpackage.
 package serialmbus
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
-	"syscall"
 	"time"
 
+	"github.com/yottabytesolutions/gombus"
 	"go.bug.st/serial"
 
 	"github.com/yottabytesolutions/meterlogger/internal/adapters/source/serialmbus/converters"
-	"github.com/yottabytesolutions/meterlogger/internal/adapters/source/serialmbus/protocol"
 	"github.com/yottabytesolutions/meterlogger/internal/debuglog"
 	"github.com/yottabytesolutions/meterlogger/internal/domain"
 )
 
 const (
-	waitAfterInitCommand   = 300 * time.Millisecond
-	waitAfterNormalCommand = 10 * time.Second
-	readTimeoutDuration    = 1 * time.Second
-	mbusBaudRate           = 9600
-	maxZeroReadRetries     = 3
-	busyLoopDelay          = 10 * time.Millisecond
+	waitAfterInitCommand = 300 * time.Millisecond
+	frameRetryDelay      = 100 * time.Millisecond
+	mbusBaudRate         = 9600
 
-	mbusInitControl    = 0x40
-	mbusInitAddress    = 0xFD
-	mbusUD2Control     = 0x5B
-	mbusUD2Address     = 0x01
-	mbusReadBufferSize = 2048
+	// maxFrameReadAttempts times gombus's fixed 2s frame timeout gives a slow
+	// meter roughly the 10s of patience the previous implementation had.
+	maxFrameReadAttempts = 5
+
+	// mbusInitAddress is the SND_NKE destination: 0xFD (secondary select)
+	// resets the link layer regardless of the slave's primary address.
+	mbusInitAddress = 0xFD
+
+	// Destination address bounds, mirrored from gombus (unexported there).
+	// 0 marks an unconfigured slave, 251..255 are reserved except the two
+	// special destinations below.
+	minPrimaryAddress   = 1
+	maxPrimaryAddress   = 250
+	addrSecondarySelect = 0xFD
+	addrBroadcastReply  = 0xFE
 )
-
-// serialPortIface abstracts the serial port for testability.
-type serialPortIface interface {
-	Read(b []byte) (n int, err error)
-	Write(b []byte) (n int, err error)
-	Drain() error
-	Close() error
-}
 
 type Reader struct {
 	port          string
 	targetAddress byte
 	serialMode    *serial.Mode
-	serialPort    serialPortIface
+	client        *gombus.Client
 
-	initRequest protocol.Frame
-	ud2Request  protocol.Frame
-	logger      *slog.Logger
-	initDelay   time.Duration
-	readDelay   time.Duration
+	logger *slog.Logger
+	// initDelay is the pause between SND_NKE and reading the ack.
+	initDelay time.Duration
+	// readDelay is the pause between frame read retries.
+	readDelay time.Duration
+	// frameAttempts is the number of frame reads tried per REQ_UD2.
+	frameAttempts int
 }
 
-// newReaderFromPort constructs a Reader from an already-opened port.
+// validateTargetAddress accepts the destinations gombus will address: primary
+// addresses 1..250 plus 0xFD (secondary select) and 0xFE (broadcast with
+// reply). Checking at construction turns a misconfigured address into one
+// clear startup error instead of a failure on every read.
+func validateTargetAddress(addr byte) error {
+	if (addr >= minPrimaryAddress && addr <= maxPrimaryAddress) ||
+		addr == addrSecondarySelect || addr == addrBroadcastReply {
+		return nil
+	}
+	return fmt.Errorf("invalid mbus target address %d: want 1..250, 253 or 254", addr)
+}
+
+// newReaderFromPort constructs a Reader from an already-opened connection.
+// EOF or a read timeout during bus initialization is tolerated (idle bus),
+// any other init error closes the connection and fails construction.
 func newReaderFromPort(
 	ctx context.Context,
 	port string,
 	targetAddress byte,
 	logger *slog.Logger,
 	mode *serial.Mode,
-	sp serialPortIface,
-) *Reader {
+	conn gombus.Conn,
+) (*Reader, error) {
+	if err := validateTargetAddress(targetAddress); err != nil {
+		if closeErr := conn.Close(); closeErr != nil {
+			logger.ErrorContext(ctx, "Error closing serial port", slog.Any("error", closeErr))
+		}
+		return nil, err
+	}
+
 	reader := &Reader{
 		port:          port,
 		targetAddress: targetAddress,
 		serialMode:    mode,
-		serialPort:    sp,
+		client:        gombus.NewClient(conn),
 		logger:        logger,
 		initDelay:     waitAfterInitCommand,
-		readDelay:     waitAfterNormalCommand,
-		initRequest: (&protocol.ShortFrameStruct{
-			Control: mbusInitControl,
-			Address: mbusInitAddress,
-		}).Prepare(),
-		ud2Request: (&protocol.ShortFrameStruct{
-			Control: mbusUD2Control,
-			Address: mbusUD2Address,
-		}).Prepare(),
+		readDelay:     frameRetryDelay,
+		frameAttempts: maxFrameReadAttempts,
 	}
 
-	err := reader.InitMBus(ctx)
-	if err != nil && err.Error() != "EOF" {
-		logger.ErrorContext(ctx, "Error initializing MBus", slog.Any("error", err))
+	if err := reader.InitMBus(ctx); err != nil {
+		if !errors.Is(err, io.EOF) && !errors.Is(err, gombus.ErrReadTimeout) {
+			if closeErr := reader.client.Close(); closeErr != nil {
+				logger.ErrorContext(ctx, "Error closing serial port after failed init", slog.Any("error", closeErr))
+			}
+			return nil, fmt.Errorf("mbus init: %w", err)
+		}
+		logger.WarnContext(ctx, "MBus init got no ack, continuing", slog.Any("error", err))
 	}
 
-	return reader
+	return reader, nil
 }
 
 func NewReader(ctx context.Context, port string, targetAddress byte, logger *slog.Logger) (*Reader, error) {
@@ -100,28 +120,33 @@ func NewReader(ctx context.Context, port string, targetAddress byte, logger *slo
 		StopBits: serial.OneStopBit,
 	}
 
-	// Open the serial connection
 	s, err := serial.Open(port, mode)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open serial port: %w", err)
 	}
 
-	if err = s.SetReadTimeout(readTimeoutDuration); err != nil {
-		_ = s.Close()
-		return nil, fmt.Errorf("failed to set read timeout: %w", err)
-	}
-
-	return newReaderFromPort(ctx, port, targetAddress, logger, mode, s), nil
+	return newReaderFromPort(ctx, port, targetAddress, logger, mode, newSerialConn(s))
 }
 
+// InitMBus resets the bus link layer with SND_NKE and waits for the E5 ack.
 func (r *Reader) InitMBus(ctx context.Context) error {
 	r.logger.InfoContext(ctx, "Initializing MBus")
-	_, err := r.writeWaitRead(ctx, r.initRequest.ToBytes(), r.initDelay)
-	return err
+	if err := r.client.WriteFrame(ctx, gombus.SndNKE(mbusInitAddress)); err != nil {
+		return fmt.Errorf("write SND_NKE: %w", err)
+	}
+	if err := sleepCtx(ctx, r.initDelay); err != nil {
+		return err
+	}
+	if _, err := r.client.ReadSingleCharFrame(ctx); err != nil {
+		return err
+	}
+	return nil
 }
 
+// ResetPort closes and reopens the serial port, then re-initializes the bus.
+// Best effort: failures are logged and the next read cycle retries.
 func (r *Reader) ResetPort(ctx context.Context) {
-	if err := r.serialPort.Close(); err != nil {
+	if err := r.client.Close(); err != nil {
 		r.logger.ErrorContext(ctx, "Error closing serial port", slog.Any("error", err))
 	}
 
@@ -130,38 +155,34 @@ func (r *Reader) ResetPort(ctx context.Context) {
 		r.logger.ErrorContext(ctx, "Failed to open serial port", slog.Any("error", err))
 		return
 	}
-	if err = s.SetReadTimeout(readTimeoutDuration); err != nil {
-		r.logger.ErrorContext(ctx, "Failed to set read timeout", slog.Any("error", err))
-		if closeErr := s.Close(); closeErr != nil {
-			r.logger.ErrorContext(ctx, "Failed to close serial port after timeout error", slog.Any("error", closeErr))
-		}
-		return
-	}
-	r.serialPort = s
+	r.client = gombus.NewClient(newSerialConn(s))
 
-	_ = r.InitMBus(ctx)
+	if initErr := r.InitMBus(ctx); initErr != nil {
+		r.logger.WarnContext(ctx, "MBus init after port reset failed", slog.Any("error", initErr))
+	}
 }
 
 func (r *Reader) ReadHeatTelegram(ctx context.Context) (domain.HeatTelegram, error) {
 	telegram := domain.HeatTelegram{}
-	response, err := r.writeWaitRead(ctx, r.ud2Request.ToBytes(), r.readDelay)
+
+	frame, err := r.requestFrame(ctx)
 	if err != nil {
 		if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
-			r.logger.WarnContext(ctx, "Error writing UD2 request", slog.Any("error", err))
+			r.logger.WarnContext(ctx, "Error reading UD2 response", slog.Any("error", err))
 		}
 		return telegram, err
 	}
 
-	r.logger.DebugContext(ctx, "Received response", slog.Any("response", fmt.Sprintf("%#x", response)))
+	r.logger.DebugContext(ctx, "Received response", slog.Any("response", fmt.Sprintf("%#x", []byte(frame))))
 
-	gombusResponse, err := protocol.ParseUsingGombus(response)
+	decoded, err := frame.Decode()
 	if err != nil {
 		r.logger.ErrorContext(ctx, "Error parsing response", slog.Any("error", err))
 		return telegram, err
 	}
 
-	r.logger.DebugContext(ctx, "Parsed response", slog.Any("response", gombusResponse))
-	for _, rec := range gombusResponse.DataRecords {
+	r.logger.DebugContext(ctx, "Parsed response", slog.Any("response", decoded))
+	for _, rec := range decoded.DataRecords {
 		r.logger.DebugContext(
 			ctx,
 			"data record",
@@ -173,7 +194,7 @@ func (r *Reader) ReadHeatTelegram(ctx context.Context) (domain.HeatTelegram, err
 		)
 	}
 
-	telegram, err = converters.GombusToDomain(gombusResponse)
+	telegram, err = converters.GombusToDomain(decoded)
 	if err != nil {
 		r.logger.ErrorContext(ctx, "Error converting to domain", slog.Any("error", err))
 		return telegram, err
@@ -183,91 +204,42 @@ func (r *Reader) ReadHeatTelegram(ctx context.Context) (domain.HeatTelegram, err
 	return telegram, nil
 }
 
-func (r *Reader) writeWaitRead(ctx context.Context, b []byte, dur time.Duration) ([]byte, error) {
-	if err := r.writeWithRetry(ctx, b); err != nil {
-		return nil, err
-	}
-	if err := r.drainWithRetry(ctx); err != nil {
-		return nil, err
-	}
-
-	r.logger.DebugContext(ctx, "Wrote bytes to serial port", slog.Any("bytes", fmt.Sprintf("%#x", b)))
-
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case <-time.After(dur):
+// requestFrame sends one REQ_UD2 and reads the long frame response. gombus
+// caps each frame read at a fixed 2s; a slow meter needs more, so timeouts
+// are retried up to frameAttempts times without re-sending the request.
+func (r *Reader) requestFrame(ctx context.Context) (gombus.LongFrame, error) {
+	if err := r.client.WriteFrame(ctx, gombus.RequestUD2(r.targetAddress)); err != nil {
+		return nil, fmt.Errorf("write REQ_UD2: %w", err)
 	}
 
-	return r.readWithRetry(ctx)
-}
-
-func (r *Reader) writeWithRetry(ctx context.Context, b []byte) error {
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-		n, err := r.serialPort.Write(b)
-		if err != nil {
-			if errors.Is(err, syscall.EINTR) {
-				continue
+	var lastErr error
+	for attempt := range r.frameAttempts {
+		if attempt > 0 {
+			if err := sleepCtx(ctx, r.readDelay); err != nil {
+				return nil, err
 			}
-			return err
 		}
-		if n != len(b) {
-			return fmt.Errorf("wrote %d bytes, expected to write %d bytes", n, len(b))
+		frame, err := r.client.ReadLongFrame(ctx)
+		if err == nil {
+			return frame, nil
 		}
-		return nil
-	}
-}
-
-func (r *Reader) drainWithRetry(ctx context.Context) error {
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-		if err := r.serialPort.Drain(); err != nil {
-			if errors.Is(err, syscall.EINTR) {
-				continue
-			}
-			return err
-		}
-		return nil
-	}
-}
-
-func (r *Reader) readWithRetry(ctx context.Context) ([]byte, error) {
-	buf := make([]byte, mbusReadBufferSize)
-	zeroReads := 0
-	for {
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		default:
-		}
-		n, err := r.serialPort.Read(buf)
-		if err != nil {
-			if errors.Is(err, syscall.EINTR) {
-				continue
-			}
+		if !errors.Is(err, gombus.ErrReadTimeout) {
 			return nil, err
 		}
-		if n == 0 {
-			zeroReads++
-			if zeroReads > maxZeroReadRetries {
-				return nil, fmt.Errorf("serial read: no data after %d retries", maxZeroReadRetries)
-			}
-			select {
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			case <-time.After(busyLoopDelay):
-				continue
-			}
-		}
-		return buf[:n], nil
+		lastErr = err
+	}
+	return nil, lastErr
+}
+
+// sleepCtx waits for dur or until ctx ends, whichever comes first.
+func sleepCtx(ctx context.Context, dur time.Duration) error {
+	if dur <= 0 {
+		return ctx.Err()
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(dur):
+		return nil
 	}
 }

@@ -9,7 +9,7 @@ import (
 
 // TestBuildSinksFunctionsWireEveryKnownSink statically verifies that every
 // build<Source>Sinks function in cmd/meterlogger references every known sink
-// identifier (QuestDB, postgres, mysql, timescaledb, clickhouse, tdengine).
+// identifier (QuestDB, stdout, postgres, mysql, timescaledb, clickhouse, tdengine).
 // CLAUDE.md's "Adding a
 // new sink" checklist requires wiring a new sink into all four source_*.go
 // files by hand; nothing fails to compile if a contributor wires it into some
@@ -27,7 +27,9 @@ func TestBuildSinksFunctionsWireEveryKnownSink(t *testing.T) {
 		{"solar", "source_solar.go", "buildSolarSinks"},
 		{"ventilation", "source_ventilation.go", "buildVentilationSinks"},
 	}
-	requiredSinkIdentifiers := []string{"QuestDB", "postgres", "mysql", "timescaledb", "clickhouse", "tdengine"}
+	requiredSinkIdentifiers := []string{
+		"QuestDB", "stdout", "postgres", "mysql", "timescaledb", "clickhouse", "tdengine",
+	}
 
 	for _, w := range sourceWirings {
 		fn := findFuncDecl(t, w.fileName, w.funcName)
@@ -40,7 +42,7 @@ func TestBuildSinksFunctionsWireEveryKnownSink(t *testing.T) {
 		for _, want := range requiredSinkIdentifiers {
 			if !seen[want] {
 				t.Errorf(
-					"source %q: %s in %s does not reference %q — this sink looks unwired for this source",
+					"source %q: %s in %s does not reference %q; this sink looks unwired for this source",
 					w.source, w.funcName, w.fileName, want,
 				)
 			}

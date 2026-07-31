@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
@@ -91,11 +92,17 @@ func (m *mockSolarRepo) Flush(_ context.Context) error {
 func (m *mockSolarRepo) Close() error { return nil }
 
 type mockGridReader struct {
+	ch      chan domain.GridTelegram
 	readErr error
 	done    chan struct{}
 }
 
+func (m *mockGridReader) Telegrams() <-chan domain.GridTelegram { return m.ch }
+
 func (m *mockGridReader) ReadGridTelegrams(ctx context.Context) error {
+	if m.ch != nil {
+		defer close(m.ch)
+	}
 	if m.done != nil {
 		select {
 		case <-m.done:
@@ -185,6 +192,20 @@ func (m *mockDucoRepo) Close() error { return nil }
 
 func testLogger() *slog.Logger {
 	return slog.New(slog.DiscardHandler)
+}
+
+// waitFor polls cond every few milliseconds until it returns true or a one
+// second timeout expires, in which case the test fails with msg.
+func waitFor(t *testing.T, cond func() bool, msg string) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal(msg)
 }
 
 // --- HeatMeterLoggingService tests ---
@@ -366,11 +387,10 @@ func TestSolarLoggingService_Start_Flushes(t *testing.T) {
 // --- GridLoggingService tests ---
 
 func TestNewGridLoggingService(t *testing.T) {
-	ch := make(chan domain.GridTelegram, 1)
 	done := make(chan struct{})
-	reader := &mockGridReader{done: done}
+	reader := &mockGridReader{ch: make(chan domain.GridTelegram, 1), done: done}
 	repo := &mockGridRepo{}
-	svc := NewGridLoggingService(reader, repo, time.Second, ch, testLogger())
+	svc := NewGridLoggingService(reader, repo, time.Second, testLogger())
 	if svc == nil {
 		t.Error("NewGridLoggingService() returned nil")
 	}
@@ -378,11 +398,10 @@ func TestNewGridLoggingService(t *testing.T) {
 }
 
 func TestGridLoggingService_Start_ContextCancel(t *testing.T) {
-	ch := make(chan domain.GridTelegram, 10)
 	done := make(chan struct{})
-	reader := &mockGridReader{done: done}
+	reader := &mockGridReader{ch: make(chan domain.GridTelegram, 10), done: done}
 	repo := &mockGridRepo{}
-	svc := NewGridLoggingService(reader, repo, time.Hour, ch, testLogger())
+	svc := NewGridLoggingService(reader, repo, time.Hour, testLogger())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	stopped := make(chan struct{})
@@ -401,37 +420,31 @@ func TestGridLoggingService_Start_ContextCancel(t *testing.T) {
 }
 
 func TestGridLoggingService_Start_StoresTelegram(t *testing.T) {
-	ch := make(chan domain.GridTelegram, 10)
 	done := make(chan struct{})
-	reader := &mockGridReader{done: done}
+	reader := &mockGridReader{ch: make(chan domain.GridTelegram, 10), done: done}
 	repo := &mockGridRepo{}
-	svc := NewGridLoggingService(reader, repo, time.Hour, ch, testLogger())
+	svc := NewGridLoggingService(reader, repo, time.Hour, testLogger())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	go svc.Start(ctx)
 
-	ch <- domain.GridTelegram{MeterMerkType: "ISK"}
-	time.Sleep(50 * time.Millisecond)
+	reader.ch <- domain.GridTelegram{MeterMerkType: "ISK"}
+	waitFor(t, func() bool {
+		repo.mu.Lock()
+		defer repo.mu.Unlock()
+		return len(repo.stored) > 0
+	}, "GridLoggingService did not store any telegrams")
 	cancel()
-	time.Sleep(20 * time.Millisecond)
 	close(done)
-
-	repo.mu.Lock()
-	count := len(repo.stored)
-	repo.mu.Unlock()
-	if count == 0 {
-		t.Error("GridLoggingService did not store any telegrams")
-	}
 }
 
 func TestGridLoggingService_StoreData_LogsSuccessfulDataFlow(t *testing.T) {
 	var logOutput bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&logOutput, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	ch := make(chan domain.GridTelegram, 1)
 	done := make(chan struct{})
-	reader := &mockGridReader{done: done}
+	reader := &mockGridReader{ch: make(chan domain.GridTelegram, 1), done: done}
 	repo := &mockGridRepo{}
-	svc := NewGridLoggingService(reader, repo, time.Hour, ch, logger)
+	svc := NewGridLoggingService(reader, repo, time.Hour, logger)
 
 	if err := svc.storeData(context.Background(), domain.GridTelegram{Serienummer: "grid-meter-1"}); err != nil {
 		t.Fatalf("storeData() error = %v", err)
@@ -444,26 +457,21 @@ func TestGridLoggingService_StoreData_LogsSuccessfulDataFlow(t *testing.T) {
 }
 
 func TestGridLoggingService_Start_Flushes(t *testing.T) {
-	ch := make(chan domain.GridTelegram, 10)
 	done := make(chan struct{})
-	reader := &mockGridReader{done: done}
+	reader := &mockGridReader{ch: make(chan domain.GridTelegram, 10), done: done}
 	repo := &mockGridRepo{}
-	svc := NewGridLoggingService(reader, repo, 10*time.Millisecond, ch, testLogger())
+	svc := NewGridLoggingService(reader, repo, 10*time.Millisecond, testLogger())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	go svc.Start(ctx)
 
-	time.Sleep(50 * time.Millisecond)
+	waitFor(t, func() bool {
+		repo.mu.Lock()
+		defer repo.mu.Unlock()
+		return repo.flushed > 0
+	}, "GridLoggingService did not flush")
 	cancel()
-	time.Sleep(20 * time.Millisecond)
 	close(done)
-
-	repo.mu.Lock()
-	flushed := repo.flushed
-	repo.mu.Unlock()
-	if flushed == 0 {
-		t.Error("GridLoggingService did not flush")
-	}
 }
 
 // --- DucoLoggingService tests ---
@@ -608,7 +616,7 @@ func TestDucoLoggingService_Start_NodeErrorUNKN(t *testing.T) {
 	boxStatus := domain.DucoBoxStatus{}
 	reader := &mockDucoReader{
 		boxStatus: boxStatus,
-		nodeErr:   errors.New("unknown devtype: UNKN"),
+		nodeErr:   fmt.Errorf("%w: UNKN", domain.ErrUnknownDevType),
 	}
 	repo := &mockDucoRepo{}
 	svc := NewDucoLoggingService(reader, repo, 10*time.Millisecond, time.Hour, []int{1}, testLogger())
@@ -768,40 +776,64 @@ func TestHeatMeterLoggingService_Start_FlushError(t *testing.T) {
 	)
 }
 
-func TestSolarLoggingService_Start_ReadError(_ *testing.T) {
-	withNoopKiller(
-		func() {
-			reader := &mockSolarReader{readErr: errors.New("solar read failure")}
-			repo := &mockSolarRepo{}
-			svc := NewSolarLoggingService(reader, repo, 10*time.Millisecond, time.Hour, testLogger())
+// Consecutive read errors must escalate via processKiller after the threshold,
+// with nothing stored.
+func TestSolarLoggingService_Start_ReadError(t *testing.T) {
+	withSafeKillerSignal(func(killerCalled <-chan struct{}) {
+		reader := &mockSolarReader{readErr: errors.New("solar read failure")}
+		repo := &mockSolarRepo{}
+		svc := NewSolarLoggingService(reader, repo, time.Millisecond, time.Hour, testLogger())
 
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-			done := make(chan struct{})
-			go func() { svc.Start(ctx); close(done) }()
-			time.Sleep(50 * time.Millisecond)
-			cancel()
-			<-done
-		},
-	)
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan struct{})
+		go func() { svc.Start(ctx); close(done) }()
+
+		select {
+		case <-killerCalled:
+		case <-time.After(2 * time.Second):
+			t.Fatal("processKiller was not called after consecutive read errors")
+		}
+
+		repo.mu.Lock()
+		count := len(repo.stored)
+		repo.mu.Unlock()
+		if count != 0 {
+			t.Errorf("SolarLoggingService stored %d readings on read errors, want 0", count)
+		}
+
+		cancel()
+		<-done
+	})
 }
 
-func TestSolarLoggingService_Start_StoreError(_ *testing.T) {
-	withNoopKiller(
-		func() {
-			reader := &mockSolarReader{data: domain.EnvoySolarData{Watt: 100}}
-			repo := &mockSolarRepo{storeErr: errors.New("store failure")}
-			svc := NewSolarLoggingService(reader, repo, 10*time.Millisecond, time.Hour, testLogger())
+// Every failing store attempt is recorded; after maxConsecutiveErrors of them
+// the service escalates via processKiller.
+func TestSolarLoggingService_Start_StoreError(t *testing.T) {
+	withSafeKillerSignal(func(killerCalled <-chan struct{}) {
+		reader := &mockSolarReader{data: domain.EnvoySolarData{Watt: 100}}
+		repo := &mockSolarRepo{storeErr: errors.New("store failure")}
+		svc := NewSolarLoggingService(reader, repo, time.Millisecond, time.Hour, testLogger())
 
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-			done := make(chan struct{})
-			go func() { svc.Start(ctx); close(done) }()
-			time.Sleep(50 * time.Millisecond)
-			cancel()
-			<-done
-		},
-	)
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan struct{})
+		go func() { svc.Start(ctx); close(done) }()
+
+		select {
+		case <-killerCalled:
+		case <-time.After(2 * time.Second):
+			t.Fatal("processKiller was not called after consecutive store errors")
+		}
+
+		repo.mu.Lock()
+		count := len(repo.stored)
+		repo.mu.Unlock()
+		if count < maxConsecutiveErrors {
+			t.Errorf("store attempts = %d, want at least %d before escalation", count, maxConsecutiveErrors)
+		}
+
+		cancel()
+		<-done
+	})
 }
 
 // Solar service escalates via processKiller after maxConsecutiveErrors
@@ -842,65 +874,93 @@ func TestSolarLoggingService_Start_StoreErrorEscalates(t *testing.T) {
 	}
 }
 
-func TestSolarLoggingService_Start_FlushError(_ *testing.T) {
-	withNoopKiller(
-		func() {
-			reader := &mockSolarReader{}
-			repo := &mockSolarRepo{flushErr: errors.New("flush failure")}
-			svc := NewSolarLoggingService(reader, repo, time.Hour, 10*time.Millisecond, testLogger())
+// Flush errors are logged but never escalate: processKiller must not fire and
+// the service keeps flushing.
+func TestSolarLoggingService_Start_FlushError(t *testing.T) {
+	withSafeKillerSignal(func(killerCalled <-chan struct{}) {
+		reader := &mockSolarReader{}
+		repo := &mockSolarRepo{flushErr: errors.New("flush failure")}
+		svc := NewSolarLoggingService(reader, repo, time.Hour, 10*time.Millisecond, testLogger())
 
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-			done := make(chan struct{})
-			go func() { svc.Start(ctx); close(done) }()
-			time.Sleep(50 * time.Millisecond)
-			cancel()
-			<-done
-		},
-	)
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan struct{})
+		go func() { svc.Start(ctx); close(done) }()
+
+		waitFor(t, func() bool {
+			repo.mu.Lock()
+			defer repo.mu.Unlock()
+			return repo.flushed >= 2
+		}, "SolarLoggingService stopped flushing after a flush error")
+
+		select {
+		case <-killerCalled:
+			t.Error("processKiller fired on flush errors; flush errors must not escalate")
+		default:
+		}
+
+		cancel()
+		<-done
+	})
 }
 
-func TestGridLoggingService_Start_ReadError(_ *testing.T) {
-	withNoopKiller(
-		func() {
-			ch := make(chan domain.GridTelegram, 10)
-			readerDone := make(chan struct{})
-			reader := &mockGridReader{done: readerDone, readErr: errors.New("grid read failure")}
-			repo := &mockGridRepo{}
-			svc := NewGridLoggingService(reader, repo, time.Hour, ch, testLogger())
+// A reader error must escalate via processKiller from the reader goroutine.
+func TestGridLoggingService_Start_ReadError(t *testing.T) {
+	withSafeKillerSignal(func(killerCalled <-chan struct{}) {
+		readerDone := make(chan struct{})
+		reader := &mockGridReader{
+			ch:      make(chan domain.GridTelegram, 10),
+			done:    readerDone,
+			readErr: errors.New("grid read failure"),
+		}
+		repo := &mockGridRepo{}
+		svc := NewGridLoggingService(reader, repo, time.Hour, testLogger())
 
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-			done := make(chan struct{})
-			go func() { svc.Start(ctx); close(done) }()
-			close(readerDone) // unblock the reader which then returns an error
-			time.Sleep(50 * time.Millisecond)
-			cancel()
-			<-done
-		},
-	)
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan struct{})
+		go func() { svc.Start(ctx); close(done) }()
+		close(readerDone) // unblock the reader which then returns an error
+
+		select {
+		case <-killerCalled:
+		case <-time.After(2 * time.Second):
+			t.Fatal("processKiller was not called after grid reader error")
+		}
+
+		cancel()
+		<-done
+	})
 }
 
-func TestGridLoggingService_Start_StoreError(_ *testing.T) {
-	withNoopKiller(
-		func() {
-			ch := make(chan domain.GridTelegram, 10)
-			readerDone := make(chan struct{})
-			reader := &mockGridReader{done: readerDone}
-			repo := &mockGridRepo{storeErr: errors.New("store failure")}
-			svc := NewGridLoggingService(reader, repo, time.Hour, ch, testLogger())
+// A single store error below the threshold is tolerated: the attempt is
+// recorded and processKiller does not fire.
+func TestGridLoggingService_Start_StoreError(t *testing.T) {
+	withSafeKillerSignal(func(killerCalled <-chan struct{}) {
+		readerDone := make(chan struct{})
+		reader := &mockGridReader{ch: make(chan domain.GridTelegram, 10), done: readerDone}
+		repo := &mockGridRepo{storeErr: errors.New("store failure")}
+		svc := NewGridLoggingService(reader, repo, time.Hour, testLogger())
 
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-			done := make(chan struct{})
-			go func() { svc.Start(ctx); close(done) }()
-			ch <- domain.GridTelegram{}
-			time.Sleep(50 * time.Millisecond)
-			cancel()
-			close(readerDone)
-			<-done
-		},
-	)
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan struct{})
+		go func() { svc.Start(ctx); close(done) }()
+
+		reader.ch <- domain.GridTelegram{}
+		waitFor(t, func() bool {
+			repo.mu.Lock()
+			defer repo.mu.Unlock()
+			return len(repo.stored) == 1
+		}, "GridLoggingService did not attempt to store the telegram")
+
+		select {
+		case <-killerCalled:
+			t.Error("processKiller fired on a single store error below the threshold")
+		default:
+		}
+
+		cancel()
+		close(readerDone)
+		<-done
+	})
 }
 
 // Grid service escalates via processKiller after maxConsecutiveErrors
@@ -916,11 +976,13 @@ func TestGridLoggingService_Start_StoreErrorEscalates(t *testing.T) {
 	}
 	defer func() { processKiller = orig }()
 
-	ch := make(chan domain.GridTelegram, maxConsecutiveErrors)
 	readerDone := make(chan struct{})
-	reader := &mockGridReader{done: readerDone}
+	reader := &mockGridReader{
+		ch:   make(chan domain.GridTelegram, maxConsecutiveErrors),
+		done: readerDone,
+	}
 	repo := &mockGridRepo{storeErr: errors.New("store failure")}
-	svc := NewGridLoggingService(reader, repo, time.Hour, ch, testLogger())
+	svc := NewGridLoggingService(reader, repo, time.Hour, testLogger())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
@@ -930,7 +992,7 @@ func TestGridLoggingService_Start_StoreErrorEscalates(t *testing.T) {
 	}()
 
 	for range maxConsecutiveErrors {
-		ch <- domain.GridTelegram{}
+		reader.ch <- domain.GridTelegram{}
 	}
 
 	select {
@@ -948,27 +1010,39 @@ func TestGridLoggingService_Start_StoreErrorEscalates(t *testing.T) {
 	}
 }
 
-func TestGridLoggingService_Start_FlushError(_ *testing.T) {
-	withNoopKiller(
-		func() {
-			ch := make(chan domain.GridTelegram, 10)
-			readerDone := make(chan struct{})
-			reader := &mockGridReader{done: readerDone}
-			repo := &mockGridRepo{flushErr: errors.New("flush failure")}
-			svc := NewGridLoggingService(reader, repo, 10*time.Millisecond, ch, testLogger())
+// Flush errors are logged but never escalate: processKiller must not fire and
+// the service keeps flushing.
+func TestGridLoggingService_Start_FlushError(t *testing.T) {
+	withSafeKillerSignal(func(killerCalled <-chan struct{}) {
+		readerDone := make(chan struct{})
+		reader := &mockGridReader{ch: make(chan domain.GridTelegram, 10), done: readerDone}
+		repo := &mockGridRepo{flushErr: errors.New("flush failure")}
+		svc := NewGridLoggingService(reader, repo, 10*time.Millisecond, testLogger())
 
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-			done := make(chan struct{})
-			go func() { svc.Start(ctx); close(done) }()
-			time.Sleep(50 * time.Millisecond)
-			cancel()
-			close(readerDone)
-			<-done
-		},
-	)
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan struct{})
+		go func() { svc.Start(ctx); close(done) }()
+
+		waitFor(t, func() bool {
+			repo.mu.Lock()
+			defer repo.mu.Unlock()
+			return repo.flushed >= 2
+		}, "GridLoggingService stopped flushing after a flush error")
+
+		select {
+		case <-killerCalled:
+			t.Error("processKiller fired on flush errors; flush errors must not escalate")
+		default:
+		}
+
+		cancel()
+		close(readerDone)
+		<-done
+	})
 }
 
+// Duco flush errors escalate only after maxConsecutiveErrors consecutive
+// failures, matching the tolerant policy of the other services.
 func TestDucoLoggingService_Start_FlushError(t *testing.T) {
 	killerCalled := make(chan struct{}, 1)
 	orig := processKiller
@@ -989,7 +1063,14 @@ func TestDucoLoggingService_Start_FlushError(t *testing.T) {
 	select {
 	case <-killerCalled:
 	case <-time.After(2 * time.Second):
-		t.Fatal("processKiller was not called after flush error")
+		t.Fatal("processKiller was not called after consecutive flush errors")
+	}
+
+	repo.mu.Lock()
+	flushed := repo.flushed
+	repo.mu.Unlock()
+	if flushed < maxConsecutiveErrors {
+		t.Errorf("flush attempts = %d, want at least %d before escalation", flushed, maxConsecutiveErrors)
 	}
 
 	cancel()
@@ -1098,10 +1179,9 @@ func TestSolarLoggingService_WithMetrics(t *testing.T) {
 }
 
 func TestGridLoggingService_WithMetrics(t *testing.T) {
-	ch := make(chan domain.GridTelegram, 1)
-	reader := &mockGridReader{}
+	reader := &mockGridReader{ch: make(chan domain.GridTelegram, 1)}
 	repo := &mockGridRepo{}
-	svc := NewGridLoggingService(reader, repo, time.Hour, ch, testLogger())
+	svc := NewGridLoggingService(reader, repo, time.Hour, testLogger())
 	m := metrics.New()
 	got := svc.WithMetrics(m)
 	if got != svc {

@@ -44,7 +44,10 @@ Out of scope:
 ## Hardening notes for operators
 
 - Run the container as a non-root user. The published image already drops to user `minion`.
-- Bind the health server to an internal network only. It exposes process metrics through `/metrics`.
+- Bind the health server to an internal network only. It listens on all interfaces without
+  authentication and exposes process metrics through `/metrics`. Never expose it publicly.
+- Only the Postgres and TimescaleDB sinks support TLS (`SSLMode`). MySQL, ClickHouse, TDEngine,
+  and QuestDB ILP connections are plaintext. Run those sinks on a trusted network.
 - Pass database credentials through environment variables or a secret store, not committed config files.
 - Revoke and rotate any credential that has appeared in a log.
 - Pin the container image by digest in production.

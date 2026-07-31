@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"time"
 
@@ -39,6 +38,7 @@ func NewSolarLoggingService(
 		interval:      interval,
 		flushInterval: flushInterval,
 		logger:        logger,
+		metrics:       metrics.NewNoop(),
 	}
 }
 
@@ -57,7 +57,7 @@ func (s *SolarLoggingService) Start(ctx context.Context) {
 	for {
 		select {
 		case <-flushTicker.C:
-			err := s.sink.Flush(ctx)
+			err := withStoreTimeout(ctx, s.sink.Flush)
 			if err != nil {
 				s.logger.ErrorContext(ctx, "error flushing envoy data", slog.Any("error", err))
 			}
@@ -78,7 +78,9 @@ func (s *SolarLoggingService) handleTick(ctx context.Context, consecutiveErrors 
 		*consecutiveErrors = 0
 		return false
 	}
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+	// Only a cancelled parent context means shutdown. A DeadlineExceeded from
+	// a store timeout must count towards the error threshold.
+	if ctx.Err() != nil {
 		return true
 	}
 	*consecutiveErrors++
@@ -86,9 +88,7 @@ func (s *SolarLoggingService) handleTick(ctx context.Context, consecutiveErrors 
 		slog.Any("error", err),
 		slog.Int("consecutiveErrors", *consecutiveErrors),
 	)
-	if s.metrics != nil {
-		s.metrics.ReadErrorsTotal.WithLabelValues("solar").Inc()
-	}
+	s.metrics.ReadErrorsTotal.WithLabelValues("solar").Inc()
 	if *consecutiveErrors >= maxConsecutiveErrors {
 		s.logger.ErrorContext(ctx, "solar: too many consecutive errors, terminating")
 		processKiller()
@@ -109,22 +109,19 @@ func (s *SolarLoggingService) runReadAndStore(ctx context.Context) error {
 		return err
 	}
 
-	if s.metrics != nil {
-		s.metrics.ReadsTotal.WithLabelValues("solar").Inc()
-		s.metrics.LastReadTime.WithLabelValues("solar").SetToCurrentTime()
-	}
+	s.metrics.ReadsTotal.WithLabelValues("solar").Inc()
+	s.metrics.LastReadTime.WithLabelValues("solar").SetToCurrentTime()
 
-	if storeErr := s.sink.StoreEnvoySolarData(ctx, meterData); storeErr != nil {
+	storeErr := withStoreTimeout(ctx, func(c context.Context) error {
+		return s.sink.StoreEnvoySolarData(c, meterData)
+	})
+	if storeErr != nil {
 		span.RecordError(storeErr)
 		span.SetStatus(codes.Error, "store solar data failed")
-		if s.metrics != nil {
-			s.metrics.WriteErrorsTotal.WithLabelValues("multisink", "solar").Inc()
-		}
+		s.metrics.WriteErrorsTotal.WithLabelValues("multisink", "solar").Inc()
 		return storeErr
 	}
-	if s.metrics != nil {
-		s.metrics.WritesTotal.WithLabelValues("multisink", "solar").Inc()
-	}
+	s.metrics.WritesTotal.WithLabelValues("multisink", "solar").Inc()
 	if !s.dataFlowLogged {
 		s.logger.InfoContext(ctx, "solar data flow started successfully")
 		s.dataFlowLogged = true

@@ -43,14 +43,18 @@ At least one sink must be enabled. The process exits with a fatal error if all s
 
 ### Supported sinks
 
-| Config key    | Backend                      | Default port | Auto-migration |
-|---------------|------------------------------|:------------:|:--------------:|
-| `QuestDB`     | QuestDB (ILP/TCP)            |     9009     |   automatic    |
-| `Postgres`    | PostgreSQL                   |     5432     |      yes       |
-| `MySQL`       | MySQL / MariaDB              |     3306     |      yes       |
-| `TimescaleDB` | TimescaleDB (PostgreSQL ext) |     5432     |      yes       |
-| `ClickHouse`  | ClickHouse                   |     9000     |      yes       |
-| `TDEngine`    | TDEngine                     |     6041     |      yes       |
+| Config key    | Backend                      | Default port |   Auto-migration   |
+|---------------|------------------------------|:------------:|:------------------:|
+| `QuestDB`     | QuestDB (ILP/TCP)            |     9009     | automatic via ILP  |
+| `Postgres`    | PostgreSQL                   |     5432     |        yes         |
+| `MySQL`       | MySQL / MariaDB              |     3306     |        yes         |
+| `TimescaleDB` | TimescaleDB (PostgreSQL ext) |     5432     |        yes         |
+| `ClickHouse`  | ClickHouse                   |     9000     |        yes         |
+| `TDEngine`    | TDEngine                     |     6041     |        yes         |
+| `Stdout`      | Log output (debug only)      |      -       |        n/a         |
+
+The `Stdout` sink logs every record instead of persisting it. Use it to inspect meter data during
+setup or debugging. It is not for production.
 
 ---
 
@@ -108,7 +112,7 @@ HTTPServer:
                                    # /readyz still flips on the first failure.
 
 # ── QuestDB sink ─────────────────────────────────────────────
-# Enabled defaults to true; existing configs continue to work.
+# Enabled defaults to false; every sink must be enabled explicitly.
 QuestDB:
   Enabled: true
   Host: questdb              # hostname or IP
@@ -189,7 +193,7 @@ Heat:
   Enabled: true
   Measurement: heat_meter      # table name in all enabled sinks
   SerialInterface: /dev/ttyUSB0
-  MbusAddress: 1               # M-Bus device address (1–250)
+  MbusAddress: 1               # M-Bus device address (1 to 250)
   ScrapeInterval: 30s
 
 # ── Grid meter (DSMR P1 over serial) ───────────────────────
@@ -225,9 +229,10 @@ Ventilation:
 
 ## Environment variable mapping
 
-Viper maps YAML keys to environment variables. Key rules:
+Every config key can be set via an environment variable. No config file is needed; an env-only
+setup works. Key rules:
 
-- Dots replaced with underscores: `QuestDb.Host` → `QUESTDB_HOST`
+- Dots replaced with underscores: `QuestDB.Host` → `QUESTDB_HOST`
 - Case-insensitive match, but uppercase is conventional
 
 Common overrides for Docker/Kubernetes deployments:
@@ -351,7 +356,7 @@ HTTPSERVER_PORT=8080
 
 | Key                | Type   | Default | Notes                   |
 |--------------------|--------|---------|-------------------------|
-| `QuestDB.Enabled`  | bool   | `true`  | Backward-compat default |
+| `QuestDB.Enabled`  | bool   | `false` | Must be set explicitly  |
 | `QuestDB.Host`     | string |         | Hostname or IP          |
 | `QuestDB.Port`     | int    | 9009    | ILP TCP port            |
 | `QuestDB.User`     | string |         |                         |
@@ -413,6 +418,14 @@ HTTPSERVER_PORT=8080
 | `TDEngine.User`     | string | `root`     |               |
 | `TDEngine.Password` | string | `taosdata` |               |
 | `TDEngine.Database` | string |            |               |
+
+### Stdout (debug)
+
+| Key              | Type | Default | Notes                                          |
+|------------------|------|---------|------------------------------------------------|
+| `Stdout.Enabled` | bool | `false` | Logs records instead of persisting them        |
+
+Debug sink. Not for production.
 
 ---
 

@@ -90,7 +90,7 @@ active; the `--source` flag at runtime selects which one actually starts. This m
 four separate config files or four separate images.
 
 ```yaml
-# ~/.meterlogger.yaml - one file, used by all containers
+# config.yaml - one file, mounted into every container at /config.yaml
 Heat:
   Enabled: true
   Measurement: warmte
@@ -138,10 +138,10 @@ services:
 
   meterlogger-heat:
     image: yottabyte/meterlogger:latest
-    command: ["--source", "heat"]
+    command: ["--source", "heat", "--config", "/config.yaml"]
     restart: always
     volumes:
-      - ~/.meterlogger.yaml:/root/.meterlogger.yaml:ro
+      - ./config.yaml:/config.yaml:ro
     devices:
       - /dev/ttyUSB0:/dev/ttyUSB0
     device_cgroup_rules:
@@ -151,10 +151,10 @@ services:
 
   meterlogger-grid:
     image: yottabyte/meterlogger:latest
-    command: ["--source", "grid"]
+    command: ["--source", "grid", "--config", "/config.yaml"]
     restart: always
     volumes:
-      - ~/.meterlogger.yaml:/root/.meterlogger.yaml:ro
+      - ./config.yaml:/config.yaml:ro
     devices:
       - /dev/ttyUSB1:/dev/ttyUSB1
     device_cgroup_rules:
@@ -164,19 +164,19 @@ services:
 
   meterlogger-solar:
     image: yottabyte/meterlogger:latest
-    command: ["--source", "solar"]
+    command: ["--source", "solar", "--config", "/config.yaml"]
     restart: always
     volumes:
-      - ~/.meterlogger.yaml:/root/.meterlogger.yaml:ro
+      - ./config.yaml:/config.yaml:ro
     ports:
       - "8083:8080"
 
   meterlogger-ventilation:
     image: yottabyte/meterlogger:latest
-    command: ["--source", "ventilation"]
+    command: ["--source", "ventilation", "--config", "/config.yaml"]
     restart: always
     volumes:
-      - ~/.meterlogger.yaml:/root/.meterlogger.yaml:ro
+      - ./config.yaml:/config.yaml:ro
     ports:
       - "8084:8080"
 ```
@@ -184,8 +184,19 @@ services:
 > **`device_cgroup_rules`** is the minimal alternative to `privileged: true`. It grants read/write
 > access to USB serial devices (major 188) without elevating all capabilities.
 
-Each container exposes its own health/metrics port. Map them to distinct host ports (8081–8084 above)
+> **Config mount:** the image runs as the non-root user `minion` with no home directory, so the
+> default config location (`$HOME/.meterlogger.yaml`) does not exist in the container. Always mount
+> the config at a fixed path and pass `--config`, as shown above.
+
+Each container exposes its own health/metrics port. Map them to distinct host ports (8081 to 8084 above)
 or use a reverse proxy / service mesh to route by path.
+
+### Network exposure
+
+- The health/metrics port binds all interfaces and has no authentication. Do not expose it publicly.
+  Keep the port mapping on a trusted network or drop it and probe over the Docker network.
+- Only Postgres and TimescaleDB support TLS (`SSLMode`). MySQL, ClickHouse, TDEngine, and QuestDB ILP
+  connections are plaintext. Run those sinks on a trusted network, not across the public internet.
 
 ---
 

@@ -22,7 +22,6 @@ type GridLoggingService struct {
 	source         domain.GridTelegramReader
 	sink           domain.GridTelegramRepository
 	flushInterval  time.Duration
-	resultChannel  chan domain.GridTelegram
 	logger         *slog.Logger
 	metrics        *metrics.Metrics
 	dataFlowLogged bool
@@ -32,15 +31,14 @@ func NewGridLoggingService(
 	source domain.GridTelegramReader,
 	sink domain.GridTelegramRepository,
 	flushInterval time.Duration,
-	resultChannel chan domain.GridTelegram,
 	logger *slog.Logger,
 ) *GridLoggingService {
 	return &GridLoggingService{
 		source:        source,
 		sink:          sink,
 		flushInterval: flushInterval,
-		resultChannel: resultChannel,
 		logger:        logger,
+		metrics:       metrics.NewNoop(),
 	}
 }
 
@@ -67,20 +65,26 @@ func (s *GridLoggingService) Start(ctx context.Context) {
 	})
 	defer wg.Wait()
 
+	telegrams := s.source.Telegrams()
 	consecutiveErrors := 0
 	for {
 		select {
-		case meterData := <-s.resultChannel:
-			if s.metrics != nil {
-				s.metrics.ReadsTotal.WithLabelValues("grid").Inc()
-				s.metrics.LastReadTime.WithLabelValues("grid").SetToCurrentTime()
+		case meterData, ok := <-telegrams:
+			if !ok {
+				// Reader exited and closed its channel. Its error path has
+				// already escalated if needed; wait for shutdown.
+				s.logger.InfoContext(ctx, "grid telegram channel closed, waiting for shutdown")
+				<-ctx.Done()
+				return
 			}
+			s.metrics.ReadsTotal.WithLabelValues("grid").Inc()
+			s.metrics.LastReadTime.WithLabelValues("grid").SetToCurrentTime()
 			if stop := s.handleStore(ctx, meterData, &consecutiveErrors); stop {
 				return
 			}
 		case <-flushTicker.C:
 			s.logger.DebugContext(ctx, "flushing grid meter data")
-			err := s.sink.Flush(ctx)
+			err := withStoreTimeout(ctx, s.sink.Flush)
 			if err != nil {
 				s.logger.ErrorContext(ctx, "error flushing grid meter data", slog.Any("error", err))
 			}
@@ -119,17 +123,16 @@ func (s *GridLoggingService) storeData(ctx context.Context, meterData domain.Gri
 	defer span.End()
 
 	s.logger.DebugContext(ctx, "grid telegram received, storing", debuglog.GridAttrs(meterData))
-	if err := s.sink.StoreGridTelegram(ctx, meterData); err != nil {
+	err := withStoreTimeout(ctx, func(c context.Context) error {
+		return s.sink.StoreGridTelegram(c, meterData)
+	})
+	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "store grid telegram failed")
-		if s.metrics != nil {
-			s.metrics.WriteErrorsTotal.WithLabelValues("multisink", "grid").Inc()
-		}
+		s.metrics.WriteErrorsTotal.WithLabelValues("multisink", "grid").Inc()
 		return err
 	}
-	if s.metrics != nil {
-		s.metrics.WritesTotal.WithLabelValues("multisink", "grid").Inc()
-	}
+	s.metrics.WritesTotal.WithLabelValues("multisink", "grid").Inc()
 	if !s.dataFlowLogged {
 		s.logger.InfoContext(ctx, "grid meter data flow started successfully", debuglog.GridAttrs(meterData))
 		s.dataFlowLogged = true

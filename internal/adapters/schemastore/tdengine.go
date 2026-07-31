@@ -3,7 +3,6 @@ package schemastore
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"log/slog"
 )
@@ -27,9 +26,11 @@ func NewTDEngineMigrator(db *sql.DB, logger *slog.Logger) *TDEngineMigrator {
 }
 
 // Migrate ensures the migrations table exists and applies any outstanding migrations for the given component.
-//
-//nolint:dupl // identical loop logic to SQLMigrator; each migrator has its own DDL and record strategy
+// Calls are serialized process-wide via migrateMu.
 func (m *TDEngineMigrator) Migrate(ctx context.Context, component string, migrations []Migration) error {
+	migrateMu.Lock()
+	defer migrateMu.Unlock()
+
 	if _, err := m.db.ExecContext(ctx, createTDEngineMigrationsTable); err != nil {
 		return fmt.Errorf("create migrations table: %w", err)
 	}
@@ -39,30 +40,7 @@ func (m *TDEngineMigrator) Migrate(ctx context.Context, component string, migrat
 		return fmt.Errorf("query current version: %w", err)
 	}
 
-	var errs []error
-	for _, mg := range migrations {
-		if mg.Version <= current {
-			continue
-		}
-		m.logger.InfoContext(
-			ctx, "applying migration",
-			slog.String("component", component),
-			slog.Int("version", mg.Version),
-			slog.String("desc", mg.Description),
-		)
-
-		if upErr := mg.Up(ctx); upErr != nil {
-			errs = append(errs, fmt.Errorf("migration %d (%s): %w", mg.Version, mg.Description, upErr))
-			break
-		}
-
-		if recErr := m.recordVersion(ctx, component, mg.Version); recErr != nil {
-			errs = append(errs, fmt.Errorf("record migration %d: %w", mg.Version, recErr))
-			break
-		}
-	}
-
-	return errors.Join(errs...)
+	return runMigrations(ctx, m.logger, component, migrations, current, m.recordVersion)
 }
 
 func (m *TDEngineMigrator) currentVersion(ctx context.Context, component string) (int, error) {

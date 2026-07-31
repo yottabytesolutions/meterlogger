@@ -60,10 +60,8 @@ flowchart TD
     subgraph adapters["internal/adapters/"]
         subgraph sources["Sources"]
             gridreader["source/gridmeter/gridreader.go\nDSMR P1 serial"]
-            mbusreader["source/serialmbus/mbusreader.go\nM-Bus serial"]
-            mbusprot["source/serialmbus/protocol/\ntypes.go · frames.go"]
+            mbusreader["source/serialmbus/mbusreader.go\nM-Bus serial via gombus client"]
             mbusconv["source/serialmbus/converters/gombus.go"]
-            mbusutil["source/serialmbus/util/util.go"]
             envoy["source/enphase/envoyreader.go\nEnphase HTTP API"]
             token["source/enphase/token.go\nJWT management"]
             duco["source/ducobox/ducobox.go\nDucoBox HTTP API"]
@@ -71,11 +69,12 @@ flowchart TD
         subgraph sinks["Sinks"]
             qdbclient["sink/qdb/common.go - DBClient"]
             qdbwriters["sink/qdb/*_writer.go"]
-            pgstore["sink/postgres/ - PostgreSQL"]
-            mystore["sink/mysql/ - MySQL"]
-            tsstore["sink/timescaledb/ - TimescaleDB"]
+            sqlsink["sink/sqlsink/ - shared SQL store logic"]
+            pgstore["sink/postgres/ - PostgreSQL dialect"]
+            mystore["sink/mysql/ - MySQL dialect"]
+            tsstore["sink/timescaledb/ - TimescaleDB dialect"]
             chstore["sink/clickhouse/ - ClickHouse"]
-            tdstore["sink/tdengine/ - TDEngine"]
+            tdstore["sink/tdengine/ - TDEngine dialect"]
             multisink["sink/multisink/ - fan-out wrapper"]
             stdout["sink/stdout/stdoutsink.go - debug"]
         end
@@ -84,9 +83,7 @@ flowchart TD
         end
     end
 
-    mbusreader --> mbusprot
     mbusreader --> mbusconv
-    mbusprot --> mbusutil
     envoy --> token
     svcgrid --> dgrid
     svcheat --> dheat
@@ -116,9 +113,7 @@ flowchart LR
 
     subgraph heat["heat"]
         mbus["serialmbus.NewReader()"]
-        proto["serialmbus/protocol\nframe building"]
         conv["serialmbus/converters\ngombus → domain"]
-        mbus --> proto
         mbus --> conv
     end
 
@@ -203,7 +198,7 @@ Every service uses two `time.Ticker` values:
 
 | Ticker        | Controls                              | Typical interval                 |
 |---------------|---------------------------------------|----------------------------------|
-| `ticker`      | How often to read from the source     | 30s–5min                         |
+| `ticker`      | How often to read from the source     | 30s to 5min                      |
 | `flushTicker` | How often to flush the QuestDB buffer | configurable via `FlushInterval` |
 
 The QuestDB client accumulates records in memory (line protocol buffer) and sends them in bulk on flush. If flushing

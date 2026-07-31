@@ -19,9 +19,29 @@ func TestInitConfig_DefaultsNoFile(t *testing.T) {
 	// It should not panic; it sets defaults and tries to read config (harmlessly failing)
 	initConfig()
 
-	// Default should be false
-	if viper.GetBool("Debug") != false {
+	if viper.GetBool("Debug") {
 		t.Error("initConfig() should set Debug default to false")
+	}
+	// A non-zero default proves the defaults were actually registered; an
+	// unset key would also read as false above.
+	if got := viper.GetInt("QuestDB.Port"); got != 9009 {
+		t.Errorf("QuestDB.Port default = %d, want 9009", got)
+	}
+}
+
+func TestInitConfig_EnvOnlyOverride(t *testing.T) {
+	viper.Reset()
+	cfgFile = ""
+	t.Setenv("QUESTDB_ENABLED", "true")
+	t.Setenv("QUESTDB_PORT", "9123")
+
+	initConfig()
+
+	if !config.QuestDB.Enabled {
+		t.Error("QUESTDB_ENABLED=true should enable the QuestDB sink without a config file")
+	}
+	if config.QuestDB.Port != 9123 {
+		t.Errorf("QuestDB.Port = %d, want 9123 from QUESTDB_PORT", config.QuestDB.Port)
 	}
 }
 

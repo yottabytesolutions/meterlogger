@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -16,6 +17,9 @@ import (
 // Connection pool tuning. Keep idle connections alive long enough that DNS
 // and TCP handshakes are not re-done for every write, while still recycling
 // periodically so server restarts and DNS changes are eventually picked up.
+// driverName is both the registered database/sql driver and the URL scheme.
+const driverName = "clickhouse"
+
 const (
 	maxOpenConns    = 4
 	maxIdleConns    = 4
@@ -29,9 +33,7 @@ type DB struct {
 	logger *slog.Logger
 }
 
-// Config holds the connection parameters for a ClickHouse sink. Passed as a
-// single value instead of positional strings to eliminate the risk of
-// silently transposing user/password/dbname at a call site.
+// Config holds the connection parameters for a ClickHouse sink.
 type Config struct {
 	Host     string
 	Port     int
@@ -40,13 +42,22 @@ type Config struct {
 	Database string
 }
 
+// buildDSN builds the ClickHouse URL. url.UserPassword escapes credentials
+// so special characters cannot break parsing or leak into driver errors.
+func buildDSN(cfg Config) string {
+	u := url.URL{
+		Scheme:   driverName,
+		User:     url.UserPassword(cfg.User, cfg.Password),
+		Host:     net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port)),
+		Path:     "/" + cfg.Database,
+		RawQuery: "dial_timeout=5s",
+	}
+	return u.String()
+}
+
 // New opens and pings a ClickHouse connection.
 func New(ctx context.Context, cfg Config, logger *slog.Logger) (*DB, error) {
-	dsn := fmt.Sprintf(
-		"clickhouse://%s:%s@%s/%s?dial_timeout=5s",
-		cfg.User, cfg.Password, net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port)), cfg.Database,
-	)
-	db, err := sql.Open("clickhouse", dsn)
+	db, err := sql.Open(driverName, buildDSN(cfg))
 	if err != nil {
 		return nil, fmt.Errorf("open clickhouse: %w", err)
 	}
@@ -75,7 +86,7 @@ func NewDBFromSQL(db *sql.DB, logger *slog.Logger) *DB {
 }
 
 // Name implements healthserver.Checker.
-func (d *DB) Name() string { return "clickhouse" }
+func (d *DB) Name() string { return driverName }
 
 // Check implements healthserver.Checker.
 func (d *DB) Check(ctx context.Context) error {

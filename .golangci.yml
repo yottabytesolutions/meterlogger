@@ -42,7 +42,7 @@ formatters:
       # Target maximum line length.
       # Default: 100
       # 130 gives comfortable room for if-err-init patterns without forcing splits.
-      max-len: 130
+      max-len: 120
 
 linters:
   enable:
@@ -163,7 +163,6 @@ linters:
     #- nlreturn # [too strict and mostly code is not more readable] checks for a new line before return and branch statements to increase code clarity
     #- paralleltest # [too many false positives] detects missing usage of t.Parallel() method in your Go test
     #- tagliatelle # checks the struct tags
-    #- thelper # detects golang test helpers without t.Helper() call and checks the consistency of test helpers
     #- wsl # [too strict and mostly code is not more readable] whitespace linter forces you to use empty lines
     #- wsl_v5 # [too strict and mostly code is not more readable] add or remove empty lines
 

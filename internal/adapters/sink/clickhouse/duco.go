@@ -2,6 +2,7 @@ package clickhouse
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"log/slog"
 	"time"
@@ -10,11 +11,37 @@ import (
 	"github.com/yottabytesolutions/meterlogger/internal/domain"
 )
 
+// Buffered rows carry the timestamp captured at store time so batching does
+// not skew readings towards the flush moment.
+type ducoBoxRow struct {
+	ts     time.Time
+	status domain.DucoBoxStatus
+}
+
+type ducoSensorRow struct {
+	ts   time.Time
+	node domain.DucoRFSensorStatus
+}
+
+type ducoBoxNodeRow struct {
+	ts   time.Time
+	node domain.DucoNodeBoxStatus
+}
+
+type ducoValveRow struct {
+	ts   time.Time
+	node domain.DucoNodeBoxValveStatus
+}
+
 // DucoStore implements domain.DucoRepository for ClickHouse.
 type DucoStore struct {
-	db     *DB
-	base   string
-	logger *slog.Logger
+	db       *DB
+	base     string
+	logger   *slog.Logger
+	boxes    batchBuffer[ducoBoxRow]
+	sensors  batchBuffer[ducoSensorRow]
+	boxNodes batchBuffer[ducoBoxNodeRow]
+	valves   batchBuffer[ducoValveRow]
 }
 
 // NewDucoStore creates and migrates a DucoStore.
@@ -26,12 +53,88 @@ func NewDucoStore(ctx context.Context, db *DB, base string, logger *slog.Logger)
 	return &DucoStore{db: db, base: base, logger: logger}, nil
 }
 
-// StoreBoxStatus inserts duco box status into ClickHouse.
+// StoreBoxStatus buffers duco box status for ClickHouse.
 func (s *DucoStore) StoreBoxStatus(ctx context.Context, b domain.DucoBoxStatus) error {
-	// table name comes from config, not user HTTP input.
-	_, err := s.db.db.ExecContext(
-		ctx,
-		fmt.Sprintf(
+	warnDropped(ctx, s.logger, s.base+"_box_general", s.boxes.add(ducoBoxRow{ts: time.Now(), status: b}))
+	return nil
+}
+
+// StoreNodeData buffers duco node data for ClickHouse.
+func (s *DucoStore) StoreNodeData(ctx context.Context, nodeData domain.DucoNodeStatus) error {
+	now := time.Now()
+	switch d := nodeData.(type) {
+	case domain.DucoRFSensorStatus:
+		warnDropped(ctx, s.logger, s.base+"_node", s.sensors.add(ducoSensorRow{ts: now, node: d}))
+	case domain.DucoNodeBoxStatus:
+		warnDropped(ctx, s.logger, s.base+"_box_node", s.boxNodes.add(ducoBoxNodeRow{ts: now, node: d}))
+	case domain.DucoNodeBoxValveStatus:
+		warnDropped(ctx, s.logger, s.base+"_valve", s.valves.add(ducoValveRow{ts: now, node: d}))
+	default:
+		s.logger.WarnContext(
+			ctx, "clickhouse: unknown node type, skipping",
+			slog.String("type", fmt.Sprintf("%T", nodeData)),
+		)
+	}
+	return nil
+}
+
+// Flush performs a batch insert of all buffered duco rows in one transaction.
+// On failure the batches are re-queued for the next flush.
+func (s *DucoStore) Flush(ctx context.Context) error {
+	boxes := s.boxes.take()
+	sensors := s.sensors.take()
+	boxNodes := s.boxNodes.take()
+	valves := s.valves.take()
+	if len(boxes)+len(sensors)+len(boxNodes)+len(valves) == 0 {
+		return nil
+	}
+	if err := s.insertBatches(ctx, boxes, sensors, boxNodes, valves); err != nil {
+		warnDropped(ctx, s.logger, s.base+"_box_general", s.boxes.requeue(boxes))
+		warnDropped(ctx, s.logger, s.base+"_node", s.sensors.requeue(sensors))
+		warnDropped(ctx, s.logger, s.base+"_box_node", s.boxNodes.requeue(boxNodes))
+		warnDropped(ctx, s.logger, s.base+"_valve", s.valves.requeue(valves))
+		return err
+	}
+	return nil
+}
+
+func (s *DucoStore) insertBatches(
+	ctx context.Context,
+	boxes []ducoBoxRow, sensors []ducoSensorRow, boxNodes []ducoBoxNodeRow, valves []ducoValveRow,
+) error {
+	tx, err := s.db.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin clickhouse transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if err = s.insertBoxRows(ctx, tx, boxes); err != nil {
+		return err
+	}
+	if err = s.insertSensorRows(ctx, tx, sensors); err != nil {
+		return err
+	}
+	if err = s.insertBoxNodeRows(ctx, tx, boxNodes); err != nil {
+		return err
+	}
+	if err = s.insertValveRows(ctx, tx, valves); err != nil {
+		return err
+	}
+
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("commit clickhouse duco batch: %w", err)
+	}
+	return nil
+}
+
+// Table names below come from config, not user input.
+
+func (s *DucoStore) insertBoxRows(ctx context.Context, tx *sql.Tx, rows []ducoBoxRow) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	stmt, err := tx.PrepareContext(
+		ctx, fmt.Sprintf(
 			`INSERT INTO %s_box_general
             (ts, rf_home_id,
              exhaust_fan_speed, supply_fan_speed,
@@ -41,105 +144,128 @@ func (s *DucoStore) StoreBoxStatus(ctx context.Context, b domain.DucoBoxStatus) 
              installer_state, weather_station_present)
             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, s.base,
 		),
-		time.Now(),
-		b.General.RFHomeID,
-		b.EnergyFan.ExhaustFanSpeed, b.EnergyFan.SupplyFanSpeed,
-		b.EnergyFan.ExhaustFanPwmPercentage, b.EnergyFan.SupplyFanPwmPercentage,
-		b.EnergyInfo.BypassStatus, b.EnergyInfo.FilterRemainingTime, b.EnergyInfo.FrostProtState,
-		b.EnergyInfo.TempEHA, b.EnergyInfo.TempETA, b.EnergyInfo.TempODA, b.EnergyInfo.TempSUP,
-		b.General.InstallerState, b.WeatherStation.Present,
 	)
 	if err != nil {
-		s.logger.ErrorContext(ctx, "clickhouse: StoreBoxStatus failed", slog.Any("error", err))
+		return fmt.Errorf("prepare box status insert: %w", err)
 	}
-	return err
+	defer func() { _ = stmt.Close() }()
+
+	for _, r := range rows {
+		b := r.status
+		_, err = stmt.ExecContext(
+			ctx,
+			r.ts,
+			b.General.RFHomeID,
+			b.EnergyFan.ExhaustFanSpeed, b.EnergyFan.SupplyFanSpeed,
+			b.EnergyFan.ExhaustFanPwmPercentage, b.EnergyFan.SupplyFanPwmPercentage,
+			b.EnergyInfo.BypassStatus, b.EnergyInfo.FilterRemainingTime, b.EnergyInfo.FrostProtState,
+			b.EnergyInfo.TempEHA, b.EnergyInfo.TempETA, b.EnergyInfo.TempODA, b.EnergyInfo.TempSUP,
+			b.General.InstallerState, b.WeatherStation.Present,
+		)
+		if err != nil {
+			return fmt.Errorf("exec box status insert: %w", err)
+		}
+	}
+	return nil
 }
 
-// StoreNodeData inserts duco node data into the appropriate ClickHouse table.
-func (s *DucoStore) StoreNodeData(ctx context.Context, nodeData domain.DucoNodeStatus) error {
-	now := time.Now()
-	switch d := nodeData.(type) {
-	case domain.DucoRFSensorStatus:
-		return s.storeRFSensor(ctx, now, d)
-	case domain.DucoNodeBoxStatus:
-		return s.storeBoxNode(ctx, now, d)
-	case domain.DucoNodeBoxValveStatus:
-		return s.storeValveNode(ctx, now, d)
-	default:
-		s.logger.WarnContext(
-			ctx, "clickhouse: unknown node type, skipping",
-			slog.String("type", fmt.Sprintf("%T", nodeData)),
-		)
+func (s *DucoStore) insertSensorRows(ctx context.Context, tx *sql.Tx, rows []ducoSensorRow) error {
+	if len(rows) == 0 {
 		return nil
 	}
-}
-
-func (s *DucoStore) storeRFSensor(ctx context.Context, now time.Time, d domain.DucoRFSensorStatus) error {
-	// table name comes from config, not user HTTP input.
-	_, err := s.db.db.ExecContext(
-		ctx,
-		fmt.Sprintf(
+	stmt, err := tx.PrepareContext(
+		ctx, fmt.Sprintf(
 			`INSERT INTO %s_node
             (ts, node_id, location, device, connection_type, serial_no, sw_version,
              mode, state, co2, temp, humidity, rssi_direct, rssi_with_hops, hop_via,
              snsr, cerr, ovrl, cntdwn, show, link)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-			s.base,
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, s.base,
 		),
-		now, d.Node, d.Location, d.DevType, d.Netw, d.Serialnb, d.Swversion,
-		d.Mode, d.State, d.Co2, d.Temp, d.Rh, d.RssiN2M, d.RssiN2H, d.HopVia,
-		d.Snsr, d.Cerr, d.Ovrl, d.Cntdwn, d.Show, d.Link,
 	)
 	if err != nil {
-		s.logger.ErrorContext(ctx, "clickhouse: StoreRFSensor failed", slog.Any("error", err))
+		return fmt.Errorf("prepare rf sensor insert: %w", err)
 	}
-	return err
+	defer func() { _ = stmt.Close() }()
+
+	for _, r := range rows {
+		d := r.node
+		_, err = stmt.ExecContext(
+			ctx,
+			r.ts, d.Node, d.Location, d.DevType, d.Netw, d.Serialnb, d.Swversion,
+			d.Mode, d.State, d.Co2, d.Temp, d.Rh, d.RssiN2M, d.RssiN2H, d.HopVia,
+			d.Snsr, d.Cerr, d.Ovrl, d.Cntdwn, d.Show, d.Link,
+		)
+		if err != nil {
+			return fmt.Errorf("exec rf sensor insert: %w", err)
+		}
+	}
+	return nil
 }
 
-func (s *DucoStore) storeBoxNode(ctx context.Context, now time.Time, d domain.DucoNodeBoxStatus) error {
-	// table name comes from config, not user HTTP input.
-	_, err := s.db.db.ExecContext(
-		ctx,
-		fmt.Sprintf(
+func (s *DucoStore) insertBoxNodeRows(ctx context.Context, tx *sql.Tx, rows []ducoBoxNodeRow) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	stmt, err := tx.PrepareContext(
+		ctx, fmt.Sprintf(
 			`INSERT INTO %s_box_node
             (ts, node_id, location, device, connection_type, serial_no, sw_version,
              mode, state, trgt, actl, co2, temp, humidity,
              snsr, cerr, ovrl, cntdwn, show, link)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-			s.base,
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, s.base,
 		),
-		now, d.Node, d.Location, d.DevType, d.Netw, d.Serialnb, d.Swversion,
-		d.Mode, d.State, d.Trgt, d.Actl, d.Co2, d.Temp, d.Rh,
-		d.Snsr, d.Cerr, d.Ovrl, d.Cntdwn, d.Show, d.Link,
 	)
 	if err != nil {
-		s.logger.ErrorContext(ctx, "clickhouse: StoreBoxNode failed", slog.Any("error", err))
+		return fmt.Errorf("prepare box node insert: %w", err)
 	}
-	return err
+	defer func() { _ = stmt.Close() }()
+
+	for _, r := range rows {
+		d := r.node
+		_, err = stmt.ExecContext(
+			ctx,
+			r.ts, d.Node, d.Location, d.DevType, d.Netw, d.Serialnb, d.Swversion,
+			d.Mode, d.State, d.Trgt, d.Actl, d.Co2, d.Temp, d.Rh,
+			d.Snsr, d.Cerr, d.Ovrl, d.Cntdwn, d.Show, d.Link,
+		)
+		if err != nil {
+			return fmt.Errorf("exec box node insert: %w", err)
+		}
+	}
+	return nil
 }
 
-func (s *DucoStore) storeValveNode(ctx context.Context, now time.Time, d domain.DucoNodeBoxValveStatus) error {
-	// table name comes from config, not user HTTP input.
-	_, err := s.db.db.ExecContext(
-		ctx,
-		fmt.Sprintf(
+func (s *DucoStore) insertValveRows(ctx context.Context, tx *sql.Tx, rows []ducoValveRow) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	stmt, err := tx.PrepareContext(
+		ctx, fmt.Sprintf(
 			`INSERT INTO %s_valve
             (ts, node_id, location, device, connection_type, serial_no, sw_version,
              mode, state, trgt, actl, snsr, cerr, ovrl, cntdwn, show, link)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-			s.base,
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, s.base,
 		),
-		now, d.Node, d.Location, d.DevType, d.Netw, d.Serialnb, d.Swversion,
-		d.Mode, d.State, d.Trgt, d.Actl, d.Snsr, d.Cerr, d.Ovrl, d.Cntdwn, d.Show, d.Link,
 	)
 	if err != nil {
-		s.logger.ErrorContext(ctx, "clickhouse: StoreValveNode failed", slog.Any("error", err))
+		return fmt.Errorf("prepare valve insert: %w", err)
 	}
-	return err
+	defer func() { _ = stmt.Close() }()
+
+	for _, r := range rows {
+		d := r.node
+		_, err = stmt.ExecContext(
+			ctx,
+			r.ts, d.Node, d.Location, d.DevType, d.Netw, d.Serialnb, d.Swversion,
+			d.Mode, d.State, d.Trgt, d.Actl, d.Snsr, d.Cerr, d.Ovrl, d.Cntdwn, d.Show, d.Link,
+		)
+		if err != nil {
+			return fmt.Errorf("exec valve insert: %w", err)
+		}
+	}
+	return nil
 }
 
-// Flush is a no-op for ClickHouse (auto-commit).
-func (s *DucoStore) Flush(_ context.Context) error { return nil }
-
-// Close is a no-op; the shared DB is closed via DB.Close().
-func (s *DucoStore) Close() error { return nil }
+// Close flushes pending rows with a bounded timeout. The shared DB is closed
+// via DB.Close().
+func (s *DucoStore) Close() error { return closeWithFinalFlush(s.Flush) }

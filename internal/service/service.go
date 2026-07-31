@@ -10,13 +10,28 @@
 // is visible to the orchestrator.
 package service
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
-// maxConsecutiveErrors is the number of consecutive read/store failures a
-// polling service tolerates before escalating via processKiller. Shared by
-// the heat, grid, and solar services. DucoLoggingService uses its own,
-// more tolerant threshold for read errors specifically.
+// maxConsecutiveErrors is the number of consecutive failures a polling
+// service tolerates before escalating via processKiller. Shared by the heat,
+// grid, and solar services and by the duco flush path. DucoLoggingService
+// uses its own, more tolerant threshold for read-and-store cycles.
 const maxConsecutiveErrors = 5
+
+// storeFlushTimeout bounds every sink store and flush call. Without it a hung
+// connection stalls the polling loop and the error counter never advances.
+const storeFlushTimeout = 10 * time.Second
+
+// withStoreTimeout runs op with a child context bounded by storeFlushTimeout
+// and releases the timer immediately after op returns.
+func withStoreTimeout(ctx context.Context, op func(context.Context) error) error {
+	opCtx, cancel := context.WithTimeout(ctx, storeFlushTimeout)
+	defer cancel()
+	return op(opCtx)
+}
 
 // Service is the common shape for every per-source polling loop. Start runs
 // until ctx is cancelled. Implementations are constructed once per process

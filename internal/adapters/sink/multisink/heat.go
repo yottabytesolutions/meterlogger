@@ -24,8 +24,7 @@ func NewHeatRepository(sinks []domain.HeatMeterRepository, logger *slog.Logger) 
 
 // StoreHeatTelegram writes to all sinks concurrently and returns a combined error.
 func (r *HeatRepository) StoreHeatTelegram(ctx context.Context, t domain.HeatTelegram) error {
-	r.logger.DebugContext(ctx, "multisink: storing heat telegram", slog.Int("sinks", len(r.sinks)))
-	return fanOut(ctx, r.sinks, r.logger, "multisink: heat store failed",
+	return fanOut(ctx, r.sinks, r.logger, "multisink: heat store",
 		func(ctx context.Context, s domain.HeatMeterRepository) error {
 			return s.StoreHeatTelegram(ctx, t)
 		})
@@ -33,8 +32,7 @@ func (r *HeatRepository) StoreHeatTelegram(ctx context.Context, t domain.HeatTel
 
 // Flush flushes all sinks concurrently and returns a combined error.
 func (r *HeatRepository) Flush(ctx context.Context) error {
-	r.logger.DebugContext(ctx, "multisink: flushing heat sinks", slog.Int("sinks", len(r.sinks)))
-	return fanOut(ctx, r.sinks, r.logger, "multisink: heat flush failed",
+	return fanOut(ctx, r.sinks, r.logger, "multisink: heat flush",
 		func(ctx context.Context, s domain.HeatMeterRepository) error {
 			return s.Flush(ctx)
 		})
@@ -42,7 +40,7 @@ func (r *HeatRepository) Flush(ctx context.Context) error {
 
 // Close closes all sinks concurrently and returns a combined error.
 func (r *HeatRepository) Close() error {
-	return fanOutClose(r.sinks, r.logger, "multisink: heat close failed",
+	return fanOutClose(r.sinks, r.logger, "multisink: heat close",
 		func(s domain.HeatMeterRepository) error {
 			return s.Close()
 		})

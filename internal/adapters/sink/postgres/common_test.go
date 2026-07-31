@@ -1,261 +1,120 @@
-package postgres_test
+package postgres
 
 import (
 	"context"
-	"errors"
+	"log/slog"
+	"net/url"
 	"testing"
-	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
-
-	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/postgres"
-	"github.com/yottabytesolutions/meterlogger/internal/domain"
 )
 
-func testPingDB(t *testing.T) (*postgres.DB, sqlmock.Sqlmock) {
+const dialectName = "postgres"
+
+//nolint:gosec // G101: not a credential, exercises DSN escaping of special characters.
+const trickyPassword = `p @ss'w"ord/with:chars?&=`
+
+func testLogger() *slog.Logger {
+	return slog.New(slog.DiscardHandler)
+}
+
+func checkDSN(t *testing.T, cfg Config, wantPassword, wantSSLMode string) {
 	t.Helper()
-	rawDB, mock, err := sqlmock.New(sqlmock.MonitorPingsOption(true))
+	u, err := url.Parse(buildDSN(cfg))
+	if err != nil {
+		t.Fatalf("url.Parse: %v", err)
+	}
+	if u.Scheme != dialectName {
+		t.Errorf("scheme = %q, want %q", u.Scheme, dialectName)
+	}
+	if got := u.User.Username(); got != cfg.User {
+		t.Errorf("user = %q, want %q", got, cfg.User)
+	}
+	password, ok := u.User.Password()
+	if !ok || password != wantPassword {
+		t.Errorf("password = %q (set=%v), want %q", password, ok, wantPassword)
+	}
+	if u.Host != "db.local:5432" {
+		t.Errorf("host = %q, want db.local:5432", u.Host)
+	}
+	if u.Path != "/meters" {
+		t.Errorf("path = %q, want /meters", u.Path)
+	}
+	if got := u.Query().Get("sslmode"); got != wantSSLMode {
+		t.Errorf("sslmode = %q, want %q", got, wantSSLMode)
+	}
+}
+
+func TestBuildDSN(t *testing.T) {
+	tests := []struct {
+		name         string
+		cfg          Config
+		wantPassword string
+		wantSSLMode  string
+	}{
+		{
+			name: "defaults sslmode to disable",
+			cfg: Config{
+				Host: "db.local", Port: 5432, User: "u", Password: "p", Database: "meters",
+			},
+			wantPassword: "p",
+			wantSSLMode:  "disable",
+		},
+		{
+			name: "password with special characters",
+			cfg: Config{
+				Host: "db.local", Port: 5432, User: "user@corp",
+				Password: trickyPassword, Database: "meters", SSLMode: "require",
+			},
+			wantPassword: trickyPassword,
+			wantSSLMode:  "require",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			checkDSN(t, tt.cfg, tt.wantPassword, tt.wantSSLMode)
+		})
+	}
+}
+
+func expectApplied(mock sqlmock.Sqlmock, component string) {
+	mock.ExpectExec("CREATE TABLE IF NOT EXISTS meterlogger_schema_migrations").
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery("SELECT COALESCE").
+		WithArgs(component).
+		WillReturnRows(sqlmock.NewRows([]string{"v"}).AddRow(1))
+}
+
+// TestWiring exercises the delegation into sqlsink with the postgres dialect:
+// health check name and the migration ledger component keys.
+func TestWiring(t *testing.T) {
+	raw, mock, err := sqlmock.New()
 	if err != nil {
 		t.Fatalf("sqlmock: %v", err)
 	}
-	t.Cleanup(func() { _ = rawDB.Close() })
-	return postgres.NewDBFromSQL(rawDB, panicLogger()), mock
-}
-
-func TestDB_Name(t *testing.T) {
-	db, _ := testDB(t)
-	if name := db.Name(); name != "postgres" {
-		t.Errorf("Name() = %q, want postgres", name)
+	db := NewDBFromSQL(raw, testLogger())
+	if name := db.Name(); name != dialectName {
+		t.Errorf("Name() = %q, want %q", name, dialectName)
 	}
-}
 
-func TestDB_Close(t *testing.T) {
-	db, mock := testDB(t)
-	mock.ExpectClose()
-	if err := db.Close(); err != nil {
-		t.Errorf("Close() error: %v", err)
+	ctx := context.Background()
+	expectApplied(mock, "postgres_heat_m")
+	if _, storeErr := NewHeatStore(ctx, db, "m", testLogger()); storeErr != nil {
+		t.Fatalf("NewHeatStore: %v", storeErr)
+	}
+	expectApplied(mock, "postgres_grid_m")
+	if _, storeErr := NewGridStore(ctx, db, "m", testLogger()); storeErr != nil {
+		t.Fatalf("NewGridStore: %v", storeErr)
+	}
+	expectApplied(mock, "postgres_solar_m")
+	if _, storeErr := NewSolarStore(ctx, db, "m", testLogger()); storeErr != nil {
+		t.Fatalf("NewSolarStore: %v", storeErr)
+	}
+	expectApplied(mock, "postgres_duco_m")
+	if _, storeErr := NewDucoStore(ctx, db, "m", testLogger()); storeErr != nil {
+		t.Fatalf("NewDucoStore: %v", storeErr)
 	}
 	if metErr := mock.ExpectationsWereMet(); metErr != nil {
 		t.Error(metErr)
-	}
-}
-
-func TestDB_Check_Success(t *testing.T) {
-	db, mock := testPingDB(t)
-	mock.ExpectPing()
-	if err := db.Check(context.Background()); err != nil {
-		t.Errorf("Check() error: %v", err)
-	}
-	if metErr := mock.ExpectationsWereMet(); metErr != nil {
-		t.Error(metErr)
-	}
-}
-
-func TestDB_Check_Error(t *testing.T) {
-	db, mock := testPingDB(t)
-	mock.ExpectPing().WillReturnError(errors.New("ping failed"))
-	if err := db.Check(context.Background()); err == nil {
-		t.Error("Check() expected error, got nil")
-	}
-	if metErr := mock.ExpectationsWereMet(); metErr != nil {
-		t.Error(metErr)
-	}
-}
-
-func expectHeatMigrationFull(mock sqlmock.Sqlmock, table string) {
-	mock.ExpectExec("CREATE TABLE IF NOT EXISTS meterlogger_schema_migrations").
-		WillReturnResult(sqlmock.NewResult(0, 0))
-	mock.ExpectQuery("SELECT COALESCE").
-		WithArgs("postgres_heat_" + table).
-		WillReturnRows(sqlmock.NewRows([]string{"v"}).AddRow(0))
-	mock.ExpectExec("CREATE TABLE IF NOT EXISTS").WillReturnResult(sqlmock.NewResult(0, 0))
-	mock.ExpectExec("INSERT INTO meterlogger_schema_migrations").
-		WillReturnResult(sqlmock.NewResult(1, 1))
-}
-
-func expectGridMigrationFull(mock sqlmock.Sqlmock, table string) {
-	mock.ExpectExec("CREATE TABLE IF NOT EXISTS meterlogger_schema_migrations").
-		WillReturnResult(sqlmock.NewResult(0, 0))
-	mock.ExpectQuery("SELECT COALESCE").
-		WithArgs("postgres_grid_" + table).
-		WillReturnRows(sqlmock.NewRows([]string{"v"}).AddRow(0))
-	mock.ExpectExec("CREATE TABLE IF NOT EXISTS").WillReturnResult(sqlmock.NewResult(0, 0))
-	mock.ExpectExec("INSERT INTO meterlogger_schema_migrations").
-		WillReturnResult(sqlmock.NewResult(1, 1))
-}
-
-func expectSolarMigrationFull(mock sqlmock.Sqlmock, table string) {
-	mock.ExpectExec("CREATE TABLE IF NOT EXISTS meterlogger_schema_migrations").
-		WillReturnResult(sqlmock.NewResult(0, 0))
-	mock.ExpectQuery("SELECT COALESCE").
-		WithArgs("postgres_solar_" + table).
-		WillReturnRows(sqlmock.NewRows([]string{"v"}).AddRow(0))
-	// solar table + inverters table (2 CREATE TABLE stmts)
-	mock.ExpectExec("CREATE TABLE IF NOT EXISTS").WillReturnResult(sqlmock.NewResult(0, 0))
-	mock.ExpectExec("CREATE TABLE IF NOT EXISTS").WillReturnResult(sqlmock.NewResult(0, 0))
-	mock.ExpectExec("INSERT INTO meterlogger_schema_migrations").
-		WillReturnResult(sqlmock.NewResult(1, 1))
-}
-
-func expectDucoMigrationFull(mock sqlmock.Sqlmock, base string) {
-	mock.ExpectExec("CREATE TABLE IF NOT EXISTS meterlogger_schema_migrations").
-		WillReturnResult(sqlmock.NewResult(0, 0))
-	mock.ExpectQuery("SELECT COALESCE").
-		WithArgs("postgres_duco_" + base).
-		WillReturnRows(sqlmock.NewRows([]string{"v"}).AddRow(0))
-	// 4 tables
-	for range 4 {
-		mock.ExpectExec("CREATE TABLE IF NOT EXISTS").WillReturnResult(sqlmock.NewResult(0, 0))
-	}
-	mock.ExpectExec("INSERT INTO meterlogger_schema_migrations").
-		WillReturnResult(sqlmock.NewResult(1, 1))
-}
-
-func TestNewHeatStore_MigrationRuns(t *testing.T) {
-	db, mock := testDB(t)
-	expectHeatMigrationFull(mock, "heat")
-	_, err := postgres.NewHeatStore(context.Background(), db, "heat", panicLogger())
-	if err != nil {
-		t.Fatalf("NewHeatStore: %v", err)
-	}
-	if metErr := mock.ExpectationsWereMet(); metErr != nil {
-		t.Error(metErr)
-	}
-}
-
-func TestNewGridStore_MigrationRuns(t *testing.T) {
-	db, mock := testDB(t)
-	expectGridMigrationFull(mock, "grid")
-	_, err := postgres.NewGridStore(context.Background(), db, "grid", panicLogger())
-	if err != nil {
-		t.Fatalf("NewGridStore: %v", err)
-	}
-	if metErr := mock.ExpectationsWereMet(); metErr != nil {
-		t.Error(metErr)
-	}
-}
-
-func TestNewSolarStore_MigrationRuns(t *testing.T) {
-	db, mock := testDB(t)
-	expectSolarMigrationFull(mock, "solar")
-	_, err := postgres.NewSolarStore(context.Background(), db, "solar", panicLogger())
-	if err != nil {
-		t.Fatalf("NewSolarStore: %v", err)
-	}
-	if metErr := mock.ExpectationsWereMet(); metErr != nil {
-		t.Error(metErr)
-	}
-}
-
-func TestNewDucoStore_MigrationRuns(t *testing.T) {
-	db, mock := testDB(t)
-	expectDucoMigrationFull(mock, "duco")
-	_, err := postgres.NewDucoStore(context.Background(), db, "duco", panicLogger())
-	if err != nil {
-		t.Fatalf("NewDucoStore: %v", err)
-	}
-	if metErr := mock.ExpectationsWereMet(); metErr != nil {
-		t.Error(metErr)
-	}
-}
-
-func TestStoreHeatTelegram_Error(t *testing.T) {
-	db, mock := testDB(t)
-	expectMigrationAlreadyApplied(mock, "postgres_heat_heat")
-	mock.ExpectExec("INSERT INTO heat").WillReturnError(errors.New("insert failed"))
-
-	store, err := postgres.NewHeatStore(context.Background(), db, "heat", panicLogger())
-	if err != nil {
-		t.Fatalf("NewHeatStore: %v", err)
-	}
-	if writeErr := store.StoreHeatTelegram(
-		context.Background(),
-		domain.HeatTelegram{Timestamp: time.Now()},
-	); writeErr == nil {
-		t.Error("expected error, got nil")
-	}
-}
-
-func TestStoreGridTelegram_Error(t *testing.T) {
-	db, mock := testDB(t)
-	expectMigrationAlreadyApplied(mock, "postgres_grid_grid")
-	mock.ExpectExec("INSERT INTO grid").WillReturnError(errors.New("insert failed"))
-
-	store, err := postgres.NewGridStore(context.Background(), db, "grid", panicLogger())
-	if err != nil {
-		t.Fatalf("NewGridStore: %v", err)
-	}
-	if writeErr := store.StoreGridTelegram(
-		context.Background(),
-		domain.GridTelegram{Time: time.Now()},
-	); writeErr == nil {
-		t.Error("expected error, got nil")
-	}
-}
-
-func TestStoreSolar_MainInsertError(t *testing.T) {
-	db, mock := testDB(t)
-	expectMigrationAlreadyApplied(mock, "postgres_solar_solar")
-	mock.ExpectExec("INSERT INTO solar").WillReturnError(errors.New("insert failed"))
-
-	store, err := postgres.NewSolarStore(context.Background(), db, "solar", panicLogger())
-	if err != nil {
-		t.Fatalf("NewSolarStore: %v", err)
-	}
-	data := domain.EnvoySolarData{ReadingTime: time.Now()}
-	if writeErr := store.StoreEnvoySolarData(context.Background(), data); writeErr == nil {
-		t.Error("expected error, got nil")
-	}
-}
-
-func TestStoreSolar_InverterInsertError(t *testing.T) {
-	db, mock := testDB(t)
-	expectMigrationAlreadyApplied(mock, "postgres_solar_solar")
-	mock.ExpectExec("INSERT INTO solar").WillReturnResult(sqlmock.NewResult(1, 1))
-	mock.ExpectExec("INSERT INTO solar_inverters").WillReturnError(errors.New("inverter insert failed"))
-
-	store, err := postgres.NewSolarStore(context.Background(), db, "solar", panicLogger())
-	if err != nil {
-		t.Fatalf("NewSolarStore: %v", err)
-	}
-	data := domain.EnvoySolarData{
-		ReadingTime: time.Now(),
-		EnvoySerial: "e1",
-		Inverters:   []domain.InverterDetails{{SerialNumber: "inv1", ReportTime: time.Now()}},
-	}
-	if writeErr := store.StoreEnvoySolarData(context.Background(), data); writeErr == nil {
-		t.Error("expected error, got nil")
-	}
-}
-
-func TestStoreDuco_BoxStatusError(t *testing.T) {
-	store, mock := newDucoStore(t)
-	mock.ExpectExec("INSERT INTO duco_box_general").WillReturnError(errors.New("insert failed"))
-	if writeErr := store.StoreBoxStatus(context.Background(), domain.DucoBoxStatus{}); writeErr == nil {
-		t.Error("expected error, got nil")
-	}
-}
-
-func TestStoreDuco_RFSensorError(t *testing.T) {
-	store, mock := newDucoStore(t)
-	mock.ExpectExec("INSERT INTO duco_node").WillReturnError(errors.New("insert failed"))
-	if writeErr := store.StoreNodeData(context.Background(), domain.DucoRFSensorStatus{}); writeErr == nil {
-		t.Error("expected error, got nil")
-	}
-}
-
-func TestStoreDuco_BoxNodeError(t *testing.T) {
-	store, mock := newDucoStore(t)
-	mock.ExpectExec("INSERT INTO duco_box_node").WillReturnError(errors.New("insert failed"))
-	if writeErr := store.StoreNodeData(context.Background(), domain.DucoNodeBoxStatus{}); writeErr == nil {
-		t.Error("expected error, got nil")
-	}
-}
-
-func TestStoreDuco_ValveNodeError(t *testing.T) {
-	store, mock := newDucoStore(t)
-	mock.ExpectExec("INSERT INTO duco_valve").WillReturnError(errors.New("insert failed"))
-	if writeErr := store.StoreNodeData(context.Background(), domain.DucoNodeBoxValveStatus{}); writeErr == nil {
-		t.Error("expected error, got nil")
 	}
 }

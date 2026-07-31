@@ -7,3 +7,4 @@ bin/
 **/out/
 *.out
 /.output.txt
+/meterlogger

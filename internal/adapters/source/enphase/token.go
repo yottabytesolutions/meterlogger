@@ -47,7 +47,8 @@ func fetchToken(ctx context.Context, cfg Config) (*jwt.Token, error) {
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, loginErr := httpClient.Do(req)
+	// Cloud endpoints get the verifying client. Only local Envoy requests may skip TLS verification.
+	resp, loginErr := cloudClient.Do(req)
 	if loginErr != nil {
 		return nil, loginErr
 	}
@@ -74,6 +75,9 @@ func fetchToken(ctx context.Context, cfg Config) (*jwt.Token, error) {
 
 	// Retrieve token
 	sessionID, _ := result["session_id"].(string)
+	if sessionID == "" {
+		return nil, errors.New("enphase login response contains no session_id")
+	}
 	jsonData, marshalErr := json.Marshal(
 		TokenData{
 			SessionID: sessionID,
@@ -94,7 +98,7 @@ func fetchToken(ctx context.Context, cfg Config) (*jwt.Token, error) {
 	}
 	req2.Header.Set("Content-Type", "application/json")
 
-	resp2, tokenErr := httpClient.Do(req2)
+	resp2, tokenErr := cloudClient.Do(req2)
 	if tokenErr != nil {
 		return nil, tokenErr
 	}
@@ -107,7 +111,22 @@ func fetchToken(ctx context.Context, cfg Config) (*jwt.Token, error) {
 	if readErr != nil {
 		return nil, readErr
 	}
+	if resp2.StatusCode != http.StatusOK {
+		return nil, errors.New(
+			"enphase token request failed. Status: " + resp2.Status + ". Body: " + bodySnippet(body),
+		)
+	}
 	tokenstring := string(body)
 	token, _, err := new(jwt.Parser).ParseUnverified(tokenstring, &jwt.RegisteredClaims{})
 	return token, err
+}
+
+const maxErrorBodySnippet = 256
+
+// bodySnippet returns the response body truncated to a bounded length for error messages.
+func bodySnippet(body []byte) string {
+	if len(body) > maxErrorBodySnippet {
+		return string(body[:maxErrorBodySnippet]) + "..."
+	}
+	return string(body)
 }

@@ -3,7 +3,7 @@ name: CI Pipeline
 on:
   push:
     branches:
-      - '**'
+      - master
   pull_request:
     branches:
       - master
@@ -20,20 +20,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Set up Go
-        uses: actions/setup-go@v7.0.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
         with:
-          go-version: '1.26.5'
-          cache: false
+          go-version-file: go.mod
 
       - name: Run linter
-        uses: golangci/golangci-lint-action@v9.3.0
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a  # v9.3.0
         with:
           version: v2.12.2
-          skip-cache: true
-          skip-save-cache: true
 
       - name: Scan for secrets
         # gitleaks/gitleaks-action requires a paid license for GitHub
@@ -47,35 +44,44 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Set up Go
-        uses: actions/setup-go@v7.0.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
         with:
-          go-version: '1.26.5'
-          cache: false
+          go-version-file: go.mod
 
       - name: Run tests
         run: go test -race ./...
 
   docker:
     needs: [ lint, test ]
+    # Push events only: fork pull requests must never run on the self-hosted
+    # runner, where they could execute arbitrary Dockerfile code and poison
+    # the persistent buildx builder cache.
+    if: github.event_name == 'push'
     runs-on: [ self-hosted ]
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Docker meta
         id: meta
-        uses: docker/metadata-action@v6.2.0
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302  # v6.2.0
         with:
           images: yottabyte/meterlogger
           tags: |
             type=sha,format=long
             type=raw,value=latest,enable={{is_default_branch}}
 
+      - name: Remove stale buildx builder
+        # A leftover instance from a previous run makes setup-buildx fail with
+        # "existing instance but no append mode". Remove it but keep the state
+        # volume so the go mod / go-build cache mounts survive.
+        run: docker buildx rm --keep-state meterlogger-builder || true
+
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4.2.0
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c  # v4.2.0
         with:
           # Stable builder name so the BuildKit instance (and its cache
           # mounts for go mod / go-build) persists across runs on this
@@ -83,17 +89,16 @@ jobs:
           name: meterlogger-builder
 
       - name: Login to Docker Hub
-        if: github.event_name != 'pull_request'
-        uses: docker/login-action@v4.6.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f  # v4.6.0
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_ACCESSTOKEN }}
 
       - name: Build and push
-        uses: docker/build-push-action@v7.3.0
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7.3.0
         with:
           context: .
-          push: ${{ github.event_name == 'push' }}
+          push: true
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

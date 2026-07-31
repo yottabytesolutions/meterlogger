@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"time"
 
@@ -40,6 +39,7 @@ func NewHeatMeterLoggingService(
 		interval:      interval,
 		flushInterval: flushInterval,
 		logger:        logger,
+		metrics:       metrics.NewNoop(),
 	}
 }
 
@@ -64,7 +64,7 @@ func (s *HeatMeterLoggingService) Start(ctx context.Context) {
 			}
 		case <-flushTicker.C:
 			s.logger.DebugContext(ctx, "flushing heat meter data")
-			if err := s.sink.Flush(ctx); err != nil {
+			if err := withStoreTimeout(ctx, s.sink.Flush); err != nil {
 				s.logger.ErrorContext(ctx, "error flushing meter data", slog.Any("error", err))
 			}
 		case <-ctx.Done():
@@ -80,7 +80,9 @@ func (s *HeatMeterLoggingService) handleTick(ctx context.Context, consecutiveErr
 		*consecutiveErrors = 0
 		return false
 	}
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+	// Only a cancelled parent context means shutdown. A DeadlineExceeded from
+	// a store timeout must count towards the error threshold.
+	if ctx.Err() != nil {
 		return true
 	}
 	*consecutiveErrors++
@@ -88,9 +90,7 @@ func (s *HeatMeterLoggingService) handleTick(ctx context.Context, consecutiveErr
 		slog.Any("error", err),
 		slog.Int("consecutiveErrors", *consecutiveErrors),
 	)
-	if s.metrics != nil {
-		s.metrics.ReadErrorsTotal.WithLabelValues("heat").Inc()
-	}
+	s.metrics.ReadErrorsTotal.WithLabelValues("heat").Inc()
 	if *consecutiveErrors >= maxConsecutiveErrors {
 		s.logger.ErrorContext(ctx, "heat meter: too many consecutive errors, terminating")
 		processKiller()
@@ -111,23 +111,20 @@ func (s *HeatMeterLoggingService) runReadAndStore(ctx context.Context) error {
 		return err
 	}
 
-	if s.metrics != nil {
-		s.metrics.ReadsTotal.WithLabelValues("heat").Inc()
-		s.metrics.LastReadTime.WithLabelValues("heat").SetToCurrentTime()
-	}
+	s.metrics.ReadsTotal.WithLabelValues("heat").Inc()
+	s.metrics.LastReadTime.WithLabelValues("heat").SetToCurrentTime()
 
 	s.logger.DebugContext(ctx, "heat telegram received, storing", debuglog.HeatAttrs(meterData))
-	if storeErr := s.sink.StoreHeatTelegram(ctx, meterData); storeErr != nil {
+	storeErr := withStoreTimeout(ctx, func(c context.Context) error {
+		return s.sink.StoreHeatTelegram(c, meterData)
+	})
+	if storeErr != nil {
 		span.RecordError(storeErr)
 		span.SetStatus(codes.Error, "store heat telegram failed")
-		if s.metrics != nil {
-			s.metrics.WriteErrorsTotal.WithLabelValues("multisink", "heat").Inc()
-		}
+		s.metrics.WriteErrorsTotal.WithLabelValues("multisink", "heat").Inc()
 		return storeErr
 	}
-	if s.metrics != nil {
-		s.metrics.WritesTotal.WithLabelValues("multisink", "heat").Inc()
-	}
+	s.metrics.WritesTotal.WithLabelValues("multisink", "heat").Inc()
 	if !s.dataFlowLogged {
 		s.logger.InfoContext(ctx, "heat meter data flow started successfully", debuglog.HeatAttrs(meterData))
 		s.dataFlowLogged = true

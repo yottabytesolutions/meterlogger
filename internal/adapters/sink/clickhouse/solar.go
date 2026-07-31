@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"sync"
 
 	"github.com/yottabytesolutions/meterlogger/internal/adapters/schemastore"
 	"github.com/yottabytesolutions/meterlogger/internal/domain"
@@ -15,8 +14,7 @@ type SolarStore struct {
 	db     *DB
 	table  string
 	logger *slog.Logger
-	mu     sync.Mutex
-	buffer []domain.EnvoySolarData
+	buf    batchBuffer[domain.EnvoySolarData]
 }
 
 // NewSolarStore creates and migrates a SolarStore.
@@ -25,34 +23,37 @@ func NewSolarStore(ctx context.Context, db *DB, table string, logger *slog.Logge
 	if err := m.Migrate(ctx, "clickhouse_solar_"+table, solarMigrations(db.db, table)); err != nil {
 		return nil, fmt.Errorf("clickhouse solar migration: %w", err)
 	}
-	return &SolarStore{db: db, table: table, logger: logger, buffer: make([]domain.EnvoySolarData, 0)}, nil
+	return &SolarStore{db: db, table: table, logger: logger}, nil
 }
 
 // StoreEnvoySolarData buffers solar data for ClickHouse.
-func (s *SolarStore) StoreEnvoySolarData(_ context.Context, d domain.EnvoySolarData) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.buffer = append(s.buffer, d)
+func (s *SolarStore) StoreEnvoySolarData(ctx context.Context, d domain.EnvoySolarData) error {
+	warnDropped(ctx, s.logger, s.table, s.buf.add(d))
 	return nil
 }
 
-// Flush performs a batch insert into ClickHouse.
+// Flush performs a batch insert into ClickHouse. On failure the batch is
+// re-queued for the next flush.
 func (s *SolarStore) Flush(ctx context.Context) error {
-	s.mu.Lock()
-	if len(s.buffer) == 0 {
-		s.mu.Unlock()
+	batch := s.buf.take()
+	if len(batch) == 0 {
 		return nil
 	}
-	batch := s.buffer
-	s.buffer = make([]domain.EnvoySolarData, 0)
-	s.mu.Unlock()
+	if err := s.insertBatch(ctx, batch); err != nil {
+		warnDropped(ctx, s.logger, s.table, s.buf.requeue(batch))
+		return err
+	}
+	return nil
+}
 
+func (s *SolarStore) insertBatch(ctx context.Context, batch []domain.EnvoySolarData) error {
 	tx, err := s.db.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin clickhouse transaction: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	// Table names come from config, not user input.
 	solarStmt, err := tx.PrepareContext(
 		ctx, fmt.Sprintf(
 			`INSERT INTO %s (ts, envoy_serial, production_wh, watt, panel_count) VALUES (?,?,?,?,?)`,
@@ -99,9 +100,9 @@ func (s *SolarStore) Flush(ctx context.Context) error {
 	if err = tx.Commit(); err != nil {
 		return fmt.Errorf("commit clickhouse solar batch: %w", err)
 	}
-
 	return nil
 }
 
-// Close is a no-op; the shared DB is closed via DB.Close().
-func (s *SolarStore) Close() error { return nil }
+// Close flushes pending rows with a bounded timeout. The shared DB is closed
+// via DB.Close().
+func (s *SolarStore) Close() error { return closeWithFinalFlush(s.Flush) }

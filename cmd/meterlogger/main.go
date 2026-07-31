@@ -108,6 +108,10 @@ func initConfig() {
 
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	viper.AutomaticEnv()
+	if err := bindEnvKeys(); err != nil {
+		logger.Error("failed to bind environment variables", slog.Any("error", err))
+		os.Exit(1)
+	}
 
 	if err := viper.ReadInConfig(); err != nil {
 		if isConfigFileNotFound(err) {
@@ -170,7 +174,21 @@ func isConfigFileNotFound(err error) bool {
 	return errors.As(err, &notFoundErr)
 }
 
+// buildVersion renders the link-time build info for --version and the startup
+// log. Both values are empty in a plain `go build`.
+func buildVersion() string {
+	version := CommitSHA
+	if version == "" {
+		version = "dev"
+	}
+	if BuildDate != "" {
+		version += " (built " + BuildDate + ")"
+	}
+	return version
+}
+
 func main() {
+	rootCmd.Version = buildVersion()
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -207,21 +225,7 @@ func run() {
 	validateConfig()
 
 	dbs := initDBs(ctx)
-	if dbs.postgres != nil {
-		defer closeDB(sinkNamePostgres, dbs.postgres.Close)
-	}
-	if dbs.mysql != nil {
-		defer closeDB(sinkNameMySQL, dbs.mysql.Close)
-	}
-	if dbs.timescaledb != nil {
-		defer closeDB(sinkNameTimescaleDB, dbs.timescaledb.Close)
-	}
-	if dbs.clickhouse != nil {
-		defer closeDB(sinkNameClickHouse, dbs.clickhouse.Close)
-	}
-	if dbs.tdengine != nil {
-		defer closeDB(sinkNameTDEngine, dbs.tdengine.Close)
-	}
+	defer closeAll(dbs.closers())
 
 	appMetrics := metrics.New()
 
@@ -277,7 +281,10 @@ func configValidationErrors(cfg Config, sourceFilter string) []string {
 		!cfg.Enphase.Enabled &&
 		!cfg.Ventilation.Enabled
 	if noSourceEnabled && sourceFilter == "" {
-		errs = append(errs, "no sources enabled in configuration; set Enabled: true for at least one source or use --source")
+		errs = append(
+			errs,
+			"no sources enabled in configuration; set Enabled: true for at least one source or use --source",
+		)
 	}
 
 	errs = append(errs, sinkFieldErrors(cfg)...)
@@ -304,7 +311,13 @@ func sinkFieldErrors(cfg Config) []string {
 	sinks := []sqlSinkFields{
 		{sinkNamePostgres, cfg.Postgres.Enabled, cfg.Postgres.Host, cfg.Postgres.User, cfg.Postgres.Database},
 		{sinkNameMySQL, cfg.MySQL.Enabled, cfg.MySQL.Host, cfg.MySQL.User, cfg.MySQL.Database},
-		{sinkNameTimescaleDB, cfg.TimescaleDB.Enabled, cfg.TimescaleDB.Host, cfg.TimescaleDB.User, cfg.TimescaleDB.Database},
+		{
+			sinkNameTimescaleDB,
+			cfg.TimescaleDB.Enabled,
+			cfg.TimescaleDB.Host,
+			cfg.TimescaleDB.User,
+			cfg.TimescaleDB.Database,
+		},
 		{sinkNameClickHouse, cfg.ClickHouse.Enabled, cfg.ClickHouse.Host, cfg.ClickHouse.User, cfg.ClickHouse.Database},
 		{sinkNameTDEngine, cfg.TDEngine.Enabled, cfg.TDEngine.Host, cfg.TDEngine.User, cfg.TDEngine.Database},
 	}
@@ -380,20 +393,8 @@ func buildHealthServer(appMetrics *metrics.Metrics, dbs dbConnections) *healthse
 		appMetrics.Registry,
 		config.HTTPServer.LivenessFailureThreshold,
 	)
-	if dbs.postgres != nil {
-		srv.Register(dbs.postgres)
-	}
-	if dbs.mysql != nil {
-		srv.Register(dbs.mysql)
-	}
-	if dbs.timescaledb != nil {
-		srv.Register(dbs.timescaledb)
-	}
-	if dbs.clickhouse != nil {
-		srv.Register(dbs.clickhouse)
-	}
-	if dbs.tdengine != nil {
-		srv.Register(dbs.tdengine)
+	for _, checker := range dbs.checkers() {
+		srv.Register(checker)
 	}
 	return srv
 }

@@ -43,16 +43,21 @@ func TestHeatStore_StoreHeatTelegram(t *testing.T) {
 		t.Fatalf("NewHeatStore: %v", storeErr)
 	}
 
-	writeErr := store.StoreHeatTelegram(
-		context.Background(), domain.HeatTelegram{
-			Timestamp:   time.Now(),
-			MeterID:     "m1",
-			SerialNo:    "s1",
-			ActualPower: 100,
-			Joules:      1_000_000_000,
-		},
-	)
-	if writeErr != nil {
+	tel := domain.HeatTelegram{
+		Timestamp:      time.Now(),
+		MeterID:        "m1",
+		SerialNo:       "s1",
+		ActualPower:    100,
+		Joules:         1_000_000_000,
+		Tforward:       80.5,
+		Treturn:        60.25,
+		Tdiff:          20.25,
+		VolumeCm3:      1234,
+		SecondsCounter: 99,
+		MaxFlow:        2.5,
+		MaxPower:       150,
+	}
+	if writeErr := store.StoreHeatTelegram(context.Background(), tel); writeErr != nil {
 		t.Errorf("StoreHeatTelegram: %v", writeErr)
 	}
 
@@ -63,7 +68,13 @@ func TestHeatStore_StoreHeatTelegram(t *testing.T) {
 
 	mock.ExpectBegin()
 	mock.ExpectPrepare("INSERT INTO heat")
-	mock.ExpectExec("INSERT INTO heat").WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec("INSERT INTO heat").
+		WithArgs(
+			tel.Timestamp, tel.MeterID, tel.SerialNo, tel.ActualPower, 1.0,
+			tel.Tforward, tel.Treturn, tel.Tdiff, tel.VolumeCm3, tel.SecondsCounter,
+			tel.MaxFlow, tel.MaxPower,
+		).
+		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
 
 	if flushErr := store.Flush(context.Background()); flushErr != nil {
@@ -113,6 +124,40 @@ func TestHeatStore_StoreError(t *testing.T) {
 	flushErr := store.Flush(context.Background())
 	if flushErr == nil {
 		t.Error("expected error but got nil")
+	}
+
+	// The failed batch is re-queued: the next flush inserts it.
+	mock.ExpectBegin()
+	mock.ExpectPrepare("INSERT INTO heat")
+	mock.ExpectExec("INSERT INTO heat").WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	if retryErr := store.Flush(context.Background()); retryErr != nil {
+		t.Errorf("second Flush: %v", retryErr)
+	}
+	if expectErr := mock.ExpectationsWereMet(); expectErr != nil {
+		t.Error(expectErr)
+	}
+}
+
+func TestHeatStore_CloseFlushesPending(t *testing.T) {
+	db, mock := testDB(t)
+	expectMigrationAlreadyApplied(mock, "clickhouse_heat_heat")
+
+	store, storeErr := clickhouse.NewHeatStore(context.Background(), db, "heat", testLogger())
+	if storeErr != nil {
+		t.Fatalf("NewHeatStore: %v", storeErr)
+	}
+
+	_ = store.StoreHeatTelegram(context.Background(), domain.HeatTelegram{Timestamp: time.Now()})
+
+	mock.ExpectBegin()
+	mock.ExpectPrepare("INSERT INTO heat")
+	mock.ExpectExec("INSERT INTO heat").WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	if closeErr := store.Close(); closeErr != nil {
+		t.Errorf("Close: %v", closeErr)
 	}
 	if expectErr := mock.ExpectationsWereMet(); expectErr != nil {
 		t.Error(expectErr)

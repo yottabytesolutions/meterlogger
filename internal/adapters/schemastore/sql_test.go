@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"sync"
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
@@ -136,11 +137,63 @@ func TestSQLMigrator_UpErrorStopsFurtherMigrations(t *testing.T) {
 	if migrateErr == nil {
 		t.Error("expected error but got nil")
 	}
+	if !errors.Is(migrateErr, upErr) {
+		t.Errorf("expected error to wrap the Up error, got: %v", migrateErr)
+	}
 	if secondCalled {
 		t.Error("second migration should not have been called")
 	}
 	if expectErr := mock.ExpectationsWereMet(); expectErr != nil {
 		t.Errorf("unfulfilled expectations: %v", expectErr)
+	}
+}
+
+// TestMigrate_ConcurrentCallsAreSerialized verifies the process-wide serialization
+// guarantee: Up functions from concurrent Migrate calls never run at the same time.
+// Each Up mutates shared state without its own locking; run with -race to verify.
+func TestMigrate_ConcurrentCallsAreSerialized(t *testing.T) {
+	const goroutines = 8
+
+	sharedCounter := 0
+	var wg sync.WaitGroup
+
+	for range goroutines {
+		db, mock, err := sqlmock.New()
+		if err != nil {
+			t.Fatalf("sqlmock: %v", err)
+		}
+		t.Cleanup(func() { _ = db.Close() })
+
+		mock.ExpectExec("CREATE TABLE IF NOT EXISTS meterlogger_schema_migrations").
+			WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectQuery("SELECT COALESCE").
+			WithArgs("concurrent_component").
+			WillReturnRows(sqlmock.NewRows([]string{versionColumn}).AddRow(0))
+		mock.ExpectExec("INSERT INTO meterlogger_schema_migrations").
+			WithArgs("concurrent_component", 1).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+
+		m := schemastore.NewSQLMigrator(db, schemastore.DollarPlaceholder, testLogger())
+		mg := schemastore.Migration{
+			Version:     1,
+			Description: descriptionCreateTable,
+			Up: func(_ context.Context) error {
+				sharedCounter++
+				return nil
+			},
+		}
+
+		wg.Go(func() {
+			if migrateErr := m.Migrate(context.Background(), "concurrent_component",
+				[]schemastore.Migration{mg}); migrateErr != nil {
+				t.Errorf("Migrate: %v", migrateErr)
+			}
+		})
+	}
+
+	wg.Wait()
+	if sharedCounter != goroutines {
+		t.Errorf("expected %d migrations applied, got %d", goroutines, sharedCounter)
 	}
 }
 

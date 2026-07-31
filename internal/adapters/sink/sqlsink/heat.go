@@ -1,43 +1,40 @@
-package mysql
+package sqlsink
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 
-	"github.com/yottabytesolutions/meterlogger/internal/adapters/schemastore"
 	"github.com/yottabytesolutions/meterlogger/internal/domain"
 )
 
 const nanoJoulesToGigajoules = 1e-9
 
-// HeatStore implements domain.HeatMeterRepository for MySQL.
+// HeatStore implements domain.HeatMeterRepository.
 type HeatStore struct {
 	db     *DB
 	table  string
+	insert string
 	logger *slog.Logger
 }
 
 // NewHeatStore creates and migrates a HeatStore.
 func NewHeatStore(ctx context.Context, db *DB, table string, logger *slog.Logger) (*HeatStore, error) {
-	m := schemastore.NewSQLMigrator(db.db, schemastore.QuestionPlaceholder, logger)
-	if err := m.Migrate(ctx, "mysql_heat_"+table, heatMigrations(db.db, table)); err != nil {
-		return nil, fmt.Errorf("mysql heat migration: %w", err)
+	tables := []migrationTable{{name: table, columns: heatColumns()}}
+	if err := migrate(ctx, db, "heat", table, "create heat table", tables, logger); err != nil {
+		return nil, err
 	}
-	return &HeatStore{db: db, table: table, logger: logger}, nil
+	return &HeatStore{
+		db:     db,
+		table:  table,
+		insert: insertSQL(db.dialect, table, heatColumns()),
+		logger: logger,
+	}, nil
 }
 
-// StoreHeatTelegram inserts a heat telegram into MySQL.
+// StoreHeatTelegram inserts a heat telegram.
 func (s *HeatStore) StoreHeatTelegram(ctx context.Context, t domain.HeatTelegram) error {
-	// table name comes from config, not user HTTP input.
 	_, err := s.db.db.ExecContext(
-		ctx,
-		fmt.Sprintf(
-			`INSERT INTO %s
-            (ts, meter_id, serial_no, power_w, energy_gj, t_forward_c, t_return_c, t_diff_c,
-             volume_cm3, seconds, max_flow, max_power_w)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`, s.table,
-		),
+		ctx, s.insert,
 		t.Timestamp,
 		t.MeterID,
 		t.SerialNo,
@@ -52,13 +49,13 @@ func (s *HeatStore) StoreHeatTelegram(ctx context.Context, t domain.HeatTelegram
 		t.MaxPower,
 	)
 	if err != nil {
-		s.logger.ErrorContext(ctx, "mysql: StoreHeatTelegram failed",
+		s.logger.ErrorContext(ctx, s.db.dialect.name+": StoreHeatTelegram failed",
 			slog.String("table", s.table), slog.Any("error", err))
 	}
 	return err
 }
 
-// Flush is a no-op for MySQL (auto-commit).
+// Flush is a no-op; writes auto-commit.
 func (s *HeatStore) Flush(_ context.Context) error { return nil }
 
 // Close is a no-op; the shared DB is closed via DB.Close().

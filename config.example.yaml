@@ -33,6 +33,11 @@ QuestDB:
   User: admin
   Password: quest
 
+# ── Stdout sink (debug) ──────────────────────────────────────
+# Logs readings instead of persisting them. Not for production.
+Stdout:
+  Enabled: false
+
 # ── PostgreSQL sink ──────────────────────────────────────────
 # Tables are created/migrated automatically on startup.
 Postgres:

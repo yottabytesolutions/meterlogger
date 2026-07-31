@@ -108,7 +108,7 @@ func (dr *DucoReader) ReadNodeStatus(ctx context.Context, nodeID int) (domain.Du
 	}
 	nodeData, parseErr := ParseDucoNodeStatus(body)
 	if parseErr != nil {
-		if strings.HasSuffix(parseErr.Error(), "UNKN") {
+		if errors.Is(parseErr, domain.ErrUnknownDevType) {
 			dr.Logger.DebugContext(ctx, "Skipping unknown node")
 		} else {
 			dr.Logger.ErrorContext(
@@ -169,6 +169,6 @@ func ParseDucoNodeStatus(data []byte) (domain.DucoNodeStatus, error) {
 		}
 		return mapRFSensorStatus(dto), nil
 	default:
-		return nil, errors.New("unknown devtype: " + base.DevType)
+		return nil, fmt.Errorf("%w: %s", domain.ErrUnknownDevType, base.DevType)
 	}
 }

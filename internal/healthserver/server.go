@@ -54,6 +54,7 @@ type Server struct {
 	livenessThreshold time.Duration
 	failingSince      map[string]time.Time
 	now               func() time.Time
+	checkTimeout      time.Duration
 }
 
 // New creates a Server that will listen on addr (e.g. ":8080").
@@ -69,6 +70,7 @@ func New(addr string, logger *slog.Logger, reg *prometheus.Registry, livenessThr
 		livenessThreshold: livenessThreshold,
 		failingSince:      make(map[string]time.Time),
 		now:               time.Now,
+		checkTimeout:      checkTimeout,
 	}
 	s.mux.HandleFunc("/healthz", s.handleLiveness)
 	s.mux.HandleFunc("/readyz", s.handleReadiness)
@@ -154,13 +156,12 @@ func (s *Server) runChecks(ctx context.Context) []checkResult {
 	checkers := slices.Clone(s.checkers)
 	s.mu.RUnlock()
 
-	ctx, cancel := context.WithTimeout(ctx, checkTimeout)
-	defer cancel()
-
+	// Each checker gets its own timeout so one slow component cannot eat the
+	// budget of the checkers that run after it and flap their readiness.
 	results := make([]checkResult, 0, len(checkers))
 	for _, c := range checkers {
 		res := checkResult{Name: c.Name(), Healthy: true}
-		if checkErr := c.Check(ctx); checkErr != nil {
+		if checkErr := s.runCheck(ctx, c); checkErr != nil {
 			res.Healthy = false
 			res.Error = checkErr.Error()
 		}
@@ -186,6 +187,13 @@ func (s *Server) runChecks(ctx context.Context) []checkResult {
 	s.mu.Unlock()
 
 	return results
+}
+
+// runCheck runs a single checker under its own timeout.
+func (s *Server) runCheck(ctx context.Context, c Checker) error {
+	ctx, cancel := context.WithTimeout(ctx, s.checkTimeout)
+	defer cancel()
+	return c.Check(ctx)
 }
 
 func (s *Server) handleLiveness(w http.ResponseWriter, r *http.Request) {

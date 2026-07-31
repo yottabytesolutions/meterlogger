@@ -2,8 +2,8 @@ package service
 
 import (
 	"context"
+	"errors"
 	"log/slog"
-	"strings"
 	"time"
 
 	"go.opentelemetry.io/otel"
@@ -16,6 +16,9 @@ import (
 //nolint:gochecknoglobals // OTel tracer initialised at package level per OTel convention
 var ducoTracer = otel.Tracer("duco-service")
 
+// maxErrorCount is the duco-specific threshold for consecutive read-and-store
+// cycle failures. It is more tolerant than maxConsecutiveErrors because the
+// DucoBox HTTP API is flaky on home networks.
 const maxErrorCount = 20
 
 type DucoLoggingService struct {
@@ -44,6 +47,7 @@ func NewDucoLoggingService(
 		flushInterval: flushInterval,
 		logger:        logger,
 		nodes:         nodes,
+		metrics:       metrics.NewNoop(),
 	}
 }
 
@@ -59,17 +63,18 @@ func (s *DucoLoggingService) Start(ctx context.Context) {
 	flushTicker := time.NewTicker(s.flushInterval)
 	defer flushTicker.Stop()
 	errorCounter := 0
+	flushErrors := 0
 	for {
 		select {
 		case <-flushTicker.C:
-			if err := s.sink.Flush(ctx); err != nil {
-				s.logger.ErrorContext(ctx, "error flushing data", slog.Any("error", err))
-				processKiller()
-				<-ctx.Done()
+			if stop := s.handleFlush(ctx, &flushErrors); stop {
 				return
 			}
 		case <-ticker.C:
 			if err := s.runReadAndStore(ctx); err != nil {
+				if ctx.Err() != nil {
+					return
+				}
 				if errorCounter >= maxErrorCount {
 					s.logger.ErrorContext(ctx, "too many errors, stopping service")
 					processKiller()
@@ -87,7 +92,27 @@ func (s *DucoLoggingService) Start(ctx context.Context) {
 	}
 }
 
-//nolint:gocognit // complexity is inherent to the multi-node ventilation service loop
+// handleFlush flushes the sink and escalates after maxConsecutiveErrors
+// consecutive failures. Returns true if the service should stop.
+func (s *DucoLoggingService) handleFlush(ctx context.Context, flushErrors *int) bool {
+	if err := withStoreTimeout(ctx, s.sink.Flush); err != nil {
+		*flushErrors++
+		s.logger.ErrorContext(ctx, "error flushing data",
+			slog.Any("error", err),
+			slog.Int("consecutiveErrors", *flushErrors),
+		)
+		if *flushErrors >= maxConsecutiveErrors {
+			s.logger.ErrorContext(ctx, "duco: too many consecutive flush errors, terminating")
+			processKiller()
+			<-ctx.Done()
+			return true
+		}
+		return false
+	}
+	*flushErrors = 0
+	return false
+}
+
 func (s *DucoLoggingService) runReadAndStore(ctx context.Context) error {
 	ctx, span := ducoTracer.Start(ctx, "ReadAndStore")
 	defer span.End()
@@ -97,30 +122,24 @@ func (s *DucoLoggingService) runReadAndStore(ctx context.Context) error {
 		s.logger.ErrorContext(ctx, "error reading box status", slog.Any("error", err))
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "read box status failed")
-		if s.metrics != nil {
-			s.metrics.ReadErrorsTotal.WithLabelValues("ventilation").Inc()
-		}
+		s.metrics.ReadErrorsTotal.WithLabelValues("ventilation").Inc()
 		return err
 	}
 
-	if s.metrics != nil {
-		s.metrics.ReadsTotal.WithLabelValues("ventilation").Inc()
-		s.metrics.LastReadTime.WithLabelValues("ventilation").SetToCurrentTime()
-	}
+	s.metrics.ReadsTotal.WithLabelValues("ventilation").Inc()
+	s.metrics.LastReadTime.WithLabelValues("ventilation").SetToCurrentTime()
 
-	if storeErr := s.sink.StoreBoxStatus(ctx, boxStatus); storeErr != nil {
+	storeErr := withStoreTimeout(ctx, func(c context.Context) error {
+		return s.sink.StoreBoxStatus(c, boxStatus)
+	})
+	if storeErr != nil {
 		s.logger.ErrorContext(ctx, "error storing box status", slog.Any("error", storeErr))
 		span.RecordError(storeErr)
 		span.SetStatus(codes.Error, "store box status failed")
-		if s.metrics != nil {
-			s.metrics.WriteErrorsTotal.WithLabelValues("multisink", "ventilation").Inc()
-		}
-		processKiller()
+		s.metrics.WriteErrorsTotal.WithLabelValues("multisink", "ventilation").Inc()
 		return storeErr
 	}
-	if s.metrics != nil {
-		s.metrics.WritesTotal.WithLabelValues("multisink", "ventilation").Inc()
-	}
+	s.metrics.WritesTotal.WithLabelValues("multisink", "ventilation").Inc()
 	if !s.dataFlowLogged {
 		s.logger.InfoContext(ctx, "ventilation data flow started successfully")
 		s.dataFlowLogged = true
@@ -129,7 +148,7 @@ func (s *DucoLoggingService) runReadAndStore(ctx context.Context) error {
 	for _, nodeID := range s.nodes {
 		nodeData, nodeErr := s.source.ReadNodeStatus(ctx, nodeID)
 		if nodeErr != nil {
-			if !strings.HasSuffix(nodeErr.Error(), "UNKN") {
+			if !errors.Is(nodeErr, domain.ErrUnknownDevType) {
 				s.logger.ErrorContext(
 					ctx, "error reading node data",
 					slog.Int("nodeID", nodeID), slog.Any("error", nodeErr),
@@ -137,22 +156,20 @@ func (s *DucoLoggingService) runReadAndStore(ctx context.Context) error {
 			}
 			continue
 		}
-		if storeErr := s.sink.StoreNodeData(ctx, nodeData); storeErr != nil {
+		storeNodeErr := withStoreTimeout(ctx, func(c context.Context) error {
+			return s.sink.StoreNodeData(c, nodeData)
+		})
+		if storeNodeErr != nil {
 			s.logger.ErrorContext(
 				ctx, "error storing node data",
-				slog.Int("nodeID", nodeID), slog.Any("error", storeErr),
+				slog.Int("nodeID", nodeID), slog.Any("error", storeNodeErr),
 			)
-			span.RecordError(storeErr)
+			span.RecordError(storeNodeErr)
 			span.SetStatus(codes.Error, "store node data failed")
-			if s.metrics != nil {
-				s.metrics.WriteErrorsTotal.WithLabelValues("multisink", "ventilation").Inc()
-			}
-			processKiller()
-			return storeErr
+			s.metrics.WriteErrorsTotal.WithLabelValues("multisink", "ventilation").Inc()
+			return storeNodeErr
 		}
-		if s.metrics != nil {
-			s.metrics.WritesTotal.WithLabelValues("multisink", "ventilation").Inc()
-		}
+		s.metrics.WritesTotal.WithLabelValues("multisink", "ventilation").Inc()
 	}
 	return nil
 }

@@ -63,17 +63,25 @@ func TestGridRepository_StoreGridTelegram_OneFails(t *testing.T) {
 
 func TestGridRepository_Flush(t *testing.T) {
 	s1 := &mockGridSink{}
-	repo := multisink.NewGridRepository([]domain.GridTelegramRepository{s1}, testLogger())
+	s2 := &mockGridSink{}
+	repo := multisink.NewGridRepository([]domain.GridTelegramRepository{s1, s2}, testLogger())
 	if err := repo.Flush(context.Background()); err != nil {
 		t.Errorf("Flush: %v", err)
+	}
+	if s1.flushed != 1 || s2.flushed != 1 {
+		t.Errorf("expected both sinks flushed once; got s1=%d s2=%d", s1.flushed, s2.flushed)
 	}
 }
 
 func TestGridRepository_Close(t *testing.T) {
 	s1 := &mockGridSink{}
-	repo := multisink.NewGridRepository([]domain.GridTelegramRepository{s1}, testLogger())
+	s2 := &mockGridSink{}
+	repo := multisink.NewGridRepository([]domain.GridTelegramRepository{s1, s2}, testLogger())
 	if err := repo.Close(); err != nil {
 		t.Errorf("Close: %v", err)
+	}
+	if s1.closed != 1 || s2.closed != 1 {
+		t.Errorf("expected both sinks closed once; got s1=%d s2=%d", s1.closed, s2.closed)
 	}
 }
 

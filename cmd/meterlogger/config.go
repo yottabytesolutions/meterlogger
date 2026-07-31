@@ -1,7 +1,11 @@
 package main
 
 import (
+	"fmt"
+	"reflect"
 	"time"
+
+	"github.com/spf13/viper"
 )
 
 //nolint:gochecknoglobals // build info globals, set at link time
@@ -19,6 +23,7 @@ type Config struct {
 	Heat          HeatConfig
 	Grid          GridConfig
 	QuestDB       QuestDBConfig
+	Stdout        StdoutConfig
 	Postgres      PostgresConfig
 	MySQL         MySQLConfig
 	TimescaleDB   TimescaleDBConfig
@@ -27,6 +32,12 @@ type Config struct {
 	Ventilation   VentilationConfig
 	OTEL          OTELConfig
 	Profiling     ProfilingConfig
+}
+
+// StdoutConfig configures the stdout debug sink, which logs readings instead
+// of persisting them. Not for production use.
+type StdoutConfig struct {
+	Enabled bool
 }
 
 // OTELConfig configures OpenTelemetry.
@@ -151,4 +162,30 @@ type TDEngineConfig struct {
 	User     string
 	Password string
 	Database string
+}
+
+// bindEnvKeys registers every Config key with viper so environment variables
+// such as QUESTDB_ENABLED work without a config file. AutomaticEnv only
+// resolves keys viper already knows about.
+func bindEnvKeys() error {
+	return bindStructEnvKeys(reflect.TypeFor[Config](), "")
+}
+
+func bindStructEnvKeys(t reflect.Type, prefix string) error {
+	for field := range t.Fields() {
+		key := field.Name
+		if prefix != "" {
+			key = prefix + "." + field.Name
+		}
+		if field.Type.Kind() == reflect.Struct {
+			if err := bindStructEnvKeys(field.Type, key); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := viper.BindEnv(key); err != nil {
+			return fmt.Errorf("bind %s: %w", key, err)
+		}
+	}
+	return nil
 }
