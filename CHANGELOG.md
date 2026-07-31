@@ -6,12 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-07-31
+
+### Fixed
+
+- `Heat.MbusAddress` defaults to `1`, the address the reader always polled
+  before it became configurable, so configs without the key keep working.
+
 ## [1.1.0] - 2026-07-31
 
 ### Fixed
 
 - The heat reader now polls the configured `Heat.MbusAddress` instead of always
-  polling address 1. The key defaults to `1`, so existing configs keep working.
+  polling address 1.
 - ClickHouse no longer loses buffered rows when a flush fails or the process
   stops; batches are re-queued and flushed on close.
 - A serial stream ending (EOF) on the grid meter now restarts the container
