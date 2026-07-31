@@ -43,7 +43,8 @@ docker build --build-arg GIT_SHA=$(git rev-parse --short HEAD) -t yottabyte/mete
 ```
 
 The CI pipeline builds and pushes a multi-arch manifest (`linux/amd64` + `linux/arm64`) automatically on push to
-`master`.
+`master`. Images are published to Docker Hub (`yottabyte/meterlogger`) and GitHub Container
+Registry (`ghcr.io/yottabytesolutions/meterlogger`).
 
 ---
 
