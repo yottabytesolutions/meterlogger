@@ -81,7 +81,6 @@ jobs:
             ghcr.io/${{ github.repository }}
           tags: |
             type=sha,format=long
-            type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Remove stale buildx builder
         # A leftover instance from a previous run makes setup-buildx fail with
