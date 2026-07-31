@@ -8,7 +8,7 @@ MeterLogger follows a clean architecture with three explicit layers:
 
 ```mermaid
 flowchart TB
-    cmd["cmd/meterlogger\nwiring & config"]
+    cmd["cmd/meterlogger\nwiring"]
     service["internal/service\nbusiness logic & orchestration"]
     domain["internal/domain\ninterfaces + data types"]
     adapters["internal/adapters\nI/O: serial, HTTP, databases"]
@@ -31,7 +31,6 @@ architectural invariant.
 flowchart TD
     subgraph cmd["cmd/meterlogger/"]
         main["main.go\nCobra CLI · signal handling · meter-type routing"]
-        config["config.go\nConfig · HeatConfig · GridConfig · …"]
         db["db.go\ninitDBs() - shared DB connections"]
         helper["helper.go\ninterruptAwareContext() · doWork()"]
     end
@@ -52,6 +51,8 @@ flowchart TD
     end
 
     subgraph internal["internal/"]
+        config["config/ - Config types · Load() · Validate()"]
+        telemetry["telemetry/ - InitTracing() · InitProfiling()"]
         healthsrv["healthserver/ - /healthz · /readyz · /metrics"]
         metricslib["metrics/ - Prometheus counter/gauge definitions"]
         tracedslog["tracedslog/ - slog handler: injects traceID+spanID into logs"]
@@ -91,6 +92,7 @@ flowchart TD
     svcduco --> dvent
     main --> svc
     main --> config
+    main --> telemetry
     main --> db
     main --> helper
     main --> healthsrv

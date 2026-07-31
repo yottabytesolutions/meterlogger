@@ -22,7 +22,7 @@ func buildHeatSinks(
 	healthSrv *healthserver.Server,
 	dbs dbConnections,
 ) []domain.HeatMeterRepository {
-	return buildSourceSinks(ctx, l, healthSrv, dbs, config.Heat.Measurement,
+	return buildSourceSinks(ctx, l, healthSrv, dbs, cfg.Heat.Measurement,
 		func(c *qdb.DBClient, m string, l *slog.Logger) domain.HeatMeterRepository {
 			return qdb.NewQuestDBHeatTelegramWriter(c, m, l)
 		},
@@ -53,8 +53,8 @@ func runHeatMeter(
 		}
 	}()
 
-	heatMbusAddress := byte(config.Heat.MbusAddress) //nolint:gosec // G115: intentional conversion of config value
-	reader, err := serialmbus.NewReader(ctx, config.Heat.SerialInterface, heatMbusAddress, l)
+	heatMbusAddress := byte(cfg.Heat.MbusAddress) //nolint:gosec // G115: intentional conversion of config value
+	reader, err := serialmbus.NewReader(ctx, cfg.Heat.SerialInterface, heatMbusAddress, l)
 	if err != nil {
 		l.ErrorContext(ctx, "failed to create heat mbus reader", slog.Any("error", err))
 		os.Exit(1)
@@ -64,8 +64,8 @@ func runHeatMeter(
 		ctx, l, "Heat Meter", service.NewHeatMeterLoggingService(
 			reader,
 			repo,
-			config.Heat.ScrapeInterval,
-			config.FlushInterval,
+			cfg.Heat.ScrapeInterval,
+			cfg.FlushInterval,
 			l,
 		).WithMetrics(appMetrics),
 	)

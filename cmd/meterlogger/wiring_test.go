@@ -14,6 +14,7 @@ import (
 
 	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/postgres"
 	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/sqlsink"
+	"github.com/yottabytesolutions/meterlogger/internal/config"
 	"github.com/yottabytesolutions/meterlogger/internal/metrics"
 )
 
@@ -65,9 +66,9 @@ func TestBuildSinks(t *testing.T) {
 func TestBuildSourceSinks_StdoutOnly(t *testing.T) {
 	// With only the stdout sink enabled and no DB connections, every source
 	// builder must produce exactly one sink.
-	origCfg := config
-	config = Config{Stdout: StdoutConfig{Enabled: true}}
-	defer func() { config = origCfg }()
+	origCfg := cfg
+	cfg = config.Config{Stdout: config.StdoutConfig{Enabled: true}}
+	defer func() { cfg = origCfg }()
 
 	ctx := context.Background()
 	l := testLogger()
@@ -108,9 +109,9 @@ func sqlmockSinkDB(t *testing.T, dialect sqlsink.Dialect, component string) *sql
 // open dialect connection without per-source wiring.
 func TestBuildSourceSinks_SQLLoop(t *testing.T) {
 	const m = "heat"
-	origCfg := config
-	config = Config{Heat: HeatConfig{Measurement: m}}
-	defer func() { config = origCfg }()
+	origCfg := cfg
+	cfg = config.Config{Heat: config.HeatConfig{Measurement: m}}
+	defer func() { cfg = origCfg }()
 
 	dbs := dbConnections{
 		postgres: sqlmockSinkDB(t, sqlsink.PostgresDialect(), "postgres_heat_"+m),
@@ -139,7 +140,7 @@ func TestDBConnections_ClosersAndCheckers(t *testing.T) {
 
 	dbs := dbConnections{postgres: postgres.NewDBFromSQL(mockDB, testLogger())}
 	closers := dbs.closers()
-	if len(closers) != 1 || closers[0].name != sinkNamePostgres {
+	if len(closers) != 1 || closers[0].name != config.SinkPostgres {
 		t.Errorf("closers = %v, want one postgres entry", closers)
 	}
 	if got := len(dbs.checkers()); got != 1 {
@@ -195,9 +196,9 @@ func TestCloseDB_LogsError(_ *testing.T) {
 }
 
 func TestBuildHealthServer_RegistersCheckers(t *testing.T) {
-	origCfg := config
-	config = Config{HTTPServer: HTTPServerConfig{Port: 0}}
-	defer func() { config = origCfg }()
+	origCfg := cfg
+	cfg = config.Config{HTTPServer: config.HTTPServerConfig{Port: 0}}
+	defer func() { cfg = origCfg }()
 
 	mockDB, mock, err := sqlmock.New(sqlmock.MonitorPingsOption(true))
 	if err != nil {
@@ -215,14 +216,14 @@ func TestBuildHealthServer_RegistersCheckers(t *testing.T) {
 
 //nolint:goconst // source names in a test table read better as literals
 func TestSourceEnabled(t *testing.T) {
-	origCfg, origFilter := config, sourceFilter
-	defer func() { config, sourceFilter = origCfg, origFilter }()
+	origCfg, origFilter := cfg, sourceFilter
+	defer func() { cfg, sourceFilter = origCfg, origFilter }()
 
-	config = Config{
-		Heat:        HeatConfig{Enabled: true},
-		Grid:        GridConfig{Enabled: false},
-		Enphase:     EnphaseConfig{Enabled: true},
-		Ventilation: VentilationConfig{Enabled: false},
+	cfg = config.Config{
+		Heat:        config.HeatConfig{Enabled: true},
+		Grid:        config.GridConfig{Enabled: false},
+		Enphase:     config.EnphaseConfig{Enabled: true},
+		Ventilation: config.VentilationConfig{Enabled: false},
 	}
 
 	tests := []struct {
@@ -297,12 +298,12 @@ func TestRunHealthcheck(t *testing.T) {
 }
 
 func TestValidateConfig_ExitsOnInvalid(t *testing.T) {
-	origCfg, origFilter := config, sourceFilter
-	defer func() { config, sourceFilter = origCfg, origFilter }()
+	origCfg, origFilter := cfg, sourceFilter
+	defer func() { cfg, sourceFilter = origCfg, origFilter }()
 
-	config = Config{}
+	cfg = config.Config{}
 	sourceFilter = ""
-	errs := configValidationErrors(config, sourceFilter)
+	errs := config.Validate(cfg, sourceFilter)
 	if len(errs) == 0 {
 		t.Fatal("empty config should produce validation errors")
 	}

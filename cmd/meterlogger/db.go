@@ -11,17 +11,8 @@ import (
 	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/sqlsink"
 	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/tdengine"
 	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/timescaledb"
+	"github.com/yottabytesolutions/meterlogger/internal/config"
 	"github.com/yottabytesolutions/meterlogger/internal/healthserver"
-)
-
-const (
-	sinkNameQuestDB     = "questdb"
-	sinkNameStdout      = "stdout"
-	sinkNamePostgres    = "postgres"
-	sinkNameMySQL       = "mysql"
-	sinkNameTimescaleDB = "timescaledb"
-	sinkNameClickHouse  = "clickhouse"
-	sinkNameTDEngine    = "tdengine"
 )
 
 // namedCloser pairs a sink name with its close func, so a partial-init failure
@@ -58,19 +49,19 @@ func (d dbConnections) sql() []*sqlsink.DB {
 func (d dbConnections) closers() []namedCloser {
 	var out []namedCloser
 	if d.postgres != nil {
-		out = append(out, namedCloser{sinkNamePostgres, d.postgres.Close})
+		out = append(out, namedCloser{config.SinkPostgres, d.postgres.Close})
 	}
 	if d.mysql != nil {
-		out = append(out, namedCloser{sinkNameMySQL, d.mysql.Close})
+		out = append(out, namedCloser{config.SinkMySQL, d.mysql.Close})
 	}
 	if d.timescaledb != nil {
-		out = append(out, namedCloser{sinkNameTimescaleDB, d.timescaledb.Close})
+		out = append(out, namedCloser{config.SinkTimescaleDB, d.timescaledb.Close})
 	}
 	if d.clickhouse != nil {
-		out = append(out, namedCloser{sinkNameClickHouse, d.clickhouse.Close})
+		out = append(out, namedCloser{config.SinkClickHouse, d.clickhouse.Close})
 	}
 	if d.tdengine != nil {
-		out = append(out, namedCloser{sinkNameTDEngine, d.tdengine.Close})
+		out = append(out, namedCloser{config.SinkTDEngine, d.tdengine.Close})
 	}
 	return out
 }
@@ -102,60 +93,60 @@ func initDBs(ctx context.Context) dbConnections {
 	var dbs dbConnections
 	var opened []namedCloser
 
-	if config.Postgres.Enabled {
-		dbs.postgres, opened = connect(ctx, sinkNamePostgres, opened, func() (*postgres.DB, error) {
+	if cfg.Postgres.Enabled {
+		dbs.postgres, opened = connect(ctx, config.SinkPostgres, opened, func() (*postgres.DB, error) {
 			return postgres.New(ctx, postgres.Config{
-				Host:     config.Postgres.Host,
-				Port:     config.Postgres.Port,
-				User:     config.Postgres.User,
-				Password: config.Postgres.Password,
-				Database: config.Postgres.Database,
-				SSLMode:  config.Postgres.SSLMode,
+				Host:     cfg.Postgres.Host,
+				Port:     cfg.Postgres.Port,
+				User:     cfg.Postgres.User,
+				Password: cfg.Postgres.Password,
+				Database: cfg.Postgres.Database,
+				SSLMode:  cfg.Postgres.SSLMode,
 			}, logger)
 		})
 	}
-	if config.MySQL.Enabled {
-		dbs.mysql, opened = connect(ctx, sinkNameMySQL, opened, func() (*mysql.DB, error) {
+	if cfg.MySQL.Enabled {
+		dbs.mysql, opened = connect(ctx, config.SinkMySQL, opened, func() (*mysql.DB, error) {
 			return mysql.New(ctx, mysql.Config{
-				Host:     config.MySQL.Host,
-				Port:     config.MySQL.Port,
-				User:     config.MySQL.User,
-				Password: config.MySQL.Password,
-				Database: config.MySQL.Database,
+				Host:     cfg.MySQL.Host,
+				Port:     cfg.MySQL.Port,
+				User:     cfg.MySQL.User,
+				Password: cfg.MySQL.Password,
+				Database: cfg.MySQL.Database,
 			}, logger)
 		})
 	}
-	if config.TimescaleDB.Enabled {
-		dbs.timescaledb, opened = connect(ctx, sinkNameTimescaleDB, opened, func() (*timescaledb.DB, error) {
+	if cfg.TimescaleDB.Enabled {
+		dbs.timescaledb, opened = connect(ctx, config.SinkTimescaleDB, opened, func() (*timescaledb.DB, error) {
 			return timescaledb.New(ctx, timescaledb.Config{
-				Host:     config.TimescaleDB.Host,
-				Port:     config.TimescaleDB.Port,
-				User:     config.TimescaleDB.User,
-				Password: config.TimescaleDB.Password,
-				Database: config.TimescaleDB.Database,
-				SSLMode:  config.TimescaleDB.SSLMode,
+				Host:     cfg.TimescaleDB.Host,
+				Port:     cfg.TimescaleDB.Port,
+				User:     cfg.TimescaleDB.User,
+				Password: cfg.TimescaleDB.Password,
+				Database: cfg.TimescaleDB.Database,
+				SSLMode:  cfg.TimescaleDB.SSLMode,
 			}, logger)
 		})
 	}
-	if config.ClickHouse.Enabled {
-		dbs.clickhouse, opened = connect(ctx, sinkNameClickHouse, opened, func() (*clickhouse.DB, error) {
+	if cfg.ClickHouse.Enabled {
+		dbs.clickhouse, opened = connect(ctx, config.SinkClickHouse, opened, func() (*clickhouse.DB, error) {
 			return clickhouse.New(ctx, clickhouse.Config{
-				Host:     config.ClickHouse.Host,
-				Port:     config.ClickHouse.Port,
-				User:     config.ClickHouse.User,
-				Password: config.ClickHouse.Password,
-				Database: config.ClickHouse.Database,
+				Host:     cfg.ClickHouse.Host,
+				Port:     cfg.ClickHouse.Port,
+				User:     cfg.ClickHouse.User,
+				Password: cfg.ClickHouse.Password,
+				Database: cfg.ClickHouse.Database,
 			}, logger)
 		})
 	}
-	if config.TDEngine.Enabled {
-		dbs.tdengine, _ = connect(ctx, sinkNameTDEngine, opened, func() (*tdengine.DB, error) {
+	if cfg.TDEngine.Enabled {
+		dbs.tdengine, _ = connect(ctx, config.SinkTDEngine, opened, func() (*tdengine.DB, error) {
 			return tdengine.New(ctx, tdengine.Config{
-				Host:     config.TDEngine.Host,
-				Port:     config.TDEngine.Port,
-				User:     config.TDEngine.User,
-				Password: config.TDEngine.Password,
-				Database: config.TDEngine.Database,
+				Host:     cfg.TDEngine.Host,
+				Port:     cfg.TDEngine.Port,
+				User:     cfg.TDEngine.User,
+				Password: cfg.TDEngine.Password,
+				Database: cfg.TDEngine.Database,
 			}, logger)
 		})
 	}

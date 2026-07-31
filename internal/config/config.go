@@ -1,4 +1,6 @@
-package main
+// Package config defines the application configuration, loads it from file,
+// environment, and flags via viper, and validates it before startup.
+package config
 
 import (
 	"fmt"
@@ -8,10 +10,23 @@ import (
 	"github.com/spf13/viper"
 )
 
-//nolint:gochecknoglobals // build info globals, set at link time
-var (
-	CommitSHA string
-	BuildDate string
+// Sink names as used in log messages, validation errors, and sink wiring.
+const (
+	SinkQuestDB     = "questdb"
+	SinkStdout      = "stdout"
+	SinkPostgres    = "postgres"
+	SinkMySQL       = "mysql"
+	SinkTimescaleDB = "timescaledb"
+	SinkClickHouse  = "clickhouse"
+	SinkTDEngine    = "tdengine"
+)
+
+// Source names as used by the --source flag.
+const (
+	SourceHeat        = "heat"
+	SourceGrid        = "grid"
+	SourceSolar       = "solar"
+	SourceVentilation = "ventilation"
 )
 
 // Config is the top-level application configuration.

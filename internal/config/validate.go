@@ -1,26 +1,10 @@
-package main
+package config
 
-import (
-	"fmt"
-	"os"
-)
+import "fmt"
 
-// validateConfig logs every configuration problem and exits when any exist.
-func validateConfig() {
-	errs := configValidationErrors(config, sourceFilter)
-	for _, msg := range errs {
-		logger.Error(msg)
-	}
-	if len(errs) > 0 {
-		os.Exit(1)
-	}
-}
-
-// configValidationErrors returns every configuration problem found in cfg,
-// given the --source filter in effect. An empty slice means the
-// configuration is valid. Split out from validateConfig so the checks can be
-// exercised without triggering os.Exit.
-func configValidationErrors(cfg Config, sourceFilter string) []string {
+// Validate returns every configuration problem found in cfg, given the
+// --source filter in effect. An empty slice means the configuration is valid.
+func Validate(cfg Config, sourceFilter string) []string {
 	var errs []string
 
 	if !cfg.QuestDB.Enabled && !cfg.Postgres.Enabled && !cfg.MySQL.Enabled &&
@@ -28,7 +12,7 @@ func configValidationErrors(cfg Config, sourceFilter string) []string {
 		errs = append(errs, "no sinks enabled; set Enabled: true for at least one sink")
 	}
 
-	validSources := map[string]bool{sourceHeat: true, sourceGrid: true, sourceSolar: true, sourceVentilation: true}
+	validSources := map[string]bool{SourceHeat: true, SourceGrid: true, SourceSolar: true, SourceVentilation: true}
 	if sourceFilter != "" && !validSources[sourceFilter] {
 		errs = append(errs, fmt.Sprintf(
 			"invalid --source value %q; valid values are heat, grid, solar, ventilation", sourceFilter,
@@ -68,17 +52,17 @@ type sqlSinkFields struct {
 // connection error later.
 func sinkFieldErrors(cfg Config) []string {
 	sinks := []sqlSinkFields{
-		{sinkNamePostgres, cfg.Postgres.Enabled, cfg.Postgres.Host, cfg.Postgres.User, cfg.Postgres.Database},
-		{sinkNameMySQL, cfg.MySQL.Enabled, cfg.MySQL.Host, cfg.MySQL.User, cfg.MySQL.Database},
+		{SinkPostgres, cfg.Postgres.Enabled, cfg.Postgres.Host, cfg.Postgres.User, cfg.Postgres.Database},
+		{SinkMySQL, cfg.MySQL.Enabled, cfg.MySQL.Host, cfg.MySQL.User, cfg.MySQL.Database},
 		{
-			sinkNameTimescaleDB,
+			SinkTimescaleDB,
 			cfg.TimescaleDB.Enabled,
 			cfg.TimescaleDB.Host,
 			cfg.TimescaleDB.User,
 			cfg.TimescaleDB.Database,
 		},
-		{sinkNameClickHouse, cfg.ClickHouse.Enabled, cfg.ClickHouse.Host, cfg.ClickHouse.User, cfg.ClickHouse.Database},
-		{sinkNameTDEngine, cfg.TDEngine.Enabled, cfg.TDEngine.Host, cfg.TDEngine.User, cfg.TDEngine.Database},
+		{SinkClickHouse, cfg.ClickHouse.Enabled, cfg.ClickHouse.Host, cfg.ClickHouse.User, cfg.ClickHouse.Database},
+		{SinkTDEngine, cfg.TDEngine.Enabled, cfg.TDEngine.Host, cfg.TDEngine.User, cfg.TDEngine.Database},
 	}
 
 	var errs []string

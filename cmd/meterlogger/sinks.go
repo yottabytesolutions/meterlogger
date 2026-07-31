@@ -10,6 +10,7 @@ import (
 	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/qdb"
 	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/sqlsink"
 	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/stdout"
+	"github.com/yottabytesolutions/meterlogger/internal/config"
 	"github.com/yottabytesolutions/meterlogger/internal/healthserver"
 )
 
@@ -36,7 +37,7 @@ func buildSourceSinks[R any](
 	newClickHouseStore func(ctx context.Context, db *clickhouse.DB, measurement string, l *slog.Logger) (R, error),
 ) []R {
 	inits := []sinkInit[R]{
-		{sinkNameQuestDB, config.QuestDB.Enabled, func() (R, error) {
+		{config.SinkQuestDB, cfg.QuestDB.Enabled, func() (R, error) {
 			client, err := newQuestDBClient(ctx, l, healthSrv)
 			if err != nil {
 				var zero R
@@ -44,7 +45,7 @@ func buildSourceSinks[R any](
 			}
 			return newQuestDBWriter(client, measurement, l), nil
 		}},
-		{sinkNameStdout, config.Stdout.Enabled, func() (R, error) {
+		{config.SinkStdout, cfg.Stdout.Enabled, func() (R, error) {
 			// The stdout debug sink implements every repository interface;
 			// the assertion is covered by TestBuildSourceSinks_StdoutOnly.
 			sink, ok := any(stdout.NewStdoutStore(l)).(R)
@@ -60,7 +61,7 @@ func buildSourceSinks[R any](
 			return newSQLStore(ctx, db, measurement, l)
 		}})
 	}
-	inits = append(inits, sinkInit[R]{sinkNameClickHouse, dbs.clickhouse != nil, func() (R, error) {
+	inits = append(inits, sinkInit[R]{config.SinkClickHouse, dbs.clickhouse != nil, func() (R, error) {
 		return newClickHouseStore(ctx, dbs.clickhouse, measurement, l)
 	}})
 	return buildSinks(ctx, l, inits)
@@ -93,10 +94,10 @@ func newQuestDBClient(
 	healthSrv *healthserver.Server,
 ) (*qdb.DBClient, error) {
 	client, err := qdb.NewDBClient(ctx, qdb.Config{
-		Host:     config.QuestDB.Host,
-		Port:     config.QuestDB.Port,
-		User:     config.QuestDB.User,
-		Password: config.QuestDB.Password,
+		Host:     cfg.QuestDB.Host,
+		Port:     cfg.QuestDB.Port,
+		User:     cfg.QuestDB.User,
+		Password: cfg.QuestDB.Password,
 	}, l)
 	if err != nil {
 		return nil, err

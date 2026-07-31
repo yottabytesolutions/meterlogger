@@ -21,7 +21,7 @@ func buildVentilationSinks(
 	healthSrv *healthserver.Server,
 	dbs dbConnections,
 ) []domain.DucoRepository {
-	return buildSourceSinks(ctx, l, healthSrv, dbs, config.Ventilation.MeasurementBaseName,
+	return buildSourceSinks(ctx, l, healthSrv, dbs, cfg.Ventilation.MeasurementBaseName,
 		func(c *qdb.DBClient, m string, l *slog.Logger) domain.DucoRepository {
 			return qdb.NewDucoQuestDBRepository(c, m, l)
 		},
@@ -40,7 +40,7 @@ func runVentilation(
 	appMetrics *metrics.Metrics,
 	dbs dbConnections,
 ) {
-	conf := config.Ventilation
+	conf := cfg.Ventilation
 	sinks := buildVentilationSinks(ctx, l, healthSrv, dbs)
 	if len(sinks) == 0 {
 		l.WarnContext(ctx, "ventilation source enabled but no sinks available; skipping")
@@ -58,7 +58,7 @@ func runVentilation(
 			ducobox.NewDucoReader(conf.HostURL, l),
 			repo,
 			conf.ScrapeInterval,
-			config.FlushInterval,
+			cfg.FlushInterval,
 			conf.Nodes,
 			l,
 		).WithMetrics(appMetrics),

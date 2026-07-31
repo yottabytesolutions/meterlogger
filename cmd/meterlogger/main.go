@@ -11,7 +11,14 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
+	"github.com/yottabytesolutions/meterlogger/internal/config"
 	"github.com/yottabytesolutions/meterlogger/internal/tracedslog"
+)
+
+//nolint:gochecknoglobals // build info globals, set at link time
+var (
+	CommitSHA string
+	BuildDate string
 )
 
 //nolint:gochecknoglobals // cobra CLI pattern requires package-level variables
@@ -21,7 +28,7 @@ var cfgFile string
 var sourceFilter string
 
 //nolint:gochecknoglobals // cobra CLI pattern requires package-level variables
-var config Config
+var cfg config.Config
 
 //nolint:gochecknoglobals // cobra CLI pattern requires package-level variables
 var logger *slog.Logger
@@ -29,11 +36,7 @@ var logger *slog.Logger
 //nolint:gochecknoinits // init() is required by the cobra CLI pattern
 func init() {
 	// Base handler - level will be adjusted in initConfig() once config is loaded.
-	base := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})
-	logger = slog.New(tracedslog.New(base)).With(
-		slog.String("version", CommitSHA),
-		slog.String("buildTime", BuildDate),
-	)
+	logger = newLogger(slog.LevelInfo)
 
 	cobra.OnInitialize(initConfig)
 	rootCmd.PersistentFlags().StringVar(
@@ -70,6 +73,43 @@ func init() {
 	}
 	if err := viper.BindPFlag("Enphase.EnvoyURL", rootCmd.Flags().Lookup("envoy-url")); err != nil {
 		fmt.Fprintln(os.Stderr, "failed to bind envoy-url flag:", err)
+		os.Exit(1)
+	}
+}
+
+// initConfig loads the configuration and rebuilds the logger at the configured
+// level. Runs via cobra.OnInitialize before any command body.
+func initConfig() {
+	loaded, err := config.Load(cfgFile, logger)
+	if err != nil {
+		logger.Error("failed to load config", slog.Any("error", err))
+		os.Exit(1)
+	}
+	cfg = loaded
+
+	level := slog.LevelInfo
+	if cfg.Debug {
+		level = slog.LevelDebug
+	}
+	logger = newLogger(level)
+}
+
+// newLogger builds the process logger with trace correlation and build info.
+func newLogger(level slog.Level) *slog.Logger {
+	base := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: level})
+	return slog.New(tracedslog.New(base)).With(
+		slog.String("version", CommitSHA),
+		slog.String("buildTime", BuildDate),
+	)
+}
+
+// validateConfig logs every configuration problem and exits when any exist.
+func validateConfig() {
+	errs := config.Validate(cfg, sourceFilter)
+	for _, msg := range errs {
+		logger.Error(msg)
+	}
+	if len(errs) > 0 {
 		os.Exit(1)
 	}
 }

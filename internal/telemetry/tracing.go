@@ -1,4 +1,7 @@
-package main
+// Package telemetry initializes optional observability backends: OpenTelemetry
+// trace export and Pyroscope continuous profiling. Both are no-ops when
+// disabled in the configuration.
+package telemetry
 
 import (
 	"context"
@@ -10,11 +13,13 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
+
+	"github.com/yottabytesolutions/meterlogger/internal/config"
 )
 
-// initOTEL sets up trace export to the configured collector. Metrics are served
-// by Prometheus on /metrics; there is no OTel metrics pipeline.
-func initOTEL(ctx context.Context, cfg OTELConfig) (func(context.Context) error, error) {
+// InitTracing sets up trace export to the configured collector. Metrics are
+// served by Prometheus on /metrics; there is no OTel metrics pipeline.
+func InitTracing(ctx context.Context, cfg config.OTELConfig) (func(context.Context) error, error) {
 	if !cfg.Enabled {
 		return func(context.Context) error { return nil }, nil
 	}

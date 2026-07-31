@@ -1,7 +1,8 @@
-package main
+package config
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"strings"
@@ -9,26 +10,26 @@ import (
 	"github.com/spf13/viper"
 
 	"github.com/yottabytesolutions/meterlogger/internal/healthserver"
-	"github.com/yottabytesolutions/meterlogger/internal/tracedslog"
 )
 
-// initConfig loads configuration from file, environment, and flags, then
-// rebuilds the logger at the configured level. Runs via cobra.OnInitialize
-// before any command body.
-func initConfig() {
+// Load reads configuration from file, environment variables, and any flags
+// already bound to viper. When path is empty it looks for $HOME/.meterlogger.
+// A missing config file is not an error; defaults, environment variables, and
+// flags still apply. Load uses the global viper instance so cobra flag
+// bindings made by the caller keep working.
+func Load(path string, logger *slog.Logger) (Config, error) {
 	viper.SetDefault("Debug", false)
 	viper.SetDefault("HTTPServer.Port", 8080) //nolint:mnd // well-known default port
 	viper.SetDefault("HTTPServer.LivenessFailureThreshold", healthserver.DefaultLivenessFailureThreshold)
 
 	setSinkDefaults()
 
-	if cfgFile != "" {
-		viper.SetConfigFile(cfgFile)
+	if path != "" {
+		viper.SetConfigFile(path)
 	} else {
 		home, err := os.UserHomeDir()
 		if err != nil {
-			logger.Error("failed to get home directory", slog.Any("error", err))
-			os.Exit(1)
+			return Config{}, fmt.Errorf("get home directory: %w", err)
 		}
 		viper.AddConfigPath(home)
 		viper.SetConfigName(".meterlogger")
@@ -37,36 +38,23 @@ func initConfig() {
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	viper.AutomaticEnv()
 	if err := bindEnvKeys(); err != nil {
-		logger.Error("failed to bind environment variables", slog.Any("error", err))
-		os.Exit(1)
+		return Config{}, fmt.Errorf("bind environment variables: %w", err)
 	}
 
 	if err := viper.ReadInConfig(); err != nil {
-		if isConfigFileNotFound(err) {
-			logger.Debug("no config file found; using defaults, environment variables, and flags")
-		} else {
-			logger.Error("failed to read config file", slog.Any("error", err))
-			os.Exit(1)
+		if !isConfigFileNotFound(err) {
+			return Config{}, fmt.Errorf("read config file: %w", err)
 		}
+		logger.Debug("no config file found; using defaults, environment variables, and flags")
 	} else {
 		logger.Info("using config file", slog.String("file", viper.ConfigFileUsed()))
 	}
 
-	if err := viper.Unmarshal(&config); err != nil {
-		logger.Error("failed to unmarshal config", slog.Any("error", err))
-		os.Exit(1)
+	var cfg Config
+	if err := viper.Unmarshal(&cfg); err != nil {
+		return Config{}, fmt.Errorf("unmarshal config: %w", err)
 	}
-
-	// Adjust log level based on config.
-	level := slog.LevelInfo
-	if config.Debug {
-		level = slog.LevelDebug
-	}
-	base := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: level})
-	logger = slog.New(tracedslog.New(base)).With(
-		slog.String("version", CommitSHA),
-		slog.String("buildTime", BuildDate),
-	)
+	return cfg, nil
 }
 
 // setSinkDefaults sets viper defaults for sink fields documented as having a

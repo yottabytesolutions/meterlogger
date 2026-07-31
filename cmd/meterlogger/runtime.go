@@ -9,16 +9,10 @@ import (
 	"sync"
 	"syscall"
 
+	"github.com/yottabytesolutions/meterlogger/internal/config"
 	"github.com/yottabytesolutions/meterlogger/internal/healthserver"
 	"github.com/yottabytesolutions/meterlogger/internal/metrics"
-)
-
-// Source names as used by the --source flag and sourceEnabled.
-const (
-	sourceHeat        = "heat"
-	sourceGrid        = "grid"
-	sourceSolar       = "solar"
-	sourceVentilation = "ventilation"
+	"github.com/yottabytesolutions/meterlogger/internal/telemetry"
 )
 
 // app is the composition root: every long-lived component of a running
@@ -46,14 +40,14 @@ func newRuntime(ctx context.Context) *app {
 }
 
 func (rt *app) initTelemetry(ctx context.Context) {
-	stopTracing, err := initOTEL(ctx, config.OTEL)
+	stopTracing, err := telemetry.InitTracing(ctx, cfg.OTEL)
 	if err != nil {
 		logger.ErrorContext(ctx, "failed to initialize OpenTelemetry", slog.Any("error", err))
 		os.Exit(1)
 	}
 	rt.stopTracing = stopTracing
 
-	stopProfiling, err := initProfiling(config.Profiling)
+	stopProfiling, err := telemetry.InitProfiling(cfg.Profiling)
 	if err != nil {
 		logger.ErrorContext(ctx, "failed to initialize profiling", slog.Any("error", err))
 		os.Exit(1)
@@ -83,16 +77,16 @@ func (rt *app) serve(ctx context.Context) {
 func (rt *app) startSources(ctx context.Context) {
 	var wg sync.WaitGroup
 
-	if sourceEnabled(sourceHeat) {
+	if sourceEnabled(config.SourceHeat) {
 		wg.Go(func() { runHeatMeter(ctx, logger, rt.health, rt.metrics, rt.dbs) })
 	}
-	if sourceEnabled(sourceGrid) {
+	if sourceEnabled(config.SourceGrid) {
 		wg.Go(func() { runGridMeter(ctx, logger, rt.health, rt.metrics, rt.dbs) })
 	}
-	if sourceEnabled(sourceSolar) {
+	if sourceEnabled(config.SourceSolar) {
 		wg.Go(func() { runSolarMeter(ctx, logger, rt.health, rt.metrics, rt.dbs) })
 	}
-	if sourceEnabled(sourceVentilation) {
+	if sourceEnabled(config.SourceVentilation) {
 		wg.Go(func() { runVentilation(ctx, logger, rt.health, rt.metrics, rt.dbs) })
 	}
 
@@ -119,10 +113,10 @@ func (rt *app) shutdown() {
 // fresh one per probe.
 func buildHealthServer(appMetrics *metrics.Metrics, dbs dbConnections) *healthserver.Server {
 	srv := healthserver.New(
-		fmt.Sprintf(":%d", config.HTTPServer.Port),
+		fmt.Sprintf(":%d", cfg.HTTPServer.Port),
 		logger,
 		appMetrics.Registry,
-		config.HTTPServer.LivenessFailureThreshold,
+		cfg.HTTPServer.LivenessFailureThreshold,
 	)
 	for _, checker := range dbs.checkers() {
 		srv.Register(checker)
@@ -137,14 +131,14 @@ func sourceEnabled(name string) bool {
 		return sourceFilter == name
 	}
 	switch name {
-	case sourceHeat:
-		return config.Heat.Enabled
-	case sourceGrid:
-		return config.Grid.Enabled
-	case sourceSolar:
-		return config.Enphase.Enabled
-	case sourceVentilation:
-		return config.Ventilation.Enabled
+	case config.SourceHeat:
+		return cfg.Heat.Enabled
+	case config.SourceGrid:
+		return cfg.Grid.Enabled
+	case config.SourceSolar:
+		return cfg.Enphase.Enabled
+	case config.SourceVentilation:
+		return cfg.Ventilation.Enabled
 	}
 	return false
 }

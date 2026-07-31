@@ -31,7 +31,8 @@ For a SQL database that fits an existing wire protocol (Postgres- or MySQL-compa
 1. Add a dialect in `internal/adapters/sink/sqlsink/dialect.go` and a thin wrapper package
    `internal/adapters/sink/<name>/` with `common.go` (Config, DSN builder, driver import,
    delegating constructors), modeled on `internal/adapters/sink/postgres/`.
-2. Register the connection in `cmd/meterlogger/config.go` and `db.go` (`dbConnections` plus
+2. Register the connection in `internal/config/` (config struct, defaults, validation) and in
+   `cmd/meterlogger/db.go` (`dbConnections` plus
    its `sql()`, `closers()`, `checkers()` methods and `initDBs`). The `source_*.go` files need
    no changes; `buildSourceSinks` picks up every open `sqlsink.DB` automatically.
 
@@ -54,7 +55,8 @@ Follow the same pattern as existing sources (`gridmeter`, `enphase`, `serialmbus
 2. Implement the reader in `internal/adapters/source/<name>/`.
 3. Implement store methods in each sink package.
 4. Add a `multisink` wrapper in `internal/adapters/sink/multisink/`.
-5. Wire it in `cmd/meterlogger/source_<name>.go` and register the `--source` flag value.
+5. Add its config section and validation in `internal/config/`, wire it in
+   `cmd/meterlogger/source_<name>.go`, and register the `--source` flag value.
 
 ## Code style
 

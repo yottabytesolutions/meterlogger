@@ -21,7 +21,7 @@ func buildGridSinks(
 	healthSrv *healthserver.Server,
 	dbs dbConnections,
 ) []domain.GridTelegramRepository {
-	return buildSourceSinks(ctx, l, healthSrv, dbs, config.Grid.Measurement,
+	return buildSourceSinks(ctx, l, healthSrv, dbs, cfg.Grid.Measurement,
 		func(c *qdb.DBClient, m string, l *slog.Logger) domain.GridTelegramRepository {
 			return qdb.NewQuestDBGridWriter(c, m, l)
 		},
@@ -54,9 +54,9 @@ func runGridMeter(
 
 	startService(
 		ctx, l, "Grid Meter", service.NewGridLoggingService(
-			gridmeter.NewGridReader(config.Grid.SerialInterface, l),
+			gridmeter.NewGridReader(cfg.Grid.SerialInterface, l),
 			repo,
-			config.FlushInterval,
+			cfg.FlushInterval,
 			l,
 		).WithMetrics(appMetrics),
 	)

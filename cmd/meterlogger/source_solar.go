@@ -21,7 +21,7 @@ func buildSolarSinks(
 	healthSrv *healthserver.Server,
 	dbs dbConnections,
 ) []domain.EnvoySolarRepository {
-	return buildSourceSinks(ctx, l, healthSrv, dbs, config.Enphase.Measurement,
+	return buildSourceSinks(ctx, l, healthSrv, dbs, cfg.Enphase.Measurement,
 		func(c *qdb.DBClient, m string, l *slog.Logger) domain.EnvoySolarRepository {
 			return qdb.NewQuestDBSolarWriter(c, m, l)
 		},
@@ -56,16 +56,16 @@ func runSolarMeter(
 		ctx, l, "Solar Meter", service.NewSolarLoggingService(
 			enphase.NewEnvoyReader(
 				enphase.Config{
-					EnvoyURL: config.Enphase.EnvoyURL,
-					User:     config.Enphase.User,
-					Password: config.Enphase.Password,
-					Serial:   config.Enphase.Serial,
+					EnvoyURL: cfg.Enphase.EnvoyURL,
+					User:     cfg.Enphase.User,
+					Password: cfg.Enphase.Password,
+					Serial:   cfg.Enphase.Serial,
 				},
 				l,
 			),
 			repo,
-			config.Enphase.ScrapeInterval,
-			config.FlushInterval,
+			cfg.Enphase.ScrapeInterval,
+			cfg.FlushInterval,
 			l,
 		).WithMetrics(appMetrics),
 	)

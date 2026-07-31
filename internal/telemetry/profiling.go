@@ -1,15 +1,17 @@
-package main
+package telemetry
 
 import (
 	"fmt"
 	"runtime"
 
 	"github.com/grafana/pyroscope-go"
+
+	"github.com/yottabytesolutions/meterlogger/internal/config"
 )
 
-// initProfiling starts Pyroscope continuous profiling and returns a stop function.
-// If cfg.Enabled is false it returns a no-op stop function.
-func initProfiling(cfg ProfilingConfig) (func() error, error) {
+// InitProfiling starts Pyroscope continuous profiling and returns a stop
+// function. If cfg.Enabled is false it returns a no-op stop function.
+func InitProfiling(cfg config.ProfilingConfig) (func() error, error) {
 	if !cfg.Enabled {
 		return func() error { return nil }, nil
 	}
