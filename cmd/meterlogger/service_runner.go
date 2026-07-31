@@ -3,29 +3,9 @@ package main
 import (
 	"context"
 	"log/slog"
-	"os"
-	"os/signal"
-	"syscall"
 
 	"github.com/yottabytesolutions/meterlogger/internal/service"
 )
-
-func interruptAwareContext() context.Context {
-	ctx, stop := signal.NotifyContext(
-		context.Background(),
-		os.Interrupt,
-		syscall.SIGTERM,
-		syscall.SIGINT,
-		syscall.SIGQUIT,
-	)
-	go func() {
-		<-ctx.Done()
-		logger.Info("received interrupt signal")
-		stop()
-	}()
-
-	return ctx
-}
 
 // doWork runs the service function in a loop, restarting it if it exits
 // before the context is cancelled (e.g. on transient errors signalled via processKiller).
