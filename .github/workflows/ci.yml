@@ -61,6 +61,10 @@ jobs:
     # the persistent buildx builder cache.
     if: github.event_name == 'push'
     runs-on: [ self-hosted ]
+    # The named buildx builder is shared daemon state; concurrent docker jobs
+    # (master push + tag push) race on it. Serialize them repo-wide.
+    concurrency:
+      group: docker-builder
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1

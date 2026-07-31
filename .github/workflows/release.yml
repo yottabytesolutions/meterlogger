@@ -36,6 +36,10 @@ jobs:
 
   docker:
     runs-on: [ self-hosted ]
+    # The named buildx builder is shared daemon state; concurrent docker jobs
+    # (master push + tag push) race on it. Serialize them repo-wide.
+    concurrency:
+      group: docker-builder
     permissions:
       contents: read
     steps:
