@@ -4,7 +4,6 @@
 package converters
 
 import (
-	"errors"
 	"fmt"
 	"strconv"
 	"time"
@@ -13,9 +12,6 @@ import (
 
 	"github.com/yottabytesolutions/meterlogger/internal/domain"
 )
-
-// ErrRecordNotFound is returned when a required MBus data record is not found.
-var ErrRecordNotFound = errors.New("record not found")
 
 // heatField maps one M-Bus record (selected by VIF type and function) to one
 // HeatTelegram field.
@@ -81,9 +77,9 @@ func GombusToDomain(frame *gombus.DecodedFrame) (domain.HeatTelegram, error) {
 	}
 
 	for _, f := range heatFields() {
-		value, ok := frame.Value(f.unitType, f.function)
-		if !ok {
-			return result, fmt.Errorf("%s: %w", f.name, ErrRecordNotFound)
+		value, err := frame.Value(f.unitType, f.function)
+		if err != nil {
+			return result, fmt.Errorf("%s: %w", f.name, err)
 		}
 		f.assign(&result, value)
 	}

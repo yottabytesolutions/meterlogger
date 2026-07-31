@@ -14,7 +14,7 @@ require (
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.21.0
 	github.com/taosdata/driver-go/v3 v3.8.2
-	github.com/yottabytesolutions/gombus v0.0.0-20260731181401-76c8c1e2956a
+	github.com/yottabytesolutions/gombus v1.0.0
 	go.bug.st/serial v1.8.0
 	go.opentelemetry.io/otel v1.44.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.44.0

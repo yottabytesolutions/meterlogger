@@ -1,6 +1,8 @@
 package converters
 
 import (
+	"errors"
+	"strings"
 	"testing"
 
 	"github.com/yottabytesolutions/gombus"
@@ -244,5 +246,28 @@ func TestGombusToDomain_MissingActualPower(t *testing.T) {
 	_, err := GombusToDomain(frame)
 	if err == nil {
 		t.Error("GombusToDomain() should return error when ActualPower record is missing")
+	}
+}
+
+func TestGombusToDomain_MissingRecordWrapsErrNoRecord(t *testing.T) {
+	frame := &gombus.DecodedFrame{DataRecords: []gombus.DecodedDataRecord{}}
+	_, err := GombusToDomain(frame)
+	if !errors.Is(err, gombus.ErrNoRecord) {
+		t.Errorf("GombusToDomain() error = %v, want wrapped gombus.ErrNoRecord", err)
+	}
+	if err == nil || !strings.Contains(err.Error(), "max flow") {
+		t.Errorf("GombusToDomain() error = %v, want field name in message", err)
+	}
+}
+
+func TestGombusToDomain_UndecodableValueSurfaces(t *testing.T) {
+	valueErr := errors.New("BCD filler: value not available")
+	rec := makeRecord(gombus.VIFVolumeFlow, gombus.FunctionMaximum, 0)
+	rec.ValueErr = valueErr
+	frame := &gombus.DecodedFrame{DataRecords: []gombus.DecodedDataRecord{rec}}
+
+	_, err := GombusToDomain(frame)
+	if !errors.Is(err, valueErr) {
+		t.Errorf("GombusToDomain() error = %v, want the record's ValueErr, not a silent zero", err)
 	}
 }
