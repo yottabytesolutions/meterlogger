@@ -33,6 +33,9 @@ func TestLoad_DefaultsNoFile(t *testing.T) {
 		t.Fatalf("Load() error = %v", err)
 	}
 
+	if cfg.Heat.MbusAddress != 1 {
+		t.Errorf("Heat.MbusAddress default = %d, want 1", cfg.Heat.MbusAddress)
+	}
 	if cfg.Debug {
 		t.Error("Load() should default Debug to false")
 	}

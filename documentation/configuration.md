@@ -314,7 +314,7 @@ HTTPSERVER_PORT=8080
 |------------------------|----------|-------------------------------------|
 | `Heat.Enabled`         | bool     | Set `true` to activate              |
 | `Heat.SerialInterface` | string   | e.g. `/dev/ttyUSB0`                 |
-| `Heat.MbusAddress`     | int      | M-Bus device address, typically `1` |
+| `Heat.MbusAddress`     | int      | M-Bus device address, default `1` |
 | `Heat.ScrapeInterval`  | duration | How often to poll the meter         |
 | `Heat.Measurement`     | string   | Table name in all enabled sinks     |
 

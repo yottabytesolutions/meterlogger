@@ -6,6 +6,39 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-07-31
+
+### Fixed
+
+- The heat reader now polls the configured `Heat.MbusAddress` instead of always
+  polling address 1. The key defaults to `1`, so existing configs keep working.
+- ClickHouse no longer loses buffered rows when a flush fails or the process
+  stops; batches are re-queued and flushed on close.
+- A serial stream ending (EOF) on the grid meter now restarts the container
+  instead of leaving a healthy-looking process with no data flow.
+- One failing sink no longer kills the ventilation service immediately; all
+  services tolerate transient errors the same way.
+- Undecodable meter values (BCD filler) surface as errors instead of zeros.
+- Database writes carry a timeout so a hung connection cannot stall a service.
+- Passwords with special characters work in every sink connection string.
+
+### Changed
+
+- The Enphase cloud login verifies TLS certificates. Local Envoy requests still
+  accept the device's self-signed certificate.
+- M-Bus reads use the gombus client with incremental frame reassembly; readings
+  arrive about ten seconds sooner per cycle.
+- `Heat.MbusAddress` must be 1 to 250; other values fail at startup.
+- The four SQL sinks share one implementation; schema migrations and table
+  layouts are unchanged.
+- Environment variables can configure every key without a config file, for
+  example `QUESTDB_ENABLED=true`.
+- `meterlogger --version` prints the build version.
+
+### Added
+
+- Stdout debug sink (`Stdout.Enabled`) that logs readings instead of storing them.
+
 ## [1.0.0] - 2026-07-30
 
 First public, open-source release.

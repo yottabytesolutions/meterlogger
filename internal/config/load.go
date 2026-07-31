@@ -22,6 +22,7 @@ func Load(path string, logger *slog.Logger) (Config, error) {
 	viper.SetDefault("HTTPServer.Port", 8080) //nolint:mnd // well-known default port
 	viper.SetDefault("HTTPServer.LivenessFailureThreshold", healthserver.DefaultLivenessFailureThreshold)
 
+	setSourceDefaults()
 	setSinkDefaults()
 
 	if path != "" {
@@ -61,6 +62,13 @@ func Load(path string, logger *slog.Logger) (Config, error) {
 // default value in documentation/configuration.md. QuestDB.Enabled is
 // intentionally NOT defaulted to true here; see the breaking-change note in
 // that document.
+func setSourceDefaults() {
+	// The reader polled M-Bus address 1 unconditionally before the address
+	// became configurable; keep that as the default so existing configs
+	// without the key keep working.
+	viper.SetDefault("Heat.MbusAddress", 1)
+}
+
 func setSinkDefaults() {
 	viper.SetDefault("QuestDB.Port", 9009) //nolint:mnd // documented default ILP port
 
