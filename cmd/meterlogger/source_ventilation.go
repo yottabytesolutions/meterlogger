@@ -6,12 +6,8 @@ import (
 
 	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/clickhouse"
 	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/multisink"
-	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/mysql"
-	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/postgres"
 	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/qdb"
-	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/stdout"
-	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/tdengine"
-	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/timescaledb"
+	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/sqlsink"
 	"github.com/yottabytesolutions/meterlogger/internal/adapters/source/ducobox"
 	"github.com/yottabytesolutions/meterlogger/internal/domain"
 	"github.com/yottabytesolutions/meterlogger/internal/healthserver"
@@ -19,40 +15,23 @@ import (
 	"github.com/yottabytesolutions/meterlogger/internal/service"
 )
 
-//nolint:dupl // one wiring table per source; parallel by design, distinct domain types
+//nolint:dupl // per-source constructor sets are parallel by design, distinct domain types
 func buildVentilationSinks(
 	ctx context.Context, l *slog.Logger,
 	healthSrv *healthserver.Server,
 	dbs dbConnections,
 ) []domain.DucoRepository {
-	m := config.Ventilation.MeasurementBaseName
-	return buildSinks(ctx, l, []sinkInit[domain.DucoRepository]{
-		{sinkNameQuestDB, config.QuestDB.Enabled, func() (domain.DucoRepository, error) {
-			client, err := newQuestDBClient(ctx, l, healthSrv)
-			if err != nil {
-				return nil, err
-			}
-			return qdb.NewDucoQuestDBRepository(client, m, l), nil
-		}},
-		{sinkNameStdout, config.Stdout.Enabled, func() (domain.DucoRepository, error) {
-			return stdout.NewStdoutStore(l), nil
-		}},
-		{sinkNamePostgres, dbs.postgres != nil, func() (domain.DucoRepository, error) {
-			return postgres.NewDucoStore(ctx, dbs.postgres, m, l)
-		}},
-		{sinkNameMySQL, dbs.mysql != nil, func() (domain.DucoRepository, error) {
-			return mysql.NewDucoStore(ctx, dbs.mysql, m, l)
-		}},
-		{sinkNameTimescaleDB, dbs.timescaledb != nil, func() (domain.DucoRepository, error) {
-			return timescaledb.NewDucoStore(ctx, dbs.timescaledb, m, l)
-		}},
-		{sinkNameClickHouse, dbs.clickhouse != nil, func() (domain.DucoRepository, error) {
-			return clickhouse.NewDucoStore(ctx, dbs.clickhouse, m, l)
-		}},
-		{sinkNameTDEngine, dbs.tdengine != nil, func() (domain.DucoRepository, error) {
-			return tdengine.NewDucoStore(ctx, dbs.tdengine, m, l)
-		}},
-	})
+	return buildSourceSinks(ctx, l, healthSrv, dbs, config.Ventilation.MeasurementBaseName,
+		func(c *qdb.DBClient, m string, l *slog.Logger) domain.DucoRepository {
+			return qdb.NewDucoQuestDBRepository(c, m, l)
+		},
+		func(ctx context.Context, db *sqlsink.DB, m string, l *slog.Logger) (domain.DucoRepository, error) {
+			return sqlsink.NewDucoStore(ctx, db, m, l)
+		},
+		func(ctx context.Context, db *clickhouse.DB, m string, l *slog.Logger) (domain.DucoRepository, error) {
+			return clickhouse.NewDucoStore(ctx, db, m, l)
+		},
+	)
 }
 
 func runVentilation(

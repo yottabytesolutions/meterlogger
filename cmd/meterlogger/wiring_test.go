@@ -13,6 +13,7 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 
 	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/postgres"
+	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/sqlsink"
 	"github.com/yottabytesolutions/meterlogger/internal/metrics"
 )
 
@@ -83,6 +84,41 @@ func TestBuildSourceSinks_StdoutOnly(t *testing.T) {
 	}
 	if got := len(buildVentilationSinks(ctx, l, nil, dbs)); got != 1 {
 		t.Errorf("ventilation sinks = %d, want 1", got)
+	}
+}
+
+// sqlmockSinkDB returns a sqlsink.DB whose migration is already applied, so a
+// store constructor succeeds against it.
+func sqlmockSinkDB(t *testing.T, dialect sqlsink.Dialect, component string) *sqlsink.DB {
+	t.Helper()
+	raw, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock: %v", err)
+	}
+	t.Cleanup(func() { _ = raw.Close() })
+	mock.ExpectExec("CREATE TABLE IF NOT EXISTS meterlogger_schema_migrations").
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery("SELECT COALESCE").
+		WithArgs(component).
+		WillReturnRows(sqlmock.NewRows([]string{"v"}).AddRow(1))
+	return sqlsink.NewDBFromSQL(dialect, raw, testLogger())
+}
+
+// TestBuildSourceSinks_SQLLoop proves the shared SQL path builds one store per
+// open dialect connection without per-source wiring.
+func TestBuildSourceSinks_SQLLoop(t *testing.T) {
+	const m = "heat"
+	origCfg := config
+	config = Config{Heat: HeatConfig{Measurement: m}}
+	defer func() { config = origCfg }()
+
+	dbs := dbConnections{
+		postgres: sqlmockSinkDB(t, sqlsink.PostgresDialect(), "postgres_heat_"+m),
+		mysql:    sqlmockSinkDB(t, sqlsink.MySQLDialect(), "mysql_heat_"+m),
+	}
+	sinks := buildHeatSinks(context.Background(), testLogger(), nil, dbs)
+	if len(sinks) != 2 {
+		t.Fatalf("heat sinks = %d, want 2 (postgres + mysql)", len(sinks))
 	}
 }
 

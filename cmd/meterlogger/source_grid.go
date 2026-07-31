@@ -6,12 +6,8 @@ import (
 
 	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/clickhouse"
 	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/multisink"
-	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/mysql"
-	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/postgres"
 	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/qdb"
-	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/stdout"
-	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/tdengine"
-	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/timescaledb"
+	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/sqlsink"
 	"github.com/yottabytesolutions/meterlogger/internal/adapters/source/gridmeter"
 	"github.com/yottabytesolutions/meterlogger/internal/domain"
 	"github.com/yottabytesolutions/meterlogger/internal/healthserver"
@@ -19,40 +15,23 @@ import (
 	"github.com/yottabytesolutions/meterlogger/internal/service"
 )
 
-//nolint:dupl // one wiring table per source; parallel by design, distinct domain types
+//nolint:dupl // per-source constructor sets are parallel by design, distinct domain types
 func buildGridSinks(
 	ctx context.Context, l *slog.Logger,
 	healthSrv *healthserver.Server,
 	dbs dbConnections,
 ) []domain.GridTelegramRepository {
-	m := config.Grid.Measurement
-	return buildSinks(ctx, l, []sinkInit[domain.GridTelegramRepository]{
-		{sinkNameQuestDB, config.QuestDB.Enabled, func() (domain.GridTelegramRepository, error) {
-			client, err := newQuestDBClient(ctx, l, healthSrv)
-			if err != nil {
-				return nil, err
-			}
-			return qdb.NewQuestDBGridWriter(client, m, l), nil
-		}},
-		{sinkNameStdout, config.Stdout.Enabled, func() (domain.GridTelegramRepository, error) {
-			return stdout.NewStdoutStore(l), nil
-		}},
-		{sinkNamePostgres, dbs.postgres != nil, func() (domain.GridTelegramRepository, error) {
-			return postgres.NewGridStore(ctx, dbs.postgres, m, l)
-		}},
-		{sinkNameMySQL, dbs.mysql != nil, func() (domain.GridTelegramRepository, error) {
-			return mysql.NewGridStore(ctx, dbs.mysql, m, l)
-		}},
-		{sinkNameTimescaleDB, dbs.timescaledb != nil, func() (domain.GridTelegramRepository, error) {
-			return timescaledb.NewGridStore(ctx, dbs.timescaledb, m, l)
-		}},
-		{sinkNameClickHouse, dbs.clickhouse != nil, func() (domain.GridTelegramRepository, error) {
-			return clickhouse.NewGridStore(ctx, dbs.clickhouse, m, l)
-		}},
-		{sinkNameTDEngine, dbs.tdengine != nil, func() (domain.GridTelegramRepository, error) {
-			return tdengine.NewGridStore(ctx, dbs.tdengine, m, l)
-		}},
-	})
+	return buildSourceSinks(ctx, l, healthSrv, dbs, config.Grid.Measurement,
+		func(c *qdb.DBClient, m string, l *slog.Logger) domain.GridTelegramRepository {
+			return qdb.NewQuestDBGridWriter(c, m, l)
+		},
+		func(ctx context.Context, db *sqlsink.DB, m string, l *slog.Logger) (domain.GridTelegramRepository, error) {
+			return sqlsink.NewGridStore(ctx, db, m, l)
+		},
+		func(ctx context.Context, db *clickhouse.DB, m string, l *slog.Logger) (domain.GridTelegramRepository, error) {
+			return clickhouse.NewGridStore(ctx, db, m, l)
+		},
+	)
 }
 
 func runGridMeter(

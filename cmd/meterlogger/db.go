@@ -8,6 +8,7 @@ import (
 	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/clickhouse"
 	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/mysql"
 	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/postgres"
+	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/sqlsink"
 	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/tdengine"
 	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/timescaledb"
 	"github.com/yottabytesolutions/meterlogger/internal/healthserver"
@@ -38,6 +39,19 @@ type dbConnections struct {
 	timescaledb *timescaledb.DB
 	clickhouse  *clickhouse.DB
 	tdengine    *tdengine.DB
+}
+
+// sql returns every open connection that shares the sqlsink implementation
+// (all SQL dialects except ClickHouse), in initialization order. The four
+// wrapper packages alias sqlsink.DB, so one slice covers them all.
+func (d dbConnections) sql() []*sqlsink.DB {
+	var out []*sqlsink.DB
+	for _, db := range []*sqlsink.DB{d.postgres, d.mysql, d.timescaledb, d.tdengine} {
+		if db != nil {
+			out = append(out, db)
+		}
+	}
+	return out
 }
 
 // closers returns a closer per open connection, in initialization order.

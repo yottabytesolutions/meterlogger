@@ -26,16 +26,25 @@ when suppression is genuinely the right call and always include a short justific
 
 ## Adding a new sink
 
-1. Create `internal/adapters/sink/<name>/` with `common.go`, `heat.go`, `grid.go`, `solar.go`,
-   `duco.go`, `migrations.go`.
-2. Use `internal/adapters/schemastore/` for schema migrations:
-    - SQL databases (Postgres-compatible): `schemastore.NewSQLMigrator` with `DollarPlaceholder`
-    - MySQL-compatible: `schemastore.NewSQLMigrator` with `QuestionPlaceholder`
-    - ClickHouse: `schemastore.NewClickHouseMigrator`
-    - TDEngine: `schemastore.NewTDEngineMigrator`
-3. Register the sink in `cmd/meterlogger/config.go`, `db.go`, and all four `source_*.go` files.
-4. Add the sink to the sink table in `documentation/README.md` and config examples in
-   `documentation/configuration.md`.
+For a SQL database that fits an existing wire protocol (Postgres- or MySQL-compatible):
+
+1. Add a dialect in `internal/adapters/sink/sqlsink/dialect.go` and a thin wrapper package
+   `internal/adapters/sink/<name>/` with `common.go` (Config, DSN builder, driver import,
+   delegating constructors), modeled on `internal/adapters/sink/postgres/`.
+2. Register the connection in `cmd/meterlogger/config.go` and `db.go` (`dbConnections` plus
+   its `sql()`, `closers()`, `checkers()` methods and `initDBs`). The `source_*.go` files need
+   no changes; `buildSourceSinks` picks up every open `sqlsink.DB` automatically.
+
+For a sink with its own storage model (like ClickHouse or QuestDB):
+
+1. Create `internal/adapters/sink/<name>/` implementing the four repository interfaces.
+2. Use `internal/adapters/schemastore/` for migrations (`NewSQLMigrator`,
+   `NewClickHouseMigrator`, or `NewTDEngineMigrator`).
+3. Wire it in `cmd/meterlogger/sinks.go` (`buildSourceSinks`); the compiler forces every
+   source to provide a constructor for it.
+
+Either way, add the sink to the sink table in `documentation/README.md` and config examples
+in `documentation/configuration.md`.
 
 ## Adding a new source
 

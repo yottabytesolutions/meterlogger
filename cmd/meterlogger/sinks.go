@@ -2,10 +2,14 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 
+	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/clickhouse"
 	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/qdb"
+	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/sqlsink"
+	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/stdout"
 	"github.com/yottabytesolutions/meterlogger/internal/healthserver"
 )
 
@@ -15,6 +19,51 @@ type sinkInit[R any] struct {
 	name    string
 	enabled bool
 	build   func() (R, error)
+}
+
+// buildSourceSinks assembles every enabled sink for one source. The
+// constructor parameters are what actually differs per source; the set of
+// sinks and their enablement rules live here once. All shared SQL dialects
+// (postgres, mysql, timescaledb, tdengine) are covered by the single
+// newSQLStore constructor via the dialect-agnostic sqlsink.DB.
+func buildSourceSinks[R any](
+	ctx context.Context, l *slog.Logger,
+	healthSrv *healthserver.Server,
+	dbs dbConnections,
+	measurement string,
+	newQuestDBWriter func(client *qdb.DBClient, measurement string, l *slog.Logger) R,
+	newSQLStore func(ctx context.Context, db *sqlsink.DB, measurement string, l *slog.Logger) (R, error),
+	newClickHouseStore func(ctx context.Context, db *clickhouse.DB, measurement string, l *slog.Logger) (R, error),
+) []R {
+	inits := []sinkInit[R]{
+		{sinkNameQuestDB, config.QuestDB.Enabled, func() (R, error) {
+			client, err := newQuestDBClient(ctx, l, healthSrv)
+			if err != nil {
+				var zero R
+				return zero, err
+			}
+			return newQuestDBWriter(client, measurement, l), nil
+		}},
+		{sinkNameStdout, config.Stdout.Enabled, func() (R, error) {
+			// The stdout debug sink implements every repository interface;
+			// the assertion is covered by TestBuildSourceSinks_StdoutOnly.
+			sink, ok := any(stdout.NewStdoutStore(l)).(R)
+			if !ok {
+				var zero R
+				return zero, fmt.Errorf("stdout sink does not implement %T", zero)
+			}
+			return sink, nil
+		}},
+	}
+	for _, db := range dbs.sql() {
+		inits = append(inits, sinkInit[R]{db.Name(), true, func() (R, error) {
+			return newSQLStore(ctx, db, measurement, l)
+		}})
+	}
+	inits = append(inits, sinkInit[R]{sinkNameClickHouse, dbs.clickhouse != nil, func() (R, error) {
+		return newClickHouseStore(ctx, dbs.clickhouse, measurement, l)
+	}})
+	return buildSinks(ctx, l, inits)
 }
 
 // buildSinks assembles the enabled sinks for one source. Any constructor
