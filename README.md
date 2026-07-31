@@ -1,7 +1,6 @@
 # MeterLogger
 
 [![CI](https://github.com/yottabytesolutions/meterlogger/actions/workflows/ci.yml/badge.svg)](https://github.com/yottabytesolutions/meterlogger/actions/workflows/ci.yml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/yottabytesolutions/meterlogger)](https://goreportcard.com/report/github.com/yottabytesolutions/meterlogger)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 A Go service that reads data from utility meters and writes it to one or more
