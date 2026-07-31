@@ -5,6 +5,7 @@ package converters
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"time"
 
@@ -31,11 +32,11 @@ func heatFields() []heatField {
 		},
 		{
 			"max power", gombus.VIFPowerW, gombus.FunctionMaximum,
-			func(t *domain.HeatTelegram, v float64) { t.MaxPower = int64(v) },
+			func(t *domain.HeatTelegram, v float64) { t.MaxPower = int64(math.Round(v)) },
 		},
 		{
 			"seconds counter", gombus.VIFOnTime, gombus.FunctionInstantaneous,
-			func(t *domain.HeatTelegram, v float64) { t.SecondsCounter = int64(v) },
+			func(t *domain.HeatTelegram, v float64) { t.SecondsCounter = int64(math.Round(v)) },
 		},
 		{
 			"volume", gombus.VIFVolume, gombus.FunctionInstantaneous,
@@ -55,7 +56,7 @@ func heatFields() []heatField {
 		},
 		{
 			"energy", gombus.VIFEnergyJoule, gombus.FunctionInstantaneous,
-			func(t *domain.HeatTelegram, v float64) { t.Joules = int64(v) },
+			func(t *domain.HeatTelegram, v float64) { t.Joules = int64(math.Round(v)) },
 		},
 		{
 			"actual flow", gombus.VIFVolumeFlow, gombus.FunctionInstantaneous,
@@ -63,7 +64,7 @@ func heatFields() []heatField {
 		},
 		{
 			"actual power", gombus.VIFPowerW, gombus.FunctionInstantaneous,
-			func(t *domain.HeatTelegram, v float64) { t.ActualPower = int64(v) },
+			func(t *domain.HeatTelegram, v float64) { t.ActualPower = int64(math.Round(v)) },
 		},
 	}
 }
