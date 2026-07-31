@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"sync"
 
 	"github.com/yottabytesolutions/meterlogger/internal/adapters/schemastore"
 	"github.com/yottabytesolutions/meterlogger/internal/domain"
@@ -17,8 +16,7 @@ type HeatStore struct {
 	db     *DB
 	table  string
 	logger *slog.Logger
-	mu     sync.Mutex
-	buffer []domain.HeatTelegram
+	buf    batchBuffer[domain.HeatTelegram]
 }
 
 // NewHeatStore creates and migrates a HeatStore.
@@ -27,34 +25,37 @@ func NewHeatStore(ctx context.Context, db *DB, table string, logger *slog.Logger
 	if err := m.Migrate(ctx, "clickhouse_heat_"+table, heatMigrations(db.db, table)); err != nil {
 		return nil, fmt.Errorf("clickhouse heat migration: %w", err)
 	}
-	return &HeatStore{db: db, table: table, logger: logger, buffer: make([]domain.HeatTelegram, 0)}, nil
+	return &HeatStore{db: db, table: table, logger: logger}, nil
 }
 
 // StoreHeatTelegram buffers a heat telegram for ClickHouse.
-func (s *HeatStore) StoreHeatTelegram(_ context.Context, t domain.HeatTelegram) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.buffer = append(s.buffer, t)
+func (s *HeatStore) StoreHeatTelegram(ctx context.Context, t domain.HeatTelegram) error {
+	warnDropped(ctx, s.logger, s.table, s.buf.add(t))
 	return nil
 }
 
-// Flush performs a batch insert into ClickHouse.
+// Flush performs a batch insert into ClickHouse. On failure the batch is
+// re-queued for the next flush.
 func (s *HeatStore) Flush(ctx context.Context) error {
-	s.mu.Lock()
-	if len(s.buffer) == 0 {
-		s.mu.Unlock()
+	batch := s.buf.take()
+	if len(batch) == 0 {
 		return nil
 	}
-	batch := s.buffer
-	s.buffer = make([]domain.HeatTelegram, 0)
-	s.mu.Unlock()
+	if err := s.insertBatch(ctx, batch); err != nil {
+		warnDropped(ctx, s.logger, s.table, s.buf.requeue(batch))
+		return err
+	}
+	return nil
+}
 
+func (s *HeatStore) insertBatch(ctx context.Context, batch []domain.HeatTelegram) error {
 	tx, err := s.db.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin clickhouse transaction: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	// The table name comes from config, not user input.
 	stmt, err := tx.PrepareContext(
 		ctx, fmt.Sprintf(
 			`INSERT INTO %s
@@ -92,9 +93,9 @@ func (s *HeatStore) Flush(ctx context.Context) error {
 	if err = tx.Commit(); err != nil {
 		return fmt.Errorf("commit clickhouse batch: %w", err)
 	}
-
 	return nil
 }
 
-// Close is a no-op; the shared DB is closed via DB.Close().
-func (s *HeatStore) Close() error { return nil }
+// Close flushes pending rows with a bounded timeout. The shared DB is closed
+// via DB.Close().
+func (s *HeatStore) Close() error { return closeWithFinalFlush(s.Flush) }

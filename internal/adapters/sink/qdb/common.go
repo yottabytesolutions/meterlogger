@@ -28,9 +28,7 @@ type DBClient struct {
 	lastFlushErr error
 }
 
-// Config holds the connection parameters for a QuestDB ILP client. Passed as
-// a single value instead of positional strings to eliminate the risk of
-// silently transposing user/password at a call site.
+// Config holds the connection parameters for a QuestDB ILP client.
 type Config struct {
 	Host     string
 	Port     int

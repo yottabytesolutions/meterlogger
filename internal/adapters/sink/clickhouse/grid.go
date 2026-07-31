@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"sync"
 
 	"go.opentelemetry.io/otel"
 
@@ -20,8 +19,7 @@ type GridStore struct {
 	db     *DB
 	table  string
 	logger *slog.Logger
-	mu     sync.Mutex
-	buffer []domain.GridTelegram
+	buf    batchBuffer[domain.GridTelegram]
 }
 
 // NewGridStore creates and migrates a GridStore.
@@ -30,37 +28,40 @@ func NewGridStore(ctx context.Context, db *DB, table string, logger *slog.Logger
 	if err := m.Migrate(ctx, "clickhouse_grid_"+table, gridMigrations(db.db, table)); err != nil {
 		return nil, fmt.Errorf("clickhouse grid migration: %w", err)
 	}
-	return &GridStore{db: db, table: table, logger: logger, buffer: make([]domain.GridTelegram, 0)}, nil
+	return &GridStore{db: db, table: table, logger: logger}, nil
 }
 
 // StoreGridTelegram buffers a grid telegram for ClickHouse.
-func (s *GridStore) StoreGridTelegram(_ context.Context, t domain.GridTelegram) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.buffer = append(s.buffer, t)
+func (s *GridStore) StoreGridTelegram(ctx context.Context, t domain.GridTelegram) error {
+	warnDropped(ctx, s.logger, s.table, s.buf.add(t))
 	return nil
 }
 
-// Flush performs a batch insert into ClickHouse.
+// Flush performs a batch insert into ClickHouse. On failure the batch is
+// re-queued for the next flush.
 func (s *GridStore) Flush(ctx context.Context) error {
 	ctx, span := tracer.Start(ctx, "Flush")
 	defer span.End()
 
-	s.mu.Lock()
-	if len(s.buffer) == 0 {
-		s.mu.Unlock()
+	batch := s.buf.take()
+	if len(batch) == 0 {
 		return nil
 	}
-	batch := s.buffer
-	s.buffer = make([]domain.GridTelegram, 0)
-	s.mu.Unlock()
+	if err := s.insertBatch(ctx, batch); err != nil {
+		warnDropped(ctx, s.logger, s.table, s.buf.requeue(batch))
+		return err
+	}
+	return nil
+}
 
+func (s *GridStore) insertBatch(ctx context.Context, batch []domain.GridTelegram) error {
 	tx, err := s.db.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin clickhouse transaction: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	// The table name comes from config, not user input.
 	stmt, err := tx.PrepareContext(
 		ctx, fmt.Sprintf(
 			`INSERT INTO %s
@@ -102,9 +103,9 @@ func (s *GridStore) Flush(ctx context.Context) error {
 	if err = tx.Commit(); err != nil {
 		return fmt.Errorf("commit clickhouse batch: %w", err)
 	}
-
 	return nil
 }
 
-// Close is a no-op; the shared DB is closed via DB.Close().
-func (s *GridStore) Close() error { return nil }
+// Close flushes pending rows with a bounded timeout. The shared DB is closed
+// via DB.Close().
+func (s *GridStore) Close() error { return closeWithFinalFlush(s.Flush) }

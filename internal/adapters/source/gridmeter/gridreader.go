@@ -1,7 +1,7 @@
 // Package gridmeter implements the DSMR P1 grid meter reader. It opens a
 // serial port to a USB-to-P1 cable, scans for telegrams delimited by the
 // DSMR start and end markers, and parses each one into a domain.GridTelegram.
-// Decoded telegrams are pushed onto a channel injected at construction time.
+// Decoded telegrams are delivered on the channel returned by Telegrams.
 package gridmeter
 
 import (
@@ -30,6 +30,10 @@ const (
 	crc16Polynomial   = 0xA001
 	milliToUnit       = 1000
 	gridMeterTimezone = "Europe/Amsterdam"
+	// maxTelegramBytes caps an in-progress telegram. A real DSMR telegram is
+	// around 1 KiB; anything larger means the end marker was lost or the input
+	// is garbage, so the partial message is dropped.
+	maxTelegramBytes = 64 * 1024
 )
 
 // loadGridMeterLocation loads the grid meter's timezone once and caches it,
@@ -41,22 +45,33 @@ var loadGridMeterLocation = sync.OnceValues(func() (*time.Location, error) {
 })
 
 type GridReader struct {
-	logger        *slog.Logger
-	usbPort       string
-	ResultChannel chan domain.GridTelegram
-	portReader    io.Reader // if non-nil, used instead of opening the serial port
+	logger     *slog.Logger
+	usbPort    string
+	telegrams  chan domain.GridTelegram
+	portReader io.Reader // if non-nil, used instead of opening the serial port
 }
 
-func NewGridReader(usbPort string, resultChannel chan domain.GridTelegram, logger *slog.Logger) *GridReader {
+func NewGridReader(usbPort string, logger *slog.Logger) *GridReader {
 	return &GridReader{
-		logger:        logger,
-		usbPort:       usbPort,
-		ResultChannel: resultChannel,
+		logger:    logger,
+		usbPort:   usbPort,
+		telegrams: make(chan domain.GridTelegram),
 	}
 }
 
+// Telegrams returns the channel on which decoded telegrams are delivered.
+// The channel is closed when ReadGridTelegrams returns.
+func (gr *GridReader) Telegrams() <-chan domain.GridTelegram {
+	return gr.telegrams
+}
+
+// ReadGridTelegrams reads and parses telegrams until ctx is cancelled or a
+// non-recoverable error occurs. It must be called at most once: it closes the
+// telegram channel on return.
+//
 //nolint:gocognit,nestif // complexity is inherent to the serial protocol state machine
 func (gr *GridReader) ReadGridTelegrams(ctx context.Context) error {
+	defer close(gr.telegrams)
 	var src io.Reader
 	if gr.portReader != nil {
 		src = gr.portReader
@@ -90,14 +105,17 @@ func (gr *GridReader) ReadGridTelegrams(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return nil
 		default:
 		}
 
 		line, err := reader.ReadString('\n')
 		if err != nil {
 			if errors.Is(err, io.EOF) {
-				break
+				// A closed serial stream means the producer is dead. Surface it
+				// so the service's error path terminates the process instead of
+				// staying ready with no data flow.
+				return fmt.Errorf("serial stream ended: %w", err)
 			}
 			if errors.Is(err, syscall.EINTR) || errors.Is(err, io.ErrNoProgress) {
 				continue
@@ -116,6 +134,16 @@ func (gr *GridReader) ReadGridTelegrams(ctx context.Context) error {
 		if messageStarted {
 			messageBuilder.WriteString(line)
 
+			if messageBuilder.Len() > maxTelegramBytes {
+				gr.logger.WarnContext(ctx, "Telegram exceeds size cap, dropping partial message",
+					slog.Int("size", messageBuilder.Len()),
+					slog.Int("cap", maxTelegramBytes),
+				)
+				messageBuilder.Reset()
+				messageStarted = false
+				continue
+			}
+
 			// Check for the end of the message
 			if strings.HasPrefix(line, "!") {
 				message := messageBuilder.String()
@@ -129,9 +157,9 @@ func (gr *GridReader) ReadGridTelegrams(ctx context.Context) error {
 					}
 					gr.logger.DebugContext(ctx, "grid telegram parsed, queuing", debuglog.GridAttrs(telegram))
 					select {
-					case gr.ResultChannel <- telegram:
+					case gr.telegrams <- telegram:
 					case <-ctx.Done():
-						return ctx.Err()
+						return nil
 					}
 				} else {
 					gr.logger.WarnContext(ctx, "Invalid checksum for message")
@@ -139,7 +167,6 @@ func (gr *GridReader) ReadGridTelegrams(ctx context.Context) error {
 			}
 		}
 	}
-	return nil
 }
 
 func calculateCrc16(data []byte) uint16 {

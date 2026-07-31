@@ -30,16 +30,19 @@ for each meter type you want to read.
 
 ## Supported sinks
 
-| Sink        | Type                 | Auto-migration |
-|-------------|----------------------|----------------|
-| QuestDB     | time-series, ILP/TCP | not applicable |
-| PostgreSQL  | relational           | yes            |
-| MySQL       | relational           | yes            |
-| TimescaleDB | PostgreSQL extension | yes            |
-| ClickHouse  | column-store, OLAP   | yes            |
-| TDEngine    | time-series, IoT     | yes            |
+| Sink        | Type                 | Auto-migration    |
+|-------------|----------------------|-------------------|
+| QuestDB     | time-series, ILP/TCP | automatic via ILP |
+| PostgreSQL  | relational           | yes               |
+| MySQL       | relational           | yes               |
+| TimescaleDB | PostgreSQL extension | yes               |
+| ClickHouse  | column-store, OLAP   | yes               |
+| TDEngine    | time-series, IoT     | yes               |
+| Stdout      | debug, logs records  | n/a               |
 
 At least one sink must be enabled. All enabled sinks receive every write.
+The stdout sink logs data instead of persisting it; enable it with
+`Stdout.Enabled: true` for debugging, not for production.
 
 ## Quick start
 
@@ -112,6 +115,8 @@ multi-source docker-compose example.
 | [documentation/data-model.md](documentation/data-model.md)       | Domain types and database table schemas                            |
 | [documentation/deployment.md](documentation/deployment.md)       | Building, running locally, Docker, docker-compose                  |
 | [documentation/observability.md](documentation/observability.md) | Health endpoints, Prometheus metrics, tracing, profiling, alerting |
+| [documentation/troubleshooting.md](documentation/troubleshooting.md) | Common first-run problems and how to diagnose them             |
+| [documentation/README.md](documentation/README.md)               | Documentation index and quick orientation                          |
 | [CONTRIBUTING.md](CONTRIBUTING.md)                               | How to propose changes                                             |
 | [SECURITY.md](SECURITY.md)                                       | Security disclosure process                                        |
 | [CLAUDE.md](CLAUDE.md)                                           | Architectural rules and code style enforced for every change       |

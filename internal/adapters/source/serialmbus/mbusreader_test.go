@@ -1,6 +1,11 @@
+// Hardware-dependent functions that are not covered:
+//   - NewReader: calls serial.Open which requires real hardware.
+//   - ResetPort: calls serial.Open which requires real hardware.
+
 package serialmbus
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -8,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/yottabytesolutions/gombus"
 	"go.bug.st/serial"
 )
 
@@ -34,20 +40,26 @@ var validMBusResponse = []byte{
 	0x86, 0x0B, 0x20, 0x00, 0x04, 0xFF, 0x17, 0xC9, 0xFF, 0x0E, 0x01, 0x49, 0x16,
 }
 
-// mockSerialPort implements serialPortIface for testing.
-type mockSerialPort struct {
-	readData    []byte
-	readPos     int
-	writeErr    error
-	flushErr    error
-	readErr     error
-	writtenData []byte
-	shortWrite  bool
+// mockConn implements gombus.Conn for testing. Read serves readData once and
+// then returns io.EOF, so a test that expects more reads must reset readPos.
+type mockConn struct {
+	readData []byte
+	readPos  int
+	readErrs []error // consumed one per Read call before readData is served
+	readCall int
+	writeErr error
+	written  []byte
+	closed   bool
 }
 
-func (m *mockSerialPort) Read(b []byte) (int, error) {
-	if m.readErr != nil {
-		return 0, m.readErr
+func (m *mockConn) Read(b []byte) (int, error) {
+	m.readCall++
+	if len(m.readErrs) > 0 {
+		err := m.readErrs[0]
+		m.readErrs = m.readErrs[1:]
+		if err != nil {
+			return 0, err
+		}
 	}
 	if m.readPos >= len(m.readData) {
 		return 0, io.EOF
@@ -57,65 +69,166 @@ func (m *mockSerialPort) Read(b []byte) (int, error) {
 	return n, nil
 }
 
-func (m *mockSerialPort) Write(b []byte) (int, error) {
+func (m *mockConn) Write(b []byte) (int, error) {
 	if m.writeErr != nil {
 		return 0, m.writeErr
 	}
-	m.writtenData = append(m.writtenData, b...)
-	if m.shortWrite {
-		return 1, nil // write less than requested
-	}
+	m.written = append(m.written, b...)
 	return len(b), nil
 }
 
-func (m *mockSerialPort) Drain() error {
-	return m.flushErr
-}
+func (*mockConn) SetReadDeadline(time.Time) error  { return nil }
+func (*mockConn) SetWriteDeadline(time.Time) error { return nil }
 
-func (m *mockSerialPort) Close() error {
+func (m *mockConn) Close() error {
+	m.closed = true
 	return nil
 }
 
-func newTestReader(port *mockSerialPort) *Reader {
-	l := testLogger()
+func newTestReader(t *testing.T, conn *mockConn) *Reader {
+	t.Helper()
 	mode := &serial.Mode{BaudRate: mbusBaudRate}
-	return newReaderFromPort(context.Background(), "test", 0x01, l, mode, port)
+	r, err := newReaderFromPort(context.Background(), "test", 0x01, testLogger(), mode, conn)
+	if err != nil {
+		t.Fatalf("newReaderFromPort() unexpected error: %v", err)
+	}
+	r.initDelay = 0
+	r.readDelay = 0
+	return r
 }
 
 func TestNewReaderFromPort_InitMBusEOF(t *testing.T) {
-	// port returns EOF on first read (InitMBus) - this error is tolerated
-	port := &mockSerialPort{readErr: io.EOF}
-	r := newTestReader(port)
+	// Conn returns EOF on the init ack read. This is tolerated (idle bus).
+	conn := &mockConn{}
+	r := newTestReader(t, conn)
 	if r == nil {
 		t.Error("newReaderFromPort returned nil")
 	}
 }
 
 func TestNewReaderFromPort_InitMBusSuccess(t *testing.T) {
-	port := &mockSerialPort{readData: []byte{0xE5}}
-	r := newTestReader(port)
+	conn := &mockConn{readData: []byte{0xE5}}
+	r := newTestReader(t, conn)
 	if r == nil {
 		t.Error("newReaderFromPort returned nil on successful init")
 	}
 }
 
-func TestInitMBus_Success(t *testing.T) {
-	port := &mockSerialPort{readData: []byte{0xE5}}
-	r := newTestReader(port)
+func TestNewReaderFromPort_InitTimeoutTolerated(t *testing.T) {
+	// A frame read timeout on the init ack is tolerated like EOF.
+	conn := &mockConn{readErrs: []error{gombus.ErrReadTimeout}}
+	r := newTestReader(t, conn)
+	if r == nil {
+		t.Error("newReaderFromPort returned nil on init timeout")
+	}
+}
 
-	port.readPos = 0
-	port.readData = []byte{0xE5}
+func TestNewReaderFromPort_NonEOFInitError(t *testing.T) {
+	// A non-EOF, non-timeout init error must fail construction, close the
+	// connection, and report the underlying error.
+	hwErr := errors.New("some hardware error")
+	conn := &mockConn{readErrs: []error{hwErr}}
+	mode := &serial.Mode{BaudRate: mbusBaudRate}
+	r, err := newReaderFromPort(context.Background(), "test", 0x01, testLogger(), mode, conn)
+	if err == nil {
+		t.Fatal("newReaderFromPort should fail when init fails with a non-EOF error")
+	}
+	if !errors.Is(err, hwErr) {
+		t.Errorf("newReaderFromPort error = %v, want wrapped %v", err, hwErr)
+	}
+	if r != nil {
+		t.Error("newReaderFromPort should return a nil reader on init failure")
+	}
+	if !conn.closed {
+		t.Error("newReaderFromPort should close the connection on init failure")
+	}
+}
+
+func TestNewReaderFromPort_InvalidTargetAddress(t *testing.T) {
+	tests := []struct {
+		name string
+		addr byte
+		ok   bool
+	}{
+		{name: "zero is unconfigured", addr: 0x00, ok: false},
+		{name: "min primary", addr: 0x01, ok: true},
+		{name: "max primary", addr: 250, ok: true},
+		{name: "reserved 251", addr: 251, ok: false},
+		{name: "secondary select", addr: 0xFD, ok: true},
+		{name: "broadcast with reply", addr: 0xFE, ok: true},
+		{name: "broadcast without reply", addr: 0xFF, ok: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			conn := &mockConn{readData: []byte{0xE5}}
+			mode := &serial.Mode{BaudRate: mbusBaudRate}
+			_, err := newReaderFromPort(context.Background(), "test", tt.addr, testLogger(), mode, conn)
+			if tt.ok && err != nil {
+				t.Fatalf("newReaderFromPort(addr=%d) unexpected error: %v", tt.addr, err)
+			}
+			if !tt.ok {
+				if err == nil {
+					t.Fatalf("newReaderFromPort(addr=%d) should fail", tt.addr)
+				}
+				if !conn.closed {
+					t.Error("newReaderFromPort should close the connection on invalid address")
+				}
+			}
+		})
+	}
+}
+
+func TestNewReaderFromPort_UsesConfiguredAddress(t *testing.T) {
+	// Regression: the UD2 request must target the configured M-Bus address,
+	// not a hardcoded one.
+	const addr = byte(0x47)
+	conn := &mockConn{readData: []byte{0xE5}}
+	mode := &serial.Mode{BaudRate: mbusBaudRate}
+	r, err := newReaderFromPort(context.Background(), "test", addr, testLogger(), mode, conn)
+	if err != nil {
+		t.Fatalf("newReaderFromPort() unexpected error: %v", err)
+	}
+	r.initDelay = 0
+	r.readDelay = 0
+
+	conn.written = nil
+	conn.readPos = 0
+	conn.readData = validMBusResponse
+	if _, readErr := r.ReadHeatTelegram(context.Background()); readErr != nil {
+		t.Fatalf("ReadHeatTelegram() error: %v", readErr)
+	}
+
+	// Short frame: start, control, address, checksum, stop.
+	want := []byte{0x10, 0x5B, addr, 0x5B + addr, 0x16}
+	if !bytes.Equal(conn.written, want) {
+		t.Fatalf("written UD2 frame = %#x, want %#x", conn.written, want)
+	}
+	if !bytes.Equal(conn.written, gombus.RequestUD2(addr)) {
+		t.Fatalf("written UD2 frame = %#x, want gombus.RequestUD2 = %#x", conn.written, gombus.RequestUD2(addr))
+	}
+}
+
+func TestInitMBus_Success(t *testing.T) {
+	conn := &mockConn{readData: []byte{0xE5}}
+	r := newTestReader(t, conn)
+
+	conn.written = nil
+	conn.readPos = 0
 	err := r.InitMBus(context.Background())
 	if err != nil {
 		t.Errorf("InitMBus() unexpected error: %v", err)
 	}
+	want := gombus.SndNKE(mbusInitAddress)
+	if !bytes.Equal(conn.written, want) {
+		t.Errorf("written SND_NKE frame = %#x, want %#x", conn.written, []byte(want))
+	}
 }
 
 func TestInitMBus_WriteError(t *testing.T) {
-	port := &mockSerialPort{readData: []byte{0xE5}}
-	r := newTestReader(port)
+	conn := &mockConn{readData: []byte{0xE5}}
+	r := newTestReader(t, conn)
 
-	port.writeErr = errors.New("write error")
+	conn.writeErr = errors.New("write error")
 	err := r.InitMBus(context.Background())
 	if err == nil {
 		t.Error("InitMBus() should return error on write failure")
@@ -123,13 +236,11 @@ func TestInitMBus_WriteError(t *testing.T) {
 }
 
 func TestReadHeatTelegram_Success(t *testing.T) {
-	// Init reads ACK, then ReadHeatTelegram reads valid response
-	port := &mockSerialPort{readData: []byte{0xE5}}
-	r := newTestReader(port)
-	r.readDelay = 0
+	conn := &mockConn{readData: []byte{0xE5}}
+	r := newTestReader(t, conn)
 
-	port.readPos = 0
-	port.readData = validMBusResponse
+	conn.readPos = 0
+	conn.readData = validMBusResponse
 	telegram, err := r.ReadHeatTelegram(context.Background())
 	if err != nil {
 		t.Fatalf("ReadHeatTelegram() error: %v", err)
@@ -137,50 +248,65 @@ func TestReadHeatTelegram_Success(t *testing.T) {
 	if telegram.MeterID == "" {
 		t.Error("ReadHeatTelegram() returned empty MeterID")
 	}
+	// Serial number is BCD little-endian at bytes 7..10 of the response.
+	if telegram.SerialNo != "72927502" {
+		t.Errorf("ReadHeatTelegram() SerialNo = %q, want %q", telegram.SerialNo, "72927502")
+	}
+}
+
+func TestReadHeatTelegram_RetriesFrameTimeout(t *testing.T) {
+	// First frame read times out, the retry succeeds without a second REQ_UD2.
+	conn := &mockConn{readData: []byte{0xE5}}
+	r := newTestReader(t, conn)
+
+	conn.written = nil
+	conn.readPos = 0
+	conn.readData = validMBusResponse
+	conn.readErrs = []error{gombus.ErrReadTimeout}
+	if _, err := r.ReadHeatTelegram(context.Background()); err != nil {
+		t.Fatalf("ReadHeatTelegram() error after timeout retry: %v", err)
+	}
+	if !bytes.Equal(conn.written, gombus.RequestUD2(r.targetAddress)) {
+		t.Errorf("request written more than once: %#x", conn.written)
+	}
+}
+
+func TestReadHeatTelegram_AllAttemptsTimeOut(t *testing.T) {
+	conn := &mockConn{readData: []byte{0xE5}}
+	r := newTestReader(t, conn)
+
+	conn.readPos = 0
+	conn.readData = nil
+	conn.readErrs = []error{
+		gombus.ErrReadTimeout, gombus.ErrReadTimeout, gombus.ErrReadTimeout,
+		gombus.ErrReadTimeout, gombus.ErrReadTimeout,
+	}
+	conn.readCall = 0
+	_, err := r.ReadHeatTelegram(context.Background())
+	if !errors.Is(err, gombus.ErrReadTimeout) {
+		t.Fatalf("ReadHeatTelegram() error = %v, want gombus.ErrReadTimeout", err)
+	}
+	if conn.readCall != maxFrameReadAttempts {
+		t.Errorf("frame read attempts = %d, want %d", conn.readCall, maxFrameReadAttempts)
+	}
 }
 
 func TestReadHeatTelegram_WriteError(t *testing.T) {
-	port := &mockSerialPort{readData: []byte{0xE5}}
-	r := newTestReader(port)
-	r.readDelay = 0
+	conn := &mockConn{readData: []byte{0xE5}}
+	r := newTestReader(t, conn)
 
-	port.writeErr = errors.New("write error")
+	conn.writeErr = errors.New("write error")
 	_, err := r.ReadHeatTelegram(context.Background())
 	if err == nil {
 		t.Error("ReadHeatTelegram() should return error on write failure")
 	}
 }
 
-func TestReadHeatTelegram_ShortWrite(t *testing.T) {
-	port := &mockSerialPort{readData: []byte{0xE5}}
-	r := newTestReader(port)
-	r.readDelay = 0
-
-	port.shortWrite = true
-	_, err := r.ReadHeatTelegram(context.Background())
-	if err == nil {
-		t.Error("ReadHeatTelegram() should return error on short write")
-	}
-}
-
-func TestReadHeatTelegram_DrainError(t *testing.T) {
-	port := &mockSerialPort{readData: []byte{0xE5}}
-	r := newTestReader(port)
-	r.readDelay = 0
-
-	port.flushErr = errors.New("drain error")
-	_, err := r.ReadHeatTelegram(context.Background())
-	if err == nil {
-		t.Error("ReadHeatTelegram() should return error on drain failure")
-	}
-}
-
 func TestReadHeatTelegram_ReadError(t *testing.T) {
-	port := &mockSerialPort{readData: []byte{0xE5}}
-	r := newTestReader(port)
-	r.readDelay = 0
+	conn := &mockConn{readData: []byte{0xE5}}
+	r := newTestReader(t, conn)
 
-	port.readErr = errors.New("read error")
+	conn.readErrs = []error{errors.New("read error")}
 	_, err := r.ReadHeatTelegram(context.Background())
 	if err == nil {
 		t.Error("ReadHeatTelegram() should return error on read failure")
@@ -188,41 +314,65 @@ func TestReadHeatTelegram_ReadError(t *testing.T) {
 }
 
 func TestReadHeatTelegram_InvalidResponse(t *testing.T) {
-	port := &mockSerialPort{readData: []byte{0xE5}}
-	r := newTestReader(port)
-	r.readDelay = 0
+	conn := &mockConn{readData: []byte{0xE5}}
+	r := newTestReader(t, conn)
 
-	// Valid MBus frame structure but with CI byte 0x00 that ParseUsingGombus rejects
-	port.readPos = 0
-	port.readData = []byte{0x68, 0x03, 0x03, 0x68, 0x08, 0x01, 0x00, 0x09, 0x16}
+	// Valid MBus frame structure but with CI byte 0x00 that Decode rejects.
+	conn.readPos = 0
+	conn.readData = []byte{0x68, 0x03, 0x03, 0x68, 0x08, 0x01, 0x00, 0x09, 0x16}
 	_, err := r.ReadHeatTelegram(context.Background())
 	if err == nil {
 		t.Error("ReadHeatTelegram() should return error for invalid MBus frame")
 	}
 }
 
-func TestWriteWaitRead_Success(t *testing.T) {
-	port := &mockSerialPort{readData: []byte{0xE5}}
-	r := newTestReader(port)
+func TestReadHeatTelegram_ContextCancelled(t *testing.T) {
+	conn := &mockConn{readData: []byte{0xE5}}
+	r := newTestReader(t, conn)
 
-	port.readPos = 0
-	data, err := r.writeWaitRead(context.Background(), []byte{0x10, 0x40, 0x01, 0x41, 0x16}, 0)
-	if err != nil {
-		t.Fatalf("writeWaitRead() error: %v", err)
-	}
-	if len(data) == 0 {
-		t.Error("writeWaitRead() returned empty data")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := r.ReadHeatTelegram(ctx)
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("ReadHeatTelegram() error = %v, want context.Canceled", err)
 	}
 }
 
-func TestWriteWaitRead_WithSleep(t *testing.T) {
-	port := &mockSerialPort{readData: []byte{0xE5}}
-	r := newTestReader(port)
+func TestInitMBus_ContextCancelledDuringDelay(t *testing.T) {
+	conn := &mockConn{readData: []byte{0xE5}}
+	r := newTestReader(t, conn)
+	r.initDelay = 100 * time.Millisecond
 
-	port.readPos = 0
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(5 * time.Millisecond)
+		cancel()
+	}()
+
+	conn.readPos = 0
+	err := r.InitMBus(ctx)
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("InitMBus() error = %v, want context.Canceled", err)
+	}
+}
+
+func TestSleepCtx(t *testing.T) {
+	if err := sleepCtx(context.Background(), 0); err != nil {
+		t.Errorf("sleepCtx(0) error = %v", err)
+	}
+
 	start := time.Now()
-	_, _ = r.writeWaitRead(context.Background(), []byte{0x10}, time.Millisecond)
+	if err := sleepCtx(context.Background(), time.Millisecond); err != nil {
+		t.Errorf("sleepCtx(1ms) error = %v", err)
+	}
 	if time.Since(start) < time.Millisecond {
-		t.Error("writeWaitRead() did not sleep for the specified duration")
+		t.Error("sleepCtx() did not sleep for the specified duration")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := sleepCtx(ctx, time.Second); !errors.Is(err, context.Canceled) {
+		t.Errorf("sleepCtx() on cancelled ctx error = %v, want context.Canceled", err)
 	}
 }

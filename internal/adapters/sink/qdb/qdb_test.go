@@ -13,53 +13,151 @@ import (
 	"github.com/yottabytesolutions/meterlogger/internal/domain"
 )
 
-// mockLineSender implements qdb.LineSender for testing.
+// recordedRow captures one ILP row: table name, symbols, columns, and the At timestamp.
+type recordedRow struct {
+	table   string
+	symbols map[string]string
+	columns map[string]any
+	at      time.Time
+}
+
+// mockLineSender implements qdb.LineSender and records every row so tests can
+// assert what was actually written, not just that no error was returned.
 type mockLineSender struct {
 	flushErr error
 	atErr    error
+
+	current recordedRow
+	rows    []recordedRow
 }
 
-func (m *mockLineSender) Table(_ string) qdbclient.LineSender     { return m }
-func (m *mockLineSender) Symbol(_, _ string) qdbclient.LineSender { return m }
-func (m *mockLineSender) Int64Column(_ string, _ int64) qdbclient.LineSender {
-	return m
-}
-
-func (m *mockLineSender) Long256Column(_ string, _ *big.Int) qdbclient.LineSender {
-	return m
-}
-
-func (m *mockLineSender) TimestampColumn(_ string, _ time.Time) qdbclient.LineSender {
-	return m
-}
-
-func (m *mockLineSender) Float64Column(_ string, _ float64) qdbclient.LineSender {
-	return m
-}
-func (m *mockLineSender) StringColumn(_, _ string) qdbclient.LineSender { return m }
-func (m *mockLineSender) BoolColumn(_ string, _ bool) qdbclient.LineSender {
-	return m
-}
-func (m *mockLineSender) At(_ context.Context, _ time.Time) error { return m.atErr }
-func (m *mockLineSender) AtNow(_ context.Context) error           { return m.atErr }
-func (m *mockLineSender) Flush(_ context.Context) error           { return m.flushErr }
-func (m *mockLineSender) Close(_ context.Context) error           { return nil }
-
-func newTestDBClient() *DBClient {
-	return &DBClient{
-		sender: &mockLineSender{},
-		logger: testLogger(),
+func (m *mockLineSender) Table(name string) qdbclient.LineSender {
+	m.current = recordedRow{
+		table:   name,
+		symbols: map[string]string{},
+		columns: map[string]any{},
 	}
+	return m
+}
+
+func (m *mockLineSender) Symbol(name, value string) qdbclient.LineSender {
+	m.current.symbols[name] = value
+	return m
+}
+
+func (m *mockLineSender) Int64Column(name string, value int64) qdbclient.LineSender {
+	m.current.columns[name] = value
+	return m
+}
+
+func (m *mockLineSender) Long256Column(name string, value *big.Int) qdbclient.LineSender {
+	m.current.columns[name] = value
+	return m
+}
+
+func (m *mockLineSender) TimestampColumn(name string, value time.Time) qdbclient.LineSender {
+	m.current.columns[name] = value
+	return m
+}
+
+func (m *mockLineSender) Float64Column(name string, value float64) qdbclient.LineSender {
+	m.current.columns[name] = value
+	return m
+}
+
+func (m *mockLineSender) StringColumn(name, value string) qdbclient.LineSender {
+	m.current.columns[name] = value
+	return m
+}
+
+func (m *mockLineSender) BoolColumn(name string, value bool) qdbclient.LineSender {
+	m.current.columns[name] = value
+	return m
+}
+
+func (m *mockLineSender) At(_ context.Context, ts time.Time) error {
+	if m.atErr != nil {
+		return m.atErr
+	}
+	m.current.at = ts
+	m.rows = append(m.rows, m.current)
+	return nil
+}
+
+func (m *mockLineSender) AtNow(_ context.Context) error {
+	if m.atErr != nil {
+		return m.atErr
+	}
+	m.rows = append(m.rows, m.current)
+	return nil
+}
+
+func (m *mockLineSender) Flush(_ context.Context) error { return m.flushErr }
+func (m *mockLineSender) Close(_ context.Context) error { return nil }
+
+func newTestDBClient() (*DBClient, *mockLineSender) {
+	sender := &mockLineSender{}
+	return &DBClient{
+		sender: sender,
+		logger: testLogger(),
+	}, sender
 }
 
 func testLogger() *slog.Logger {
 	return slog.New(slog.DiscardHandler)
 }
 
+// requireRows fails the test unless exactly want rows were recorded.
+func requireRows(t *testing.T, sender *mockLineSender, want int) []recordedRow {
+	t.Helper()
+	if len(sender.rows) != want {
+		t.Fatalf("recorded %d rows, want %d", len(sender.rows), want)
+	}
+	return sender.rows
+}
+
+func assertTable(t *testing.T, row recordedRow, want string) {
+	t.Helper()
+	if row.table != want {
+		t.Errorf("table = %q, want %q", row.table, want)
+	}
+}
+
+func assertSymbol(t *testing.T, row recordedRow, name, want string) {
+	t.Helper()
+	got, ok := row.symbols[name]
+	if !ok {
+		t.Errorf("symbol %q not written", name)
+		return
+	}
+	if got != want {
+		t.Errorf("symbol %q = %q, want %q", name, got, want)
+	}
+}
+
+func assertColumn(t *testing.T, row recordedRow, name string, want any) {
+	t.Helper()
+	got, ok := row.columns[name]
+	if !ok {
+		t.Errorf("column %q not written", name)
+		return
+	}
+	if got != want {
+		t.Errorf("column %q = %v (%T), want %v (%T)", name, got, got, want, want)
+	}
+}
+
+func assertAt(t *testing.T, row recordedRow, want time.Time) {
+	t.Helper()
+	if !row.at.Equal(want) {
+		t.Errorf("At timestamp = %v, want %v", row.at, want)
+	}
+}
+
 // --- HeatTelegramStore tests ---
 
 func TestNewQuestDbHeatTelegramWriter(t *testing.T) {
-	client := newTestDBClient()
+	client, _ := newTestDBClient()
 	store := NewQuestDBHeatTelegramWriter(client, "heat_table", testLogger())
 	if store == nil {
 		t.Error("NewQuestDBHeatTelegramWriter returned nil")
@@ -67,31 +165,45 @@ func TestNewQuestDbHeatTelegramWriter(t *testing.T) {
 }
 
 func TestHeatTelegramStore_StoreHeatTelegram(t *testing.T) {
-	client := newTestDBClient()
+	client, sender := newTestDBClient()
 	store := NewQuestDBHeatTelegramWriter(client, "heat", testLogger())
+	ts := time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
 	telegram := domain.HeatTelegram{
 		MeterID:        "test",
 		SerialNo:       "12345",
-		Joules:         1000000,
+		Joules:         3_000_000, // 3 MJ stored as energy=3
 		Tforward:       45.0,
 		Treturn:        35.0,
 		Tdiff:          10.0,
 		VolumeCm3:      500.0,
-		SecondsCounter: 3600,
+		SecondsCounter: 7200,
 		MaxFlow:        100.0,
 		MaxPower:       500,
-		ActualPower:    200,
+		ActualPower:    200_000, // mW, stored as power=200 W
 		ActualFlow:     50.0,
-		Timestamp:      time.Now(),
+		Timestamp:      ts,
 	}
-	err := store.StoreHeatTelegram(context.Background(), telegram)
-	if err != nil {
-		t.Errorf("StoreHeatTelegram() unexpected error: %v", err)
+	if err := store.StoreHeatTelegram(context.Background(), telegram); err != nil {
+		t.Fatalf("StoreHeatTelegram() unexpected error: %v", err)
 	}
+
+	row := requireRows(t, sender, 1)[0]
+	assertTable(t, row, "heat")
+	assertSymbol(t, row, "device", "Multical test")
+	assertSymbol(t, row, "serial", "12345")
+	assertColumn(t, row, "power", int64(200))
+	assertColumn(t, row, "energy", int64(3))
+	assertColumn(t, row, "t1", 4500.0)
+	assertColumn(t, row, "t2", 3500.0)
+	assertColumn(t, row, "volume", int64(500_000))
+	assertColumn(t, row, "hours", int64(2))
+	assertColumn(t, row, "max_power", int64(5))
+	assertColumn(t, row, "seconds", int64(7200))
+	assertAt(t, row, ts)
 }
 
 func TestHeatTelegramStore_Flush(t *testing.T) {
-	client := newTestDBClient()
+	client, _ := newTestDBClient()
 	store := NewQuestDBHeatTelegramWriter(client, "heat", testLogger())
 	err := store.Flush(context.Background())
 	if err != nil {
@@ -100,7 +212,7 @@ func TestHeatTelegramStore_Flush(t *testing.T) {
 }
 
 func TestHeatTelegramStore_Close(t *testing.T) {
-	client := newTestDBClient()
+	client, _ := newTestDBClient()
 	store := NewQuestDBHeatTelegramWriter(client, "heat", testLogger())
 	err := store.Close()
 	if err != nil {
@@ -111,7 +223,7 @@ func TestHeatTelegramStore_Close(t *testing.T) {
 // --- SolarWriter tests ---
 
 func TestNewQuestDbSolarWriter(t *testing.T) {
-	client := newTestDBClient()
+	client, _ := newTestDBClient()
 	writer := NewQuestDBSolarWriter(client, "solar", testLogger())
 	if writer == nil {
 		t.Error("NewQuestDBSolarWriter returned nil")
@@ -119,31 +231,41 @@ func TestNewQuestDbSolarWriter(t *testing.T) {
 }
 
 func TestSolarWriter_StoreEnvoySolarData_NoInverters(t *testing.T) {
-	client := newTestDBClient()
+	client, sender := newTestDBClient()
 	writer := NewQuestDBSolarWriter(client, "solar", testLogger())
+	ts := time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
 	data := domain.EnvoySolarData{
 		EnvoySerial:  "12345",
 		ProductionWh: 1000.5,
 		Watt:         250.0,
 		PanelCount:   10,
-		ReadingTime:  time.Now(),
+		ReadingTime:  ts,
 		Inverters:    []domain.InverterDetails{},
 	}
-	err := writer.StoreEnvoySolarData(context.Background(), data)
-	if err != nil {
-		t.Errorf("StoreEnvoySolarData() unexpected error: %v", err)
+	if err := writer.StoreEnvoySolarData(context.Background(), data); err != nil {
+		t.Fatalf("StoreEnvoySolarData() unexpected error: %v", err)
 	}
+
+	row := requireRows(t, sender, 1)[0]
+	assertTable(t, row, "solar")
+	assertSymbol(t, row, "EnvoySerialNumber", "12345")
+	assertColumn(t, row, "ProductionWattHours", 1000.5)
+	assertColumn(t, row, "ProductionWatt", 250.0)
+	assertColumn(t, row, "PanelCount", int64(10))
+	assertAt(t, row, ts)
 }
 
 func TestSolarWriter_StoreEnvoySolarData_WithInverters(t *testing.T) {
-	client := newTestDBClient()
+	client, sender := newTestDBClient()
 	writer := NewQuestDBSolarWriter(client, "solar", testLogger())
+	readingTime := time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
+	reportTime := time.Date(2026, 7, 1, 11, 59, 0, 0, time.UTC)
 	data := domain.EnvoySolarData{
 		EnvoySerial:  "serial-1",
 		ProductionWh: 5000.0,
 		Watt:         300.0,
 		PanelCount:   20,
-		ReadingTime:  time.Now(),
+		ReadingTime:  readingTime,
 		Inverters: []domain.InverterDetails{
 			{
 				SerialNumber:      "inv-1",
@@ -152,21 +274,36 @@ func TestSolarWriter_StoreEnvoySolarData_WithInverters(t *testing.T) {
 				Communicating:     true,
 				Producing:         true,
 				Phase:             "A",
-				DeviceStatus:      []string{"ok"},
-				ReportTime:        time.Now(),
+				DeviceStatus:      []string{"ok", "envoy.global.ok"},
+				ReportTime:        reportTime,
 				LastReportedWatts: 250,
 				MaxReportWatts:    300,
 			},
 		},
 	}
-	err := writer.StoreEnvoySolarData(context.Background(), data)
-	if err != nil {
-		t.Errorf("StoreEnvoySolarData() with inverters unexpected error: %v", err)
+	if err := writer.StoreEnvoySolarData(context.Background(), data); err != nil {
+		t.Fatalf("StoreEnvoySolarData() with inverters unexpected error: %v", err)
 	}
+
+	rows := requireRows(t, sender, 2)
+	assertTable(t, rows[0], "solar")
+	assertSymbol(t, rows[0], "EnvoySerialNumber", "serial-1")
+
+	inv := rows[1]
+	assertTable(t, inv, "solar_inverters")
+	assertSymbol(t, inv, "InverterSerialNumber", "inv-1")
+	assertColumn(t, inv, "EnvoySerialNumber", "serial-1")
+	assertColumn(t, inv, "ChannelID", int64(1))
+	assertColumn(t, inv, "Operating", true)
+	assertColumn(t, inv, "Phase", "A")
+	assertColumn(t, inv, "Status", "ok,envoy.global.ok")
+	assertColumn(t, inv, "Watts", int64(250))
+	assertColumn(t, inv, "PeakWatts", int64(300))
+	assertAt(t, inv, reportTime)
 }
 
 func TestSolarWriter_Flush(t *testing.T) {
-	client := newTestDBClient()
+	client, _ := newTestDBClient()
 	writer := NewQuestDBSolarWriter(client, "solar", testLogger())
 	err := writer.Flush(context.Background())
 	if err != nil {
@@ -175,7 +312,7 @@ func TestSolarWriter_Flush(t *testing.T) {
 }
 
 func TestSolarWriter_Close(t *testing.T) {
-	client := newTestDBClient()
+	client, _ := newTestDBClient()
 	writer := NewQuestDBSolarWriter(client, "solar", testLogger())
 	err := writer.Close()
 	if err != nil {
@@ -186,7 +323,7 @@ func TestSolarWriter_Close(t *testing.T) {
 // --- GridStore tests ---
 
 func TestNewQuestDbGridWriter(t *testing.T) {
-	client := newTestDBClient()
+	client, _ := newTestDBClient()
 	writer := NewQuestDBGridWriter(client, "grid", testLogger())
 	if writer == nil {
 		t.Error("NewQuestDBGridWriter returned nil")
@@ -194,10 +331,11 @@ func TestNewQuestDbGridWriter(t *testing.T) {
 }
 
 func TestGridStore_StoreGridTelegram(t *testing.T) {
-	client := newTestDBClient()
+	client, sender := newTestDBClient()
 	writer := NewQuestDBGridWriter(client, "grid", testLogger())
+	ts := time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
 	telegram := domain.GridTelegram{
-		Time:             time.Now(),
+		Time:             ts,
 		MeterMerkType:    "ISK",
 		Serienummer:      "0012345678",
 		UsageCounter1:    100.5,
@@ -205,22 +343,36 @@ func TestGridStore_StoreGridTelegram(t *testing.T) {
 		OutputCounter1:   10.1,
 		OutputCounter2:   5.0,
 		TotalPowerUsage:  500,
-		TotalPowerOutput: 0,
+		TotalPowerOutput: 42,
 		VoltageP1:        230.1,
 		VoltageP2:        229.8,
 		VoltageP3:        231.0,
 		CurrentP1:        2,
 		CurrentP2:        1,
-		CurrentP3:        2,
+		CurrentP3:        3,
 	}
-	err := writer.StoreGridTelegram(context.Background(), telegram)
-	if err != nil {
-		t.Errorf("StoreGridTelegram() unexpected error: %v", err)
+	if err := writer.StoreGridTelegram(context.Background(), telegram); err != nil {
+		t.Fatalf("StoreGridTelegram() unexpected error: %v", err)
 	}
+
+	row := requireRows(t, sender, 1)[0]
+	assertTable(t, row, "grid")
+	assertSymbol(t, row, "MeterMerkType", "ISK")
+	assertSymbol(t, row, "Serienummer", "0012345678")
+	assertColumn(t, row, "UsageCounter1", 100.5)
+	assertColumn(t, row, "UsageCounter2", 200.3)
+	assertColumn(t, row, "OutputCounter1", 10.1)
+	assertColumn(t, row, "TotalPowerUsage", int64(500))
+	assertColumn(t, row, "TotalPowerOutput", int64(42))
+	assertColumn(t, row, "VoltageP1", 230.1)
+	assertColumn(t, row, "VoltageP3", 231.0)
+	assertColumn(t, row, "CurrentP1", int64(2))
+	assertColumn(t, row, "CurrentP3", int64(3))
+	assertAt(t, row, ts)
 }
 
 func TestGridStore_Flush(t *testing.T) {
-	client := newTestDBClient()
+	client, _ := newTestDBClient()
 	writer := NewQuestDBGridWriter(client, "grid", testLogger())
 	err := writer.Flush(context.Background())
 	if err != nil {
@@ -229,7 +381,7 @@ func TestGridStore_Flush(t *testing.T) {
 }
 
 func TestGridStore_Close(t *testing.T) {
-	client := newTestDBClient()
+	client, _ := newTestDBClient()
 	writer := NewQuestDBGridWriter(client, "grid", testLogger())
 	err := writer.Close()
 	if err != nil {
@@ -240,7 +392,7 @@ func TestGridStore_Close(t *testing.T) {
 // --- DucoQuestDBRepository tests ---
 
 func TestNewDucoQuestDBRepository(t *testing.T) {
-	client := newTestDBClient()
+	client, _ := newTestDBClient()
 	repo := NewDucoQuestDBRepository(client, "ventilation", testLogger())
 	if repo == nil {
 		t.Error("NewDucoQuestDBRepository returned nil")
@@ -248,7 +400,7 @@ func TestNewDucoQuestDBRepository(t *testing.T) {
 }
 
 func TestDucoQuestDBRepository_StoreBoxStatus(t *testing.T) {
-	client := newTestDBClient()
+	client, sender := newTestDBClient()
 	repo := NewDucoQuestDBRepository(client, "ventilation", testLogger())
 	boxStatus := domain.DucoBoxStatus{
 		General: domain.General{RFHomeID: "home1", Time: 12345},
@@ -265,14 +417,23 @@ func TestDucoQuestDBRepository_StoreBoxStatus(t *testing.T) {
 		},
 		WeatherStation: domain.WeatherStation{Present: true},
 	}
-	err := repo.StoreBoxStatus(context.Background(), boxStatus)
-	if err != nil {
-		t.Errorf("StoreBoxStatus() unexpected error: %v", err)
+	if err := repo.StoreBoxStatus(context.Background(), boxStatus); err != nil {
+		t.Fatalf("StoreBoxStatus() unexpected error: %v", err)
 	}
+
+	row := requireRows(t, sender, 1)[0]
+	assertTable(t, row, "ventilation_box_general")
+	assertSymbol(t, row, "rfHomeId", "home1")
+	assertColumn(t, row, "CalibKinZone1", int64(100))
+	assertColumn(t, row, "CalibState", "OK")
+	assertColumn(t, row, "ExhaustFanSpeed", int64(1200))
+	assertColumn(t, row, "FrostProtState", false)
+	assertColumn(t, row, "TempEHA", int64(200))
+	assertColumn(t, row, "WeatherStationPresent", true)
 }
 
 func TestDucoQuestDBRepository_StoreNodeData_RFSensor(t *testing.T) {
-	client := newTestDBClient()
+	client, sender := newTestDBClient()
 	repo := NewDucoQuestDBRepository(client, "ventilation", testLogger())
 	node := domain.DucoRFSensorStatus{
 		BaseDucoNodeStatus: domain.BaseDucoNodeStatus{
@@ -284,14 +445,22 @@ func TestDucoQuestDBRepository_StoreNodeData_RFSensor(t *testing.T) {
 		Temp: 21.5,
 		Rh:   55.0,
 	}
-	err := repo.StoreNodeData(context.Background(), node)
-	if err != nil {
-		t.Errorf("StoreNodeData(RFSensor) unexpected error: %v", err)
+	if err := repo.StoreNodeData(context.Background(), node); err != nil {
+		t.Fatalf("StoreNodeData(RFSensor) unexpected error: %v", err)
 	}
+
+	row := requireRows(t, sender, 1)[0]
+	assertTable(t, row, "ventilation_node")
+	assertSymbol(t, row, "node", "3")
+	assertSymbol(t, row, "device", "UCCO2")
+	assertSymbol(t, row, "location", "living room")
+	assertColumn(t, row, "co2", 800.0)
+	assertColumn(t, row, "temp", 21.5)
+	assertColumn(t, row, "humidity", 55.0)
 }
 
 func TestDucoQuestDBRepository_StoreNodeData_BoxNode(t *testing.T) {
-	client := newTestDBClient()
+	client, sender := newTestDBClient()
 	repo := NewDucoQuestDBRepository(client, "ventilation", testLogger())
 	node := domain.DucoNodeBoxStatus{
 		BaseDucoNodeStatus: domain.BaseDucoNodeStatus{
@@ -302,14 +471,21 @@ func TestDucoQuestDBRepository_StoreNodeData_BoxNode(t *testing.T) {
 		Actl: 80,
 		Co2:  600.0,
 	}
-	err := repo.StoreNodeData(context.Background(), node)
-	if err != nil {
-		t.Errorf("StoreNodeData(BoxNode) unexpected error: %v", err)
+	if err := repo.StoreNodeData(context.Background(), node); err != nil {
+		t.Fatalf("StoreNodeData(BoxNode) unexpected error: %v", err)
 	}
+
+	row := requireRows(t, sender, 1)[0]
+	assertTable(t, row, "ventilation_box_node")
+	assertSymbol(t, row, "node", "1")
+	assertSymbol(t, row, "device", "BOX")
+	assertColumn(t, row, "trgt", int64(100))
+	assertColumn(t, row, "actl", int64(80))
+	assertColumn(t, row, "co2", 600.0)
 }
 
 func TestDucoQuestDBRepository_StoreNodeData_Valve(t *testing.T) {
-	client := newTestDBClient()
+	client, sender := newTestDBClient()
 	repo := NewDucoQuestDBRepository(client, "ventilation", testLogger())
 	node := domain.DucoNodeBoxValveStatus{
 		BaseDucoNodeStatus: domain.BaseDucoNodeStatus{
@@ -319,25 +495,31 @@ func TestDucoQuestDBRepository_StoreNodeData_Valve(t *testing.T) {
 		Trgt: 50,
 		Actl: 45,
 	}
-	err := repo.StoreNodeData(context.Background(), node)
-	if err != nil {
-		t.Errorf("StoreNodeData(Valve) unexpected error: %v", err)
+	if err := repo.StoreNodeData(context.Background(), node); err != nil {
+		t.Fatalf("StoreNodeData(Valve) unexpected error: %v", err)
 	}
+
+	row := requireRows(t, sender, 1)[0]
+	assertTable(t, row, "ventilation_valve")
+	assertSymbol(t, row, "node", "2")
+	assertSymbol(t, row, "device", "VLV")
+	assertColumn(t, row, "trgt", int64(50))
+	assertColumn(t, row, "actl", int64(45))
 }
 
 type unknownQDBNode struct{ domain.BaseDucoNodeStatus }
 
 func TestDucoQuestDBRepository_StoreNodeData_Unknown(t *testing.T) {
-	client := newTestDBClient()
+	client, sender := newTestDBClient()
 	repo := NewDucoQuestDBRepository(client, "ventilation", testLogger())
-	err := repo.StoreNodeData(context.Background(), unknownQDBNode{})
-	if err != nil {
+	if err := repo.StoreNodeData(context.Background(), unknownQDBNode{}); err != nil {
 		t.Errorf("StoreNodeData(unknown) should not error: %v", err)
 	}
+	requireRows(t, sender, 0)
 }
 
 func TestDucoQuestDBRepository_Flush(t *testing.T) {
-	client := newTestDBClient()
+	client, _ := newTestDBClient()
 	repo := NewDucoQuestDBRepository(client, "ventilation", testLogger())
 	err := repo.Flush(context.Background())
 	if err != nil {
@@ -346,7 +528,7 @@ func TestDucoQuestDBRepository_Flush(t *testing.T) {
 }
 
 func TestDucoQuestDBRepository_Close(t *testing.T) {
-	client := newTestDBClient()
+	client, _ := newTestDBClient()
 	repo := NewDucoQuestDBRepository(client, "ventilation", testLogger())
 	err := repo.Close()
 	if err != nil {
@@ -356,7 +538,7 @@ func TestDucoQuestDBRepository_Close(t *testing.T) {
 
 func TestDBClient_Close(_ *testing.T) {
 	// Close should not panic.
-	client := newTestDBClient()
+	client, _ := newTestDBClient()
 	client.Close()
 }
 

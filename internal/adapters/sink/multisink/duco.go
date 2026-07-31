@@ -23,7 +23,7 @@ func NewDucoRepository(sinks []domain.DucoRepository, logger *slog.Logger) *Duco
 
 // StoreBoxStatus writes to all sinks concurrently and returns a combined error.
 func (r *DucoRepository) StoreBoxStatus(ctx context.Context, b domain.DucoBoxStatus) error {
-	return fanOut(ctx, r.sinks, r.logger, "multisink: duco box store failed",
+	return fanOut(ctx, r.sinks, r.logger, "multisink: duco box store",
 		func(ctx context.Context, s domain.DucoRepository) error {
 			return s.StoreBoxStatus(ctx, b)
 		})
@@ -31,7 +31,7 @@ func (r *DucoRepository) StoreBoxStatus(ctx context.Context, b domain.DucoBoxSta
 
 // StoreNodeData writes to all sinks concurrently and returns a combined error.
 func (r *DucoRepository) StoreNodeData(ctx context.Context, nodeData domain.DucoNodeStatus) error {
-	return fanOut(ctx, r.sinks, r.logger, "multisink: duco node store failed",
+	return fanOut(ctx, r.sinks, r.logger, "multisink: duco node store",
 		func(ctx context.Context, s domain.DucoRepository) error {
 			return s.StoreNodeData(ctx, nodeData)
 		})
@@ -39,7 +39,7 @@ func (r *DucoRepository) StoreNodeData(ctx context.Context, nodeData domain.Duco
 
 // Flush flushes all sinks concurrently and returns a combined error.
 func (r *DucoRepository) Flush(ctx context.Context) error {
-	return fanOut(ctx, r.sinks, r.logger, "multisink: duco flush failed",
+	return fanOut(ctx, r.sinks, r.logger, "multisink: duco flush",
 		func(ctx context.Context, s domain.DucoRepository) error {
 			return s.Flush(ctx)
 		})
@@ -47,7 +47,7 @@ func (r *DucoRepository) Flush(ctx context.Context) error {
 
 // Close closes all sinks concurrently and returns a combined error.
 func (r *DucoRepository) Close() error {
-	return fanOutClose(r.sinks, r.logger, "multisink: duco close failed",
+	return fanOutClose(r.sinks, r.logger, "multisink: duco close",
 		func(s domain.DucoRepository) error {
 			return s.Close()
 		})

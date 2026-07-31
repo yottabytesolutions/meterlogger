@@ -16,14 +16,29 @@ func testLogger() *slog.Logger {
 }
 
 func TestNewGridReader(t *testing.T) {
-	ch := make(chan domain.GridTelegram, 1)
-	reader := NewGridReader("/dev/null", ch, testLogger())
+	reader := NewGridReader("/dev/null", testLogger())
 	if reader == nil {
 		t.Fatal("NewGridReader() returned nil")
 	}
 	if reader.usbPort != "/dev/null" {
 		t.Errorf("usbPort = %q, want /dev/null", reader.usbPort)
 	}
+	if reader.Telegrams() == nil {
+		t.Error("Telegrams() returned nil channel")
+	}
+}
+
+// runReader drains the reader's telegram channel while ReadGridTelegrams runs
+// and returns the collected telegrams together with the reader's error.
+func runReader(t *testing.T, reader *GridReader) ([]domain.GridTelegram, error) {
+	t.Helper()
+	errCh := make(chan error, 1)
+	go func() { errCh <- reader.ReadGridTelegrams(context.Background()) }()
+	var got []domain.GridTelegram
+	for telegram := range reader.Telegrams() {
+		got = append(got, telegram)
+	}
+	return got, <-errCh
 }
 
 func TestCalculateCrc16(t *testing.T) {
@@ -40,12 +55,18 @@ func TestCalculateCrc16(t *testing.T) {
 		{
 			name: "single byte 0x31",
 			data: []byte{0x31},
-			want: calculateCrc16([]byte{0x31}),
+			want: 0xD4C1,
 		},
 		{
-			name: "deterministic",
+			name: "slash and letters",
 			data: []byte{0x2F, 0x41, 0x42, 0x43},
-			want: calculateCrc16([]byte{0x2F, 0x41, 0x42, 0x43}),
+			want: 0x9129,
+		},
+		{
+			// Standard CRC-16/ARC check value.
+			name: "reference vector 123456789",
+			data: []byte("123456789"),
+			want: 0xBB3D,
 		},
 	}
 	for _, tt := range tests {
@@ -62,11 +83,9 @@ func TestCalculateCrc16(t *testing.T) {
 
 func TestCalculateCrc16_Consistency(t *testing.T) {
 	data := []byte("hello world")
-	// Same input should produce same output
-	crc1 := calculateCrc16(data)
-	crc2 := calculateCrc16(data)
-	if crc1 != crc2 {
-		t.Errorf("calculateCrc16 not deterministic: %04X != %04X", crc1, crc2)
+	crc := calculateCrc16(data)
+	if crc != 0x39C1 {
+		t.Errorf("calculateCrc16(%q) = %04X, want 39C1", data, crc)
 	}
 }
 
@@ -102,17 +121,13 @@ func TestIsValidChecksum_ValidMessage(t *testing.T) {
 }
 
 func TestIsValidChecksum_WrongChecksum(t *testing.T) {
-	msg := "/test\r\n!0000"
-	// 0000 is almost certainly wrong for this message
-	// Just verify it either passes or fails consistently
-	result := isValidChecksum(msg)
-	crc := calculateCrc16([]byte("/test\r\n!"))
-	expectedHex := crcToHex(crc)
-	constructed := "/test\r\n!" + strings.ToUpper(expectedHex)
-	if !isValidChecksum(constructed) {
-		t.Error("isValidChecksum failed for correctly computed checksum")
+	// The correct checksum for "/test\r\n!" is EA36, so 0000 must be rejected.
+	if isValidChecksum("/test\r\n!0000") {
+		t.Error("isValidChecksum should return false for a wrong checksum")
 	}
-	_ = result
+	if !isValidChecksum("/test\r\n!EA36") {
+		t.Error("isValidChecksum should return true for the correct checksum")
+	}
 }
 
 // crcToHex converts uint16 to 4-char hex string.
@@ -289,48 +304,38 @@ var fullTelegram = "/ISk5\\2MT382-1000\r\n" +
 	"!4ECE\r\n"
 
 func TestReadGridTelegrams_ValidTelegram(t *testing.T) {
-	ch := make(chan domain.GridTelegram, 10)
-	reader := NewGridReader("/dev/null", ch, testLogger())
+	reader := NewGridReader("/dev/null", testLogger())
 	reader.portReader = strings.NewReader(fullTelegram)
 
-	err := reader.ReadGridTelegrams(context.Background())
-	if err != nil {
-		t.Fatalf("ReadGridTelegrams() error: %v", err)
+	got, err := runReader(t, reader)
+	if !errors.Is(err, io.EOF) {
+		t.Fatalf("ReadGridTelegrams() error = %v, want wrapped io.EOF", err)
 	}
-
-	select {
-	case telegram := <-ch:
-		if telegram.UsageCounter1 != 239.922 {
-			t.Errorf("UsageCounter1 = %v, want 239.922", telegram.UsageCounter1)
-		}
-	default:
-		t.Error("ReadGridTelegrams() produced no telegram on channel")
+	if len(got) != 1 {
+		t.Fatalf("ReadGridTelegrams() produced %d telegrams, want 1", len(got))
+	}
+	if got[0].UsageCounter1 != 239.922 {
+		t.Errorf("UsageCounter1 = %v, want 239.922", got[0].UsageCounter1)
 	}
 }
 
 func TestReadGridTelegrams_InvalidChecksum(t *testing.T) {
-	ch := make(chan domain.GridTelegram, 10)
-	reader := NewGridReader("/dev/null", ch, testLogger())
+	reader := NewGridReader("/dev/null", testLogger())
 	// Same telegram but wrong CRC
 	invalidTelegram := strings.Replace(fullTelegram, "!4ECE\r\n", "!0000\r\n", 1)
 	reader.portReader = strings.NewReader(invalidTelegram)
 
-	err := reader.ReadGridTelegrams(context.Background())
-	if err != nil {
-		t.Fatalf("ReadGridTelegrams() error: %v", err)
+	got, err := runReader(t, reader)
+	if !errors.Is(err, io.EOF) {
+		t.Fatalf("ReadGridTelegrams() error = %v, want wrapped io.EOF", err)
 	}
-
-	select {
-	case <-ch:
-		t.Error("ReadGridTelegrams() should not produce telegram for invalid checksum")
-	default:
-		// Expected: no telegram
+	if len(got) != 0 {
+		t.Errorf("ReadGridTelegrams() produced %d telegrams for invalid checksum, want 0", len(got))
 	}
 }
 
 func TestReadGridTelegrams_ParseError(t *testing.T) {
-	ch := make(chan domain.GridTelegram, 10)
-	reader := NewGridReader("/dev/null", ch, testLogger())
+	reader := NewGridReader("/dev/null", testLogger())
 
 	// A telegram with valid checksum but missing required fields
 	badMsg := "/test\r\n0-0:1.0.0(191130210919W)\r\n!"
@@ -341,28 +346,73 @@ func TestReadGridTelegrams_ParseError(t *testing.T) {
 
 	reader.portReader = strings.NewReader(badTelegram)
 
-	err := reader.ReadGridTelegrams(context.Background())
-	if err != nil {
-		t.Fatalf("ReadGridTelegrams() error: %v", err)
+	got, err := runReader(t, reader)
+	if !errors.Is(err, io.EOF) {
+		t.Fatalf("ReadGridTelegrams() error = %v, want wrapped io.EOF", err)
 	}
-
-	select {
-	case <-ch:
-		t.Error("ReadGridTelegrams() should not produce telegram when parse fails")
-	default:
-		// Expected: no telegram
+	if len(got) != 0 {
+		t.Errorf("ReadGridTelegrams() produced %d telegrams when parse fails, want 0", len(got))
 	}
 }
 
 func TestReadGridTelegrams_ReadError(t *testing.T) {
-	ch := make(chan domain.GridTelegram, 10)
-	reader := NewGridReader("/dev/null", ch, testLogger())
+	reader := NewGridReader("/dev/null", testLogger())
 	// errReader returns a line, then an error, then EOF
 	reader.portReader = &errorThenEOFReader{line: "/ISk5\\2MT\r\n"}
 
-	err := reader.ReadGridTelegrams(context.Background())
-	if err != nil {
-		t.Fatalf("ReadGridTelegrams() unexpected error: %v", err)
+	_, err := runReader(t, reader)
+	if !errors.Is(err, io.EOF) {
+		t.Fatalf("ReadGridTelegrams() error = %v, want wrapped io.EOF", err)
+	}
+}
+
+func TestReadGridTelegrams_EOFReturnsError(t *testing.T) {
+	reader := NewGridReader("/dev/null", testLogger())
+	reader.portReader = strings.NewReader("")
+
+	_, err := runReader(t, reader)
+	if err == nil {
+		t.Fatal("ReadGridTelegrams() should return an error when the stream ends")
+	}
+	if !errors.Is(err, io.EOF) {
+		t.Fatalf("ReadGridTelegrams() error = %v, want wrapped io.EOF", err)
+	}
+}
+
+func TestReadGridTelegrams_ContextCancelled(t *testing.T) {
+	reader := NewGridReader("/dev/null", testLogger())
+	reader.portReader = strings.NewReader(fullTelegram)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if err := reader.ReadGridTelegrams(ctx); err != nil {
+		t.Fatalf("ReadGridTelegrams() error = %v, want nil on context cancellation", err)
+	}
+	if _, open := <-reader.Telegrams(); open {
+		t.Error("Telegrams() channel should be closed after ReadGridTelegrams returns")
+	}
+}
+
+func TestReadGridTelegrams_TelegramSizeCap(t *testing.T) {
+	reader := NewGridReader("/dev/null", testLogger())
+
+	// A start marker followed by more than 64 KiB of lines without an end
+	// marker, then a valid telegram. The oversized partial must be dropped
+	// and the valid telegram must still come through.
+	junkLine := strings.Repeat("A", 1024) + "\r\n"
+	oversized := "/stuck\r\n" + strings.Repeat(junkLine, 70)
+	reader.portReader = strings.NewReader(oversized + fullTelegram)
+
+	got, err := runReader(t, reader)
+	if !errors.Is(err, io.EOF) {
+		t.Fatalf("ReadGridTelegrams() error = %v, want wrapped io.EOF", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("ReadGridTelegrams() produced %d telegrams after oversized partial, want 1", len(got))
+	}
+	if got[0].UsageCounter1 != 239.922 {
+		t.Errorf("UsageCounter1 = %v, want 239.922", got[0].UsageCounter1)
 	}
 }
 

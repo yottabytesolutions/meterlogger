@@ -8,13 +8,14 @@ import (
 	"github.com/yottabytesolutions/meterlogger/internal/adapters/schemastore"
 )
 
+// Table names in the DDL below come from config, not user input.
+
 func heatMigrations(db *sql.DB, table string) []schemastore.Migration {
 	return []schemastore.Migration{
 		{
 			Version:     1,
 			Description: "create heat table",
 			Up: func(ctx context.Context) error {
-				// table name comes from config, not user HTTP input.
 				_, err := db.ExecContext(
 					ctx, fmt.Sprintf(
 						`CREATE TABLE IF NOT EXISTS %s (
@@ -45,7 +46,6 @@ func gridMigrations(db *sql.DB, table string) []schemastore.Migration {
 			Version:     1,
 			Description: "create grid table",
 			Up: func(ctx context.Context) error {
-				// table name comes from config, not user HTTP input.
 				_, err := db.ExecContext(
 					ctx, fmt.Sprintf(
 						`CREATE TABLE IF NOT EXISTS %s (
@@ -91,7 +91,6 @@ func solarMigrations(db *sql.DB, table string) []schemastore.Migration {
 			Version:     1,
 			Description: "create solar tables",
 			Up: func(ctx context.Context) error {
-				// table name comes from config, not user HTTP input.
 				_, err := db.ExecContext(
 					ctx, fmt.Sprintf(
 						`CREATE TABLE IF NOT EXISTS %s (
@@ -106,7 +105,6 @@ func solarMigrations(db *sql.DB, table string) []schemastore.Migration {
 				if err != nil {
 					return err
 				}
-				// table name comes from config, not user HTTP input.
 				_, err = db.ExecContext(
 					ctx, fmt.Sprintf(
 						`CREATE TABLE IF NOT EXISTS %s_inverters (
@@ -236,7 +234,6 @@ func ducoMigrations(db *sql.DB, base string) []schemastore.Migration {
 			Version:     1,
 			Description: "create ventilation tables",
 			Up: func(ctx context.Context) error {
-				// table names come from config, not user HTTP input.
 				tables := []string{
 					ducoBoxGeneralTableSQL(base),
 					ducoNodeTableSQL(base),

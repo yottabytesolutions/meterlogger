@@ -6,21 +6,21 @@ import (
 )
 
 func TestDBClient_Name(t *testing.T) {
-	c := newTestDBClient()
+	c, _ := newTestDBClient()
 	if got := c.Name(); got != "questdb" {
 		t.Errorf("Name() = %q, want questdb", got)
 	}
 }
 
 func TestDBClient_Check_CleanStateIsHealthy(t *testing.T) {
-	c := newTestDBClient()
+	c, _ := newTestDBClient()
 	if err := c.Check(t.Context()); err != nil {
 		t.Errorf("Check() before any flush = %v, want nil", err)
 	}
 }
 
 func TestDBClient_Check_ReportsLastFlushError(t *testing.T) {
-	c := newTestDBClient()
+	c, _ := newTestDBClient()
 	want := errors.New("boom")
 
 	c.mu.Lock()

@@ -7,3 +7,9 @@ import "time"
 func SetNow(s *Server, now func() time.Time) {
 	s.now = now
 }
+
+// SetCheckTimeout replaces the per-checker timeout for tests. It must not be
+// called concurrently with running probes.
+func SetCheckTimeout(s *Server, d time.Duration) {
+	s.checkTimeout = d
+}

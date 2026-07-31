@@ -2,6 +2,7 @@ package ducobox
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -166,8 +167,8 @@ func TestParseDucoNodeStatus_UnknownType(t *testing.T) {
 			`"serialnb":"","show":0,"link":0}`,
 	)
 	_, err := ParseDucoNodeStatus(data)
-	if err == nil {
-		t.Error("ParseDucoNodeStatus(UNKN) should return error for unknown type")
+	if !errors.Is(err, domain.ErrUnknownDevType) {
+		t.Errorf("ParseDucoNodeStatus(UNKN) error = %v, want domain.ErrUnknownDevType", err)
 	}
 }
 
@@ -325,7 +326,7 @@ func TestDucoReader_ReadNodeStatus_UnknownDevType(t *testing.T) {
 
 	reader := NewDucoReader(server.URL, testLogger())
 	_, err := reader.ReadNodeStatus(t.Context(), 1)
-	if err == nil {
-		t.Error("ReadNodeStatus() should return error for unknown device type")
+	if !errors.Is(err, domain.ErrUnknownDevType) {
+		t.Errorf("ReadNodeStatus() error = %v, want domain.ErrUnknownDevType", err)
 	}
 }

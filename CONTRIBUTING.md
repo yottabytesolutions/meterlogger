@@ -85,7 +85,7 @@ Follow the patterns documented in `CLAUDE.md` and `documentation/architecture.md
 
 Open an issue with:
 
-- The version (`meterlogger --help` prints the build version), or the commit SHA.
+- The version (`meterlogger --version` prints it), or the commit SHA.
 - The source you ran (`heat`, `grid`, `solar`, `ventilation`).
 - The sinks you had enabled.
 - A minimal config that reproduces the problem, with secrets redacted.

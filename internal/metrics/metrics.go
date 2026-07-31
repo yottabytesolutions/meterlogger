@@ -21,6 +21,13 @@ type Metrics struct {
 	Registry         *prometheus.Registry
 }
 
+// NewNoop returns Metrics backed by a registry that is never exposed. All
+// counters and gauges are valid, so callers can update them unconditionally.
+// Services use it as a default until real metrics are attached.
+func NewNoop() *Metrics {
+	return New()
+}
+
 // New registers and returns a Metrics instance using a fresh Prometheus registry.
 // Passing a non-nil registry uses that registry instead (useful in tests to share one).
 func New() *Metrics {

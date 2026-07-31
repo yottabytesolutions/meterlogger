@@ -1,3 +1,4 @@
+//nolint:dupl // solar shares the fan-out shape with heat and grid but operates on a distinct domain type
 package multisink
 
 import (
@@ -23,7 +24,7 @@ func NewSolarRepository(sinks []domain.EnvoySolarRepository, logger *slog.Logger
 
 // StoreEnvoySolarData writes to all sinks concurrently and returns a combined error.
 func (r *SolarRepository) StoreEnvoySolarData(ctx context.Context, d domain.EnvoySolarData) error {
-	return fanOut(ctx, r.sinks, r.logger, "multisink: solar store failed",
+	return fanOut(ctx, r.sinks, r.logger, "multisink: solar store",
 		func(ctx context.Context, s domain.EnvoySolarRepository) error {
 			return s.StoreEnvoySolarData(ctx, d)
 		})
@@ -31,7 +32,7 @@ func (r *SolarRepository) StoreEnvoySolarData(ctx context.Context, d domain.Envo
 
 // Flush flushes all sinks concurrently and returns a combined error.
 func (r *SolarRepository) Flush(ctx context.Context) error {
-	return fanOut(ctx, r.sinks, r.logger, "multisink: solar flush failed",
+	return fanOut(ctx, r.sinks, r.logger, "multisink: solar flush",
 		func(ctx context.Context, s domain.EnvoySolarRepository) error {
 			return s.Flush(ctx)
 		})
@@ -39,7 +40,7 @@ func (r *SolarRepository) Flush(ctx context.Context) error {
 
 // Close closes all sinks concurrently and returns a combined error.
 func (r *SolarRepository) Close() error {
-	return fanOutClose(r.sinks, r.logger, "multisink: solar close failed",
+	return fanOutClose(r.sinks, r.logger, "multisink: solar close",
 		func(s domain.EnvoySolarRepository) error {
 			return s.Close()
 		})

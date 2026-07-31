@@ -27,14 +27,15 @@ providing fault isolation and visible restarts. See [deployment.md](./deployment
 
 ## Supported sinks
 
-| Sink        | Type                  | Auto-migration | Notes                                   |
-|-------------|-----------------------|----------------|-----------------------------------------|
-| QuestDB     | time-series (ILP/TCP) | automatic      | Must be explicitly enabled              |
-| PostgreSQL  | relational            | yes            | Standard SQL; recommended for analytics |
-| MySQL       | relational            | yes            |                                         |
-| TimescaleDB | PostgreSQL extension  | yes            | Same schema as PostgreSQL               |
-| ClickHouse  | column-store (OLAP)   | yes            | High-throughput analytics workloads     |
-| TDEngine    | time-series           | yes            | Lightweight IoT time-series engine      |
+| Sink        | Type                  | Auto-migration    | Notes                                   |
+|-------------|-----------------------|-------------------|-----------------------------------------|
+| QuestDB     | time-series (ILP/TCP) | automatic via ILP | Must be explicitly enabled              |
+| PostgreSQL  | relational            | yes               | Standard SQL; recommended for analytics |
+| MySQL       | relational            | yes               |                                         |
+| TimescaleDB | PostgreSQL extension  | yes               | Same schema as PostgreSQL               |
+| ClickHouse  | column-store (OLAP)   | yes               | High-throughput analytics workloads     |
+| TDEngine    | time-series           | yes               | Lightweight IoT time-series engine      |
+| Stdout      | debug (log output)    | n/a               | `Stdout.Enabled: true`; not for production |
 
 All enabled sinks receive every write concurrently. At least one sink must be enabled.
 

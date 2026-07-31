@@ -51,6 +51,29 @@ func (f *flakyChecker) Check(_ context.Context) error {
 	return nil
 }
 
+// slowChecker blocks until its context expires, simulating a hung DB ping.
+type slowChecker struct{ name string }
+
+func (s *slowChecker) Name() string { return s.name }
+
+func (s *slowChecker) Check(ctx context.Context) error {
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+// ctxAwareChecker is healthy, but honours context cancellation the way a real
+// DB ping does: with an already-expired context it fails instead of checking.
+type ctxAwareChecker struct{ name string }
+
+func (c *ctxAwareChecker) Name() string { return c.name }
+
+func (c *ctxAwareChecker) Check(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return nil
+}
+
 func newGetRequest(t *testing.T, target string) *http.Request {
 	t.Helper()
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, target, nil)
@@ -201,6 +224,30 @@ func TestReadiness_NoCheckers(t *testing.T) {
 	srv.ServeHTTP(w, newGetRequest(t, "/readyz"))
 	if w.Code != http.StatusOK {
 		t.Errorf("no checkers: want 200, got %d", w.Code)
+	}
+}
+
+// TestReadiness_SlowCheckerDoesNotStarveOthers guards the per-checker timeout:
+// a checker that hangs for its full budget must not leave the next checker
+// with an expired context, so a healthy sink is still reported healthy.
+func TestReadiness_SlowCheckerDoesNotStarveOthers(t *testing.T) {
+	srv := healthserver.New(":0", testLogger(), prometheus.NewRegistry(), testThreshold)
+	healthserver.SetCheckTimeout(srv, 20*time.Millisecond)
+	srv.Register(&slowChecker{name: "slow-sink"})
+	srv.Register(&ctxAwareChecker{name: "healthy-sink"})
+
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, newGetRequest(t, "/readyz"))
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("slow checker should degrade readiness: want 503, got %d", w.Code)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, `{"name":"slow-sink","healthy":false`) {
+		t.Errorf("slow checker should be unhealthy; body: %s", body)
+	}
+	if !strings.Contains(body, `{"name":"healthy-sink","healthy":true}`) {
+		t.Errorf("healthy checker must not be starved by the slow one; body: %s", body)
 	}
 }
 

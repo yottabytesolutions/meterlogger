@@ -283,7 +283,7 @@ For `DucoNodeBoxValveStatus` nodes (VLV type). Same symbol columns plus:
 ## SQL sink schemas (PostgreSQL, MySQL, TimescaleDB, ClickHouse, TDEngine)
 
 The five SQL sinks (PostgreSQL, MySQL, TimescaleDB, ClickHouse, TDEngine) share the same logical column names and
-types. The `sqlstore` migration framework applies engine-specific DDL adjustments (e.g. `DATETIME(6)` vs `TIMESTAMPTZ`,
+types. The `schemastore` migration framework applies engine-specific DDL adjustments (e.g. `DATETIME(6)` vs `TIMESTAMPTZ`,
 `MergeTree` engine for ClickHouse). TimescaleDB uses `create_hypertable()` on the timestamp column in addition to the
 standard PostgreSQL schema.
 

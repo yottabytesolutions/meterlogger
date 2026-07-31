@@ -84,11 +84,13 @@ type GridTelegram struct {
 	*/
 }
 
-// GridTelegramReader reads grid meter telegrams. Implementations push
-// successfully parsed telegrams onto a channel injected at construction time.
-// ReadGridTelegrams runs until ctx is cancelled or a non-recoverable error
-// occurs.
+// GridTelegramReader reads grid meter telegrams. The reader owns its output:
+// Telegrams returns the channel on which successfully parsed telegrams are
+// delivered, and the reader closes that channel when ReadGridTelegrams
+// returns. ReadGridTelegrams runs until ctx is cancelled or a non-recoverable
+// error occurs and must be called at most once.
 type GridTelegramReader interface {
+	Telegrams() <-chan GridTelegram
 	ReadGridTelegrams(ctx context.Context) error
 }
 

@@ -2,9 +2,12 @@ package enphase
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -69,9 +72,15 @@ func (t *redirectTransport) RoundTrip(req *http.Request) (*http.Response, error)
 
 func withRedirectClient(t *testing.T, server *httptest.Server) func() {
 	t.Helper()
-	orig := httpClient
-	httpClient = &http.Client{Transport: &redirectTransport{base: server.URL, client: server.Client()}}
-	return func() { httpClient = orig }
+	origEnvoy := httpClient
+	origCloud := cloudClient
+	redirect := &http.Client{Transport: &redirectTransport{base: server.URL, client: server.Client()}}
+	httpClient = redirect
+	cloudClient = redirect
+	return func() {
+		httpClient = origEnvoy
+		cloudClient = origCloud
+	}
 }
 
 func TestFetchToken_Success(t *testing.T) {
@@ -152,9 +161,98 @@ func TestFetchToken_TokenFetchError(t *testing.T) {
 	defer server.Close()
 	defer withRedirectClient(t, server)()
 
-	// The token parse will fail on "unauthorized" as an invalid JWT - either
-	// way we exercise the token-fetch code path.
-	_, _ = fetchToken(context.Background(), Config{User: testEnvoyUser, Password: testEnvoyPass, Serial: testEnvoySerial})
+	_, err := fetchToken(
+		context.Background(), Config{User: testEnvoyUser, Password: testEnvoyPass, Serial: testEnvoySerial},
+	)
+	if err == nil {
+		t.Fatal("fetchToken() should return error on non-200 token response")
+	}
+	if !strings.Contains(err.Error(), "401") || !strings.Contains(err.Error(), "unauthorized") {
+		t.Errorf("fetchToken() error should include status and body snippet, got: %v", err)
+	}
+}
+
+func TestFetchToken_MissingSessionID(t *testing.T) {
+	server := httptest.NewServer(
+		http.HandlerFunc(
+			func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == testLoginPath {
+					_, _ = w.Write([]byte("{}"))
+				}
+			},
+		),
+	)
+	defer server.Close()
+	defer withRedirectClient(t, server)()
+
+	_, err := fetchToken(
+		context.Background(), Config{User: testEnvoyUser, Password: testEnvoyPass, Serial: testEnvoySerial},
+	)
+	if err == nil {
+		t.Fatal("fetchToken() should return error when session_id is missing")
+	}
+	if !strings.Contains(err.Error(), "session_id") {
+		t.Errorf("fetchToken() error should mention session_id, got: %v", err)
+	}
+}
+
+func TestBodySnippet_Truncates(t *testing.T) {
+	long := strings.Repeat("x", maxErrorBodySnippet+10)
+	got := bodySnippet([]byte(long))
+	if len(got) != maxErrorBodySnippet+3 || !strings.HasSuffix(got, "...") {
+		t.Errorf("bodySnippet() did not truncate as expected, len=%d", len(got))
+	}
+	if bodySnippet([]byte("short")) != "short" {
+		t.Error("bodySnippet() should return short bodies unchanged")
+	}
+}
+
+// TestEnvoyClient_AcceptsSelfSignedTLS proves the local Envoy client still accepts
+// a self-signed certificate, matching the LAN device behavior.
+func TestEnvoyClient_AcceptsSelfSignedTLS(t *testing.T) {
+	server := httptest.NewTLSServer(
+		http.HandlerFunc(
+			func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write([]byte("{}"))
+			},
+		),
+	)
+	defer server.Close()
+
+	body, err := queryEnvoy(context.Background(), server.URL, "token", testLogger())
+	if err != nil {
+		t.Fatalf("envoy client should accept self-signed TLS, got error: %v", err)
+	}
+	if string(body) != "{}" {
+		t.Errorf("unexpected body: %q", body)
+	}
+}
+
+// TestCloudClient_RejectsSelfSignedTLS proves the cloud client verifies TLS
+// certificates, so credentials never go over an unverified connection.
+func TestCloudClient_RejectsSelfSignedTLS(t *testing.T) {
+	server := httptest.NewTLSServer(
+		http.HandlerFunc(
+			func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write([]byte("{}"))
+			},
+		),
+	)
+	defer server.Close()
+
+	req, reqErr := http.NewRequestWithContext(context.Background(), http.MethodGet, server.URL, nil)
+	if reqErr != nil {
+		t.Fatalf("failed to build request: %v", reqErr)
+	}
+	resp, err := cloudClient.Do(req)
+	if err == nil {
+		_ = resp.Body.Close()
+		t.Fatal("cloud client should reject self-signed TLS")
+	}
+	var certErr *tls.CertificateVerificationError
+	if !errors.As(err, &certErr) {
+		t.Errorf("expected certificate verification error, got: %v", err)
+	}
 }
 
 func TestEnsureToken_ExpiringToken_RefreshFails(t *testing.T) {

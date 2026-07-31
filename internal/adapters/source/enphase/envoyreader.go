@@ -45,8 +45,6 @@ const (
 )
 
 // Config holds the connection parameters for an Enphase Envoy gateway.
-// Passed as a single value instead of positional strings to eliminate the
-// risk of silently transposing user/password/serial at a call site.
 type Config struct {
 	EnvoyURL string
 	User     string
@@ -60,8 +58,11 @@ type EnvoyReader struct {
 	token  *jwt.Token
 }
 
-//nolint:gochecknoglobals // shared HTTP client for all Enphase requests
+//nolint:gochecknoglobals // shared HTTP client for local Envoy requests
 var httpClient = newEnvoyHTTPClient()
+
+//nolint:gochecknoglobals // shared HTTP client for enphaseenergy.com cloud requests
+var cloudClient = &http.Client{Timeout: httpClientTimeout}
 
 // newEnvoyHTTPClient constructs the shared Envoy HTTP client with a tuned
 // Transport. Keeping idle connections alive across polls avoids repeated DNS

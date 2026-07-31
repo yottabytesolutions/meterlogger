@@ -24,8 +24,7 @@ func NewGridRepository(sinks []domain.GridTelegramRepository, logger *slog.Logge
 
 // StoreGridTelegram writes to all sinks concurrently and returns a combined error.
 func (r *GridRepository) StoreGridTelegram(ctx context.Context, t domain.GridTelegram) error {
-	r.logger.DebugContext(ctx, "multisink: storing grid telegram", slog.Int("sinks", len(r.sinks)))
-	return fanOut(ctx, r.sinks, r.logger, "multisink: grid store failed",
+	return fanOut(ctx, r.sinks, r.logger, "multisink: grid store",
 		func(ctx context.Context, s domain.GridTelegramRepository) error {
 			return s.StoreGridTelegram(ctx, t)
 		})
@@ -33,8 +32,7 @@ func (r *GridRepository) StoreGridTelegram(ctx context.Context, t domain.GridTel
 
 // Flush flushes all sinks concurrently and returns a combined error.
 func (r *GridRepository) Flush(ctx context.Context) error {
-	r.logger.DebugContext(ctx, "multisink: flushing grid sinks", slog.Int("sinks", len(r.sinks)))
-	return fanOut(ctx, r.sinks, r.logger, "multisink: grid flush failed",
+	return fanOut(ctx, r.sinks, r.logger, "multisink: grid flush",
 		func(ctx context.Context, s domain.GridTelegramRepository) error {
 			return s.Flush(ctx)
 		})
@@ -42,7 +40,7 @@ func (r *GridRepository) Flush(ctx context.Context) error {
 
 // Close closes all sinks concurrently and returns a combined error.
 func (r *GridRepository) Close() error {
-	return fanOutClose(r.sinks, r.logger, "multisink: grid close failed",
+	return fanOutClose(r.sinks, r.logger, "multisink: grid close",
 		func(s domain.GridTelegramRepository) error {
 			return s.Close()
 		})

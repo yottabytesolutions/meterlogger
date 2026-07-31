@@ -1,6 +1,14 @@
 package domain
 
-import "context"
+import (
+	"context"
+	"errors"
+)
+
+// ErrUnknownDevType is returned when the DucoBox reports a device type this
+// application does not recognise. Callers detect it with errors.Is and skip
+// the node instead of treating it as a failure.
+var ErrUnknownDevType = errors.New("unknown devtype")
 
 // DucoBoxStatus represents the status of the main DucoBox unit.
 type DucoBoxStatus struct {

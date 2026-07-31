@@ -12,12 +12,12 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    command: ["--source", "grid"]
+    command: ["--source", "grid", "--config", "/config.yaml"]
     restart: always
     depends_on:
       - questdb
     volumes:
-      - ./config.yaml:/root/.meterlogger.yaml:ro
+      - ./config.yaml:/config.yaml:ro
     # Unprivileged serial device access: grant read/write on the USB serial
     # major device number instead of `privileged: true`.
     devices:
