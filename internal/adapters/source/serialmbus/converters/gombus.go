@@ -18,94 +18,76 @@ import (
 // ErrRecordNotFound is returned when a required MBus data record is not found.
 var ErrRecordNotFound = errors.New("record not found")
 
+// heatField maps one M-Bus record (selected by VIF type and function) to one
+// HeatTelegram field.
+type heatField struct {
+	name     string
+	unitType int
+	function string
+	assign   func(t *domain.HeatTelegram, v float64)
+}
+
+// heatFields lists every record a heat telegram is built from.
+func heatFields() []heatField {
+	return []heatField{
+		{
+			"max flow", gombus.VIFVolumeFlow, gombus.FunctionMaximum,
+			func(t *domain.HeatTelegram, v float64) { t.MaxFlow = v },
+		},
+		{
+			"max power", gombus.VIFPowerW, gombus.FunctionMaximum,
+			func(t *domain.HeatTelegram, v float64) { t.MaxPower = int64(v) },
+		},
+		{
+			"seconds counter", gombus.VIFOnTime, gombus.FunctionInstantaneous,
+			func(t *domain.HeatTelegram, v float64) { t.SecondsCounter = int64(v) },
+		},
+		{
+			"volume", gombus.VIFVolume, gombus.FunctionInstantaneous,
+			func(t *domain.HeatTelegram, v float64) { t.VolumeCm3 = v },
+		},
+		{
+			"flow temperature", gombus.VIFFlowTemperature, gombus.FunctionInstantaneous,
+			func(t *domain.HeatTelegram, v float64) { t.Tforward = v },
+		},
+		{
+			"return temperature", gombus.VIFReturnTemperature, gombus.FunctionInstantaneous,
+			func(t *domain.HeatTelegram, v float64) { t.Treturn = v },
+		},
+		{
+			"temperature difference", gombus.VIFTemperatureDifference, gombus.FunctionInstantaneous,
+			func(t *domain.HeatTelegram, v float64) { t.Tdiff = v },
+		},
+		{
+			"energy", gombus.VIFEnergyJoule, gombus.FunctionInstantaneous,
+			func(t *domain.HeatTelegram, v float64) { t.Joules = int64(v) },
+		},
+		{
+			"actual flow", gombus.VIFVolumeFlow, gombus.FunctionInstantaneous,
+			func(t *domain.HeatTelegram, v float64) { t.ActualFlow = v },
+		},
+		{
+			"actual power", gombus.VIFPowerW, gombus.FunctionInstantaneous,
+			func(t *domain.HeatTelegram, v float64) { t.ActualPower = int64(v) },
+		},
+	}
+}
+
 // GombusToDomain converts a gombus.DecodedFrame to a domain.HeatTelegram.
-//
-//nolint:funlen // function is long but each step maps one MBus record; extracting helpers would obscure the protocol
 func GombusToDomain(frame *gombus.DecodedFrame) (domain.HeatTelegram, error) {
-	result := domain.HeatTelegram{}
-
-	// ReadHeatTelegram generic fields first
-	result.Timestamp = time.Now()
-	result.SerialNo = strconv.FormatInt(int64(frame.SerialNumber), 10)
-	result.MeterID = fmt.Sprintf("%s (%s)", frame.Manufacturer, frame.DeviceType)
-
-	var err error
-	var record gombus.DecodedDataRecord
-
-	const maxVal = "Maximum value"
-	const instantVal = "Instantaneous value"
-
-	const recordMaxFlow = 63
-	const recordMaxPower = 47
-	const recordSecondsCounter = 35
-	const recordVolumeCm3 = 23
-	const recordTforward = 91
-	const recordTreturn = 95
-	const recordTdiff = 99
-	const recordJoules = 15
-	const recordActualFlow = 63
-	const recordActualPower = 47
-
-	record, err = FindDataRecordValue(&frame.DataRecords, recordMaxFlow, maxVal)
-	if err != nil {
-		return result, err
+	result := domain.HeatTelegram{
+		Timestamp: time.Now(),
+		SerialNo:  strconv.FormatInt(int64(frame.SerialNumber), 10),
+		MeterID:   fmt.Sprintf("%s (%s)", frame.Manufacturer, frame.DeviceType),
 	}
-	result.MaxFlow = record.Value
 
-	record, err = FindDataRecordValue(&frame.DataRecords, recordMaxPower, maxVal)
-	if err != nil {
-		return result, err
+	for _, f := range heatFields() {
+		record, err := FindDataRecordValue(&frame.DataRecords, f.unitType, f.function)
+		if err != nil {
+			return result, fmt.Errorf("%s: %w", f.name, err)
+		}
+		f.assign(&result, record.Value)
 	}
-	result.MaxPower = int64(record.Value)
-
-	record, err = FindDataRecordValue(&frame.DataRecords, recordSecondsCounter, instantVal)
-	if err != nil {
-		return result, err
-	}
-	result.SecondsCounter = int64(record.Value)
-
-	record, err = FindDataRecordValue(&frame.DataRecords, recordVolumeCm3, instantVal)
-	if err != nil {
-		return result, err
-	}
-	result.VolumeCm3 = record.Value
-
-	record, err = FindDataRecordValue(&frame.DataRecords, recordTforward, instantVal)
-	if err != nil {
-		return result, err
-	}
-	result.Tforward = record.Value
-
-	record, err = FindDataRecordValue(&frame.DataRecords, recordTreturn, instantVal)
-	if err != nil {
-		return result, err
-	}
-	result.Treturn = record.Value
-
-	record, err = FindDataRecordValue(&frame.DataRecords, recordTdiff, instantVal)
-	if err != nil {
-		return result, err
-	}
-	result.Tdiff = record.Value
-
-	record, err = FindDataRecordValue(&frame.DataRecords, recordJoules, instantVal)
-	if err != nil {
-		return result, err
-	}
-	result.Joules = int64(record.Value)
-
-	record, err = FindDataRecordValue(&frame.DataRecords, recordActualFlow, instantVal)
-	if err != nil {
-		return result, err
-	}
-	result.ActualFlow = record.Value
-
-	record, err = FindDataRecordValue(&frame.DataRecords, recordActualPower, instantVal)
-	if err != nil {
-		return result, err
-	}
-	result.ActualPower = int64(record.Value)
-
 	return result, nil
 }
 
