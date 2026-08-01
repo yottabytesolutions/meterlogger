@@ -25,12 +25,33 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Extract release notes from CHANGELOG.md
+        # Takes the "## [X.Y.Z]" section for the pushed tag, up to the next
+        # "## [" heading. A tag without a changelog section fails the release.
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          notes="$RUNNER_TEMP/release-notes.md"
+          awk -v ver="$version" '
+            $0 ~ ("^## \\[" ver "\\]") { found = 1; next }
+            found && /^## \[/ { exit }
+            found { print }
+          ' CHANGELOG.md > "$notes"
+          if ! grep -q '[^[:space:]]' "$notes"; then
+            echo "::error::CHANGELOG.md has no section for version ${version}. Add one before tagging a release."
+            exit 1
+          fi
+          echo "Release notes for ${version}:"
+          cat "$notes"
+
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94  # v7.2.3
         with:
           distribution: goreleaser
           version: '~> v2'
-          args: release --clean
+          # --release-notes makes GoReleaser use the changelog section
+          # verbatim as the release body, skipping its own commit-based
+          # changelog generation.
+          args: release --clean --release-notes ${{ runner.temp }}/release-notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

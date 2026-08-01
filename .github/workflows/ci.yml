@@ -52,7 +52,19 @@ jobs:
           go-version-file: go.mod
 
       - name: Run tests
-        run: go test -race ./...
+        run: go test -race -covermode=atomic -coverprofile=coverage.out ./...
+
+      - name: Enforce coverage floor
+        # Total statement coverage from the merged profile must stay at or
+        # above 80% (see AGENTS.md). The number comes from the "total:" line
+        # of go tool cover -func.
+        run: |
+          total=$(go tool cover -func=coverage.out | awk '/^total:/ {sub(/%/, "", $NF); print $NF}')
+          echo "Total statement coverage: ${total}%"
+          if ! awk -v t="$total" 'BEGIN { exit !(t >= 80.0) }'; then
+            echo "::error::Coverage ${total}% is below the 80% floor"
+            exit 1
+          fi
 
   docker:
     needs: [ lint, test ]
