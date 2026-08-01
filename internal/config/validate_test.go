@@ -138,28 +138,6 @@ func TestSourceFieldErrors(t *testing.T) {
 			wantErr: "grid source enabled but SerialInterface is empty",
 		},
 		{
-			name: "gas enabled without measurement",
-			cfg: Config{
-				Grid: GridConfig{
-					Enabled:         true,
-					SerialInterface: testSerialUSB0,
-					Gas:             GasConfig{Enabled: true},
-				},
-			},
-			wantErr: "grid gas readings enabled but Grid.Gas.Measurement is empty",
-		},
-		{
-			name: "gas enabled with measurement produces no error",
-			cfg: Config{
-				Grid: GridConfig{
-					Enabled:         true,
-					SerialInterface: testSerialUSB0,
-					Gas:             GasConfig{Enabled: true, Measurement: "gas_meter"},
-				},
-			},
-			wantErr: "",
-		},
-		{
 			name:    "ventilation enabled without host URL",
 			cfg:     Config{Ventilation: VentilationConfig{Enabled: true}},
 			wantErr: "ventilation source enabled but HostURL is empty",
@@ -294,4 +272,50 @@ func containsSubstring(haystack []string, needle string) bool {
 		}
 	}
 	return false
+}
+
+func TestGasFieldErrors(t *testing.T) {
+	tests := []struct {
+		name    string
+		cfg     Config
+		wantErr string
+	}{
+		{
+			name: "gas enabled without measurement",
+			cfg: Config{
+				Grid: GridConfig{
+					Enabled:         true,
+					SerialInterface: testSerialUSB0,
+					Gas:             GasConfig{Enabled: true},
+				},
+			},
+			wantErr: "grid gas readings enabled but Grid.Gas.Measurement is empty",
+		},
+		{
+			name: "gas enabled with measurement produces no error",
+			cfg: Config{
+				Grid: GridConfig{
+					Enabled:         true,
+					SerialInterface: testSerialUSB0,
+					Gas:             GasConfig{Enabled: true, Measurement: "gas_meter"},
+				},
+			},
+			wantErr: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			errs := sourceFieldErrors(tt.cfg)
+			if tt.wantErr == "" {
+				if len(errs) != 0 {
+					t.Errorf("sourceFieldErrors() = %v, want empty", errs)
+				}
+				return
+			}
+			if !containsSubstring(errs, tt.wantErr) {
+				t.Errorf("sourceFieldErrors() = %v, want to contain %q", errs, tt.wantErr)
+			}
+		})
+	}
 }
