@@ -102,13 +102,27 @@ Profiling:
   BasicAuthUser: ""
   BasicAuthPassword: ""
 
-# ── Heat meter (M-Bus over serial) ─────────────────────────
+# ── Heat meter (M-Bus or optical over serial) ──────────────
 Heat:
   Enabled: false
   Measurement: heat_meter
   SerialInterface: /dev/ttyUSB0
-  MbusAddress: 1 # M-Bus device address (1-250)
+  # Reader selects the protocol:
+  #   mbus       - M-Bus level converter (default)
+  #   optical    - IR eye on KMP Multicals (402, 403, 601, 602, 603, 801, 803)
+  #   optical401 - IR eye on Multical 401 and 66C
+  Reader: mbus
+  MbusAddress: 1 # M-Bus device address (1-250), mbus reader only
   ScrapeInterval: 30s
+  # Optical401 scaling depends on the meter's configuration code; verify one
+  # reading against the meter LCD. These are the common NL district heating
+  # defaults.
+  # Optical401:
+  #   EnergyUnit: GJ       # GJ, kWh, or MWh
+  #   EnergyDecimals: 3
+  #   VolumeDecimals: 3
+  #   PowerDecimals: 1
+  #   FlowDecimals: 1
 
 # ── Grid meter (DSMR P1 over serial) ───────────────────────
 Grid:

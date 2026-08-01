@@ -36,6 +36,15 @@ func TestLoad_DefaultsNoFile(t *testing.T) {
 	if cfg.Heat.MbusAddress != 1 {
 		t.Errorf("Heat.MbusAddress default = %d, want 1", cfg.Heat.MbusAddress)
 	}
+	if cfg.Heat.Reader != HeatReaderMbus {
+		t.Errorf("Heat.Reader default = %q, want %q", cfg.Heat.Reader, HeatReaderMbus)
+	}
+	wantOptical401 := Optical401Config{
+		EnergyUnit: "GJ", EnergyDecimals: 3, VolumeDecimals: 3, PowerDecimals: 1, FlowDecimals: 1,
+	}
+	if cfg.Heat.Optical401 != wantOptical401 {
+		t.Errorf("Heat.Optical401 defaults = %+v, want %+v", cfg.Heat.Optical401, wantOptical401)
+	}
 	if cfg.Debug {
 		t.Error("Load() should default Debug to false")
 	}

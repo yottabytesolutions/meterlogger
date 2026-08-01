@@ -20,7 +20,7 @@ providing fault isolation and visible restarts. See [deployment.md](./deployment
 
 | Type          | Protocol               | Hardware interface     |
 |---------------|------------------------|------------------------|
-| `heat`        | M-Bus (serial)         | USB-to-M-Bus converter |
+| `heat`        | M-Bus or optical (serial) | USB-to-M-Bus converter or IR read head |
 | `grid`        | DSMR P1 (serial)       | USB-to-P1 cable        |
 | `solar`       | Enphase Envoy HTTP API | LAN / WiFi             |
 | `ventilation` | DucoBox HTTP API       | LAN / WiFi             |
@@ -50,6 +50,8 @@ internal/
     source/
       gridmeter/        ← DSMR P1 serial reader
       serialmbus/       ← M-Bus serial reader + protocol layer
+      kamstrup/         ← Kamstrup KMP optical reader
+      multical401/      ← Multical 401/66C optical reader
       enphase/          ← Enphase Envoy HTTP reader
       ducobox/          ← DucoBox HTTP reader
     sink/

@@ -163,6 +163,23 @@ func TestSourceFieldErrors(t *testing.T) {
 			wantErr: "solar (enphase) source enabled but Serial is empty",
 		},
 		{
+			name:    "heat with invalid reader",
+			cfg:     Config{Heat: HeatConfig{Enabled: true, SerialInterface: testSerialUSB0, Reader: "infrared"}},
+			wantErr: `invalid Heat.Reader "infrared"`,
+		},
+		{
+			name:    "heat optical reader without serial interface",
+			cfg:     Config{Heat: HeatConfig{Enabled: true, Reader: HeatReaderOptical}},
+			wantErr: "heat source enabled but SerialInterface is empty",
+		},
+		{
+			name: "heat optical reader with serial interface produces no error",
+			cfg: Config{
+				Heat: HeatConfig{Enabled: true, SerialInterface: testSerialUSB0, Reader: HeatReaderOptical},
+			},
+			wantErr: "",
+		},
+		{
 			name: "fully populated sources produce no error",
 			cfg: Config{
 				Heat:        HeatConfig{Enabled: true, SerialInterface: "/dev/ttyUSB0"},
@@ -173,6 +190,62 @@ func TestSourceFieldErrors(t *testing.T) {
 				},
 			},
 			wantErr: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			errs := sourceFieldErrors(tt.cfg)
+			if tt.wantErr == "" {
+				if len(errs) != 0 {
+					t.Errorf("sourceFieldErrors() = %v, want empty", errs)
+				}
+				return
+			}
+			if !containsSubstring(errs, tt.wantErr) {
+				t.Errorf("sourceFieldErrors() = %v, want to contain %q", errs, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestSourceFieldErrors_Optical401(t *testing.T) {
+	heat := func(o Optical401Config) Config {
+		return Config{Heat: HeatConfig{
+			Enabled: true, SerialInterface: testSerialUSB0, Reader: HeatReaderOptical401, Optical401: o,
+		}}
+	}
+	tests := []struct {
+		name    string
+		cfg     Config
+		wantErr string
+	}{
+		{
+			name:    "zero-value scaling produces no error",
+			cfg:     heat(Optical401Config{}),
+			wantErr: "",
+		},
+		{
+			name: "valid scaling produces no error",
+			cfg: heat(Optical401Config{
+				EnergyUnit: "kWh", EnergyDecimals: 2, VolumeDecimals: 3, PowerDecimals: 1, FlowDecimals: 4,
+			}),
+			wantErr: "",
+		},
+		{
+			name:    "invalid energy unit",
+			cfg:     heat(Optical401Config{EnergyUnit: "cal"}),
+			wantErr: `invalid Heat.Optical401.EnergyUnit "cal"`,
+		},
+		{
+			name:    "negative decimals",
+			cfg:     heat(Optical401Config{EnergyUnit: "GJ", VolumeDecimals: -1}),
+			wantErr: "invalid Heat.Optical401.VolumeDecimals -1",
+		},
+		{
+			name:    "too many decimals",
+			cfg:     heat(Optical401Config{EnergyUnit: "GJ", FlowDecimals: 5}),
+			wantErr: "invalid Heat.Optical401.FlowDecimals 5",
 		},
 	}
 

@@ -29,6 +29,13 @@ const (
 	SourceVentilation = "ventilation"
 )
 
+// Heat.Reader values selecting the physical interface to the heat meter.
+const (
+	HeatReaderMbus       = "mbus"
+	HeatReaderOptical    = "optical"
+	HeatReaderOptical401 = "optical401"
+)
+
 // Config is the top-level application configuration.
 type Config struct {
 	Debug         bool
@@ -93,13 +100,33 @@ type EnphaseConfig struct {
 	ScrapeInterval time.Duration
 }
 
-// HeatConfig configures the heat meter reader.
+// HeatConfig configures the heat meter reader. Reader selects the physical
+// interface: "mbus" (default), "optical" for the Kamstrup KMP IR eye, or
+// "optical401" for the pre-KMP Multical 401 and 66C IR eye. MbusAddress only
+// applies to the mbus reader; Optical401 only applies to the optical401
+// reader.
 type HeatConfig struct {
 	Enabled         bool
 	Measurement     string
+	Reader          string
 	SerialInterface string
 	MbusAddress     int
 	ScrapeInterval  time.Duration
+	Optical401      Optical401Config
+}
+
+// Optical401Config sets the value scaling for the optical401 reader. The
+// Multical 401/66C sends plain digit fields whose unit and decimal position
+// depend on the meter's CCC configuration code, so they must be configured.
+// The defaults match common Dutch district heating installs: energy in GJ
+// with 3 decimals, volume in m3 with 3 decimals, power in kW with 1 decimal,
+// flow in l/h with 1 decimal. Verify one reading against the meter LCD.
+type Optical401Config struct {
+	EnergyUnit     string // GJ (default), kWh, or MWh
+	EnergyDecimals int
+	VolumeDecimals int
+	PowerDecimals  int
+	FlowDecimals   int
 }
 
 // GridConfig configures the grid meter reader.

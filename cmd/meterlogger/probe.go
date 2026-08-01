@@ -16,7 +16,6 @@ import (
 	"github.com/yottabytesolutions/meterlogger/internal/adapters/source/ducobox"
 	"github.com/yottabytesolutions/meterlogger/internal/adapters/source/enphase"
 	"github.com/yottabytesolutions/meterlogger/internal/adapters/source/gridmeter"
-	"github.com/yottabytesolutions/meterlogger/internal/adapters/source/serialmbus"
 	"github.com/yottabytesolutions/meterlogger/internal/config"
 	"github.com/yottabytesolutions/meterlogger/internal/domain"
 )
@@ -116,15 +115,15 @@ func marshalReading[T any](v T) (json.RawMessage, error) {
 	return data, nil
 }
 
-// probeHeat opens the MBus serial port and takes one heat telegram.
+// probeHeat opens the serial port of the configured heat reader (mbus or
+// optical) and takes one heat telegram.
 func probeHeat(ctx context.Context, l *slog.Logger) (json.RawMessage, error) {
 	if cfg.Heat.SerialInterface == "" {
 		return nil, errors.New("heat source not configured: Heat.SerialInterface is empty")
 	}
-	addr := byte(cfg.Heat.MbusAddress) //nolint:gosec // G115: intentional conversion of config value
-	reader, err := serialmbus.NewReader(ctx, cfg.Heat.SerialInterface, addr, l)
+	reader, err := newHeatReader(ctx, l)
 	if err != nil {
-		return nil, fmt.Errorf("open heat mbus reader: %w", err)
+		return nil, fmt.Errorf("open heat reader: %w", err)
 	}
 	telegram, err := reader.ReadHeatTelegram(ctx)
 	if err != nil {
