@@ -112,8 +112,8 @@ As an alternative to M-Bus, Kamstrup Multical heat meters can be read through th
 appears as a USB serial device on the host.
 
 The reader speaks the Kamstrup KMP protocol and supports the KMP generation: Multical 402, 403, 601, 602, 603, 801,
-and 803. Two older models are **not** supported because they use different optical protocols and would need a separate
-reader: the MC 66C (pre-KMP) and the MC 401 (EN61107 fixed telegram).
+and 803. The pre-KMP MC 66C and MC 401 speak a different, simpler optical protocol and are handled by the separate
+`optical401` reader described below.
 
 Serial settings (fixed in code):
 
@@ -138,6 +138,33 @@ Notes:
   running maxima some M-Bus meters report.
 - This path is validated against the KMP protocol specification and synthesized frames, not yet against a physical
   meter.
+
+### Optical interface (Multical 401 and 66C)
+
+The pre-KMP Multical 401 and 66C, common in Dutch district heating, are read with `Heat.Reader: optical401`
+(`internal/adapters/source/multical401/`). The same kind of IR read head is used, but the protocol differs from KMP
+in two ways: it is plain ASCII instead of binary frames, and the link is asymmetric. The request goes out at
+**300 baud** and the response comes back at **1200 baud** on the same open port, both with 7 data bits, even parity,
+2 stop bits (fixed in code). The reader switches the port's baud rate after each request and flushes stale input
+before reading.
+
+Each scrape sends the 3-byte request `/#1` (no terminator). The meter answers 0.3 to 2 s later with one fixed
+telegram: ten fields of exactly seven decimal digits, separated by single spaces, terminated by CR. The fields are
+energy, volume, operating hours, t1, t2, t1-t2, current power, current flow, peak power (this year), and an info
+code. Temperatures are always hundredths of a degree; the scaling of the other fields depends on the meter's CCC
+configuration code and is set via the `Heat.Optical401` config keys (see
+[configuration.md](./configuration.md)). Any malformed response triggers a retry; up to 3 attempts are made with 5 s
+between them, the minimum repeat interval Kamstrup specifies.
+
+The serial number is fetched once at startup with `/#2` (first field of the response, the customer number). If the
+meter ignores that request, a warning is logged and the serial stays empty; some field units only answer `/#1`.
+`MeterId` is fixed to `"Kamstrup Multical 401/66C (optical)"`.
+
+Notes:
+
+- A nonzero info code is logged as a warning; the reading is still stored.
+- `MaxFlow` is always 0: this optical telegram carries a peak power field but no flow maximum.
+- The meter is battery powered and every poll costs battery life. Keep `Heat.ScrapeInterval` at 5 minutes or longer.
 
 ---
 

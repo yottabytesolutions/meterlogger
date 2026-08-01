@@ -209,6 +209,62 @@ func TestSourceFieldErrors(t *testing.T) {
 	}
 }
 
+func TestSourceFieldErrors_Optical401(t *testing.T) {
+	heat := func(o Optical401Config) Config {
+		return Config{Heat: HeatConfig{
+			Enabled: true, SerialInterface: testSerialUSB0, Reader: HeatReaderOptical401, Optical401: o,
+		}}
+	}
+	tests := []struct {
+		name    string
+		cfg     Config
+		wantErr string
+	}{
+		{
+			name:    "zero-value scaling produces no error",
+			cfg:     heat(Optical401Config{}),
+			wantErr: "",
+		},
+		{
+			name: "valid scaling produces no error",
+			cfg: heat(Optical401Config{
+				EnergyUnit: "kWh", EnergyDecimals: 2, VolumeDecimals: 3, PowerDecimals: 1, FlowDecimals: 4,
+			}),
+			wantErr: "",
+		},
+		{
+			name:    "invalid energy unit",
+			cfg:     heat(Optical401Config{EnergyUnit: "cal"}),
+			wantErr: `invalid Heat.Optical401.EnergyUnit "cal"`,
+		},
+		{
+			name:    "negative decimals",
+			cfg:     heat(Optical401Config{EnergyUnit: "GJ", VolumeDecimals: -1}),
+			wantErr: "invalid Heat.Optical401.VolumeDecimals -1",
+		},
+		{
+			name:    "too many decimals",
+			cfg:     heat(Optical401Config{EnergyUnit: "GJ", FlowDecimals: 5}),
+			wantErr: "invalid Heat.Optical401.FlowDecimals 5",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			errs := sourceFieldErrors(tt.cfg)
+			if tt.wantErr == "" {
+				if len(errs) != 0 {
+					t.Errorf("sourceFieldErrors() = %v, want empty", errs)
+				}
+				return
+			}
+			if !containsSubstring(errs, tt.wantErr) {
+				t.Errorf("sourceFieldErrors() = %v, want to contain %q", errs, tt.wantErr)
+			}
+		})
+	}
+}
+
 func containsSubstring(haystack []string, needle string) bool {
 	for _, s := range haystack {
 		if strings.Contains(s, needle) {

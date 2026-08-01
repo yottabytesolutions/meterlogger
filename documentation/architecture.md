@@ -63,6 +63,8 @@ flowchart TD
             gridreader["source/gridmeter/gridreader.go\nDSMR P1 serial"]
             mbusreader["source/serialmbus/mbusreader.go\nM-Bus serial via gombus client"]
             mbusconv["source/serialmbus/converters/gombus.go"]
+            kamstrup["source/kamstrup/\nKMP optical reader"]
+            mc401["source/multical401/\n401/66C optical reader"]
             envoy["source/enphase/envoyreader.go\nEnphase HTTP API"]
             token["source/enphase/token.go\nJWT management"]
             duco["source/ducobox/ducobox.go\nDucoBox HTTP API"]

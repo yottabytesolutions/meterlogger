@@ -95,10 +95,12 @@ func sourceFieldErrors(cfg Config) []string {
 	// (tests, embedding) keeps the documented default.
 	switch cfg.Heat.Reader {
 	case "", HeatReaderMbus, HeatReaderOptical:
+	case HeatReaderOptical401:
+		errs = append(errs, optical401FieldErrors(cfg.Heat.Optical401)...)
 	default:
 		errs = append(errs, fmt.Sprintf(
-			"invalid Heat.Reader %q; valid values are %s, %s",
-			cfg.Heat.Reader, HeatReaderMbus, HeatReaderOptical,
+			"invalid Heat.Reader %q; valid values are %s, %s, %s",
+			cfg.Heat.Reader, HeatReaderMbus, HeatReaderOptical, HeatReaderOptical401,
 		))
 	}
 	if cfg.Grid.Enabled && cfg.Grid.SerialInterface == "" {
@@ -111,6 +113,38 @@ func sourceFieldErrors(cfg Config) []string {
 		errs = append(errs, "ventilation source enabled but HostURL is empty")
 	}
 
+	return errs
+}
+
+// optical401FieldErrors checks the scaling settings for the optical401
+// reader. An empty EnergyUnit is accepted as GJ so a Config built without
+// Load (tests, embedding) keeps the documented default.
+func optical401FieldErrors(cfg Optical401Config) []string {
+	var errs []string
+	switch cfg.EnergyUnit {
+	case "", "GJ", "kWh", "MWh":
+	default:
+		errs = append(errs, fmt.Sprintf(
+			"invalid Heat.Optical401.EnergyUnit %q; valid values are GJ, kWh, MWh", cfg.EnergyUnit,
+		))
+	}
+	decimals := []struct {
+		name  string
+		value int
+	}{
+		{"EnergyDecimals", cfg.EnergyDecimals},
+		{"VolumeDecimals", cfg.VolumeDecimals},
+		{"PowerDecimals", cfg.PowerDecimals},
+		{"FlowDecimals", cfg.FlowDecimals},
+	}
+	const maxDecimals = 4
+	for _, d := range decimals {
+		if d.value < 0 || d.value > maxDecimals {
+			errs = append(errs, fmt.Sprintf(
+				"invalid Heat.Optical401.%s %d; must be between 0 and %d", d.name, d.value, maxDecimals,
+			))
+		}
+	}
 	return errs
 }
 

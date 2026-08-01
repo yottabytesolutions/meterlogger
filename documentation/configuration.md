@@ -192,7 +192,7 @@ Profiling:
 Heat:
   Enabled: true
   Measurement: heat_meter      # table name in all enabled sinks
-  Reader: mbus                 # mbus (default) or optical
+  Reader: mbus                 # mbus (default), optical, or optical401
   SerialInterface: /dev/ttyUSB0
   MbusAddress: 1               # M-Bus device address (1 to 250), mbus reader only
   ScrapeInterval: 30s
@@ -206,6 +206,25 @@ Heat:
 #   Reader: optical
 #   SerialInterface: /dev/ttyUSB0
 #   ScrapeInterval: 30s
+
+# Alternative: Kamstrup Multical 401 or 66C (pre-KMP) over the optical eye.
+# The meter is battery powered; keep ScrapeInterval at 5m or longer to spare
+# the battery. The Optical401 scaling depends on the meter's configuration
+# code; the defaults fit common Dutch district heating installs. Verify one
+# reading against the meter LCD and adjust the decimals if values are off by
+# a factor of ten. See meter-types.md for the protocol details.
+# Heat:
+#   Enabled: true
+#   Measurement: heat_meter
+#   Reader: optical401
+#   SerialInterface: /dev/ttyUSB0
+#   ScrapeInterval: 5m
+#   Optical401:
+#     EnergyUnit: GJ             # GJ (default), kWh, or MWh
+#     EnergyDecimals: 3          # raw/1000 GJ
+#     VolumeDecimals: 3          # raw/1000 m3
+#     PowerDecimals: 1           # raw/10 kW
+#     FlowDecimals: 1            # raw/10 l/h
 
 # ── Grid meter (DSMR P1 over serial) ───────────────────────
 Grid:
@@ -325,11 +344,25 @@ HTTPSERVER_PORT=8080
 | Key                    | Type     | Notes                               |
 |------------------------|----------|-------------------------------------|
 | `Heat.Enabled`         | bool     | Set `true` to activate              |
-| `Heat.Reader`          | string   | `mbus` (default) or `optical` for the Kamstrup IR eye |
+| `Heat.Reader`          | string   | `mbus` (default), `optical` (Kamstrup KMP IR eye), or `optical401` (Multical 401/66C IR eye) |
 | `Heat.SerialInterface` | string   | e.g. `/dev/ttyUSB0`                 |
 | `Heat.MbusAddress`     | int      | M-Bus device address, default `1`; `mbus` reader only |
 | `Heat.ScrapeInterval`  | duration | How often to poll the meter         |
 | `Heat.Measurement`     | string   | Table name in all enabled sinks     |
+
+The `Heat.Optical401` keys apply to the `optical401` reader only. The Multical 401/66C sends
+bare digit fields; the unit and decimal position depend on the meter's CCC configuration code
+and cannot be read from the telegram. The defaults fit common Dutch district heating installs.
+Calibration: verify one reading against the meter LCD and adjust the decimals if a value is
+off by a factor of ten.
+
+| Key                                | Type   | Notes                                      |
+|------------------------------------|--------|--------------------------------------------|
+| `Heat.Optical401.EnergyUnit`       | string | `GJ` (default), `kWh`, or `MWh`            |
+| `Heat.Optical401.EnergyDecimals`   | int    | 0 to 4, default `3` (raw/1000 GJ)          |
+| `Heat.Optical401.VolumeDecimals`   | int    | 0 to 4, default `3` (raw/1000 m3)          |
+| `Heat.Optical401.PowerDecimals`    | int    | 0 to 4, default `1` (raw/10 kW)            |
+| `Heat.Optical401.FlowDecimals`     | int    | 0 to 4, default `1` (raw/10 l/h)           |
 
 ### Grid
 

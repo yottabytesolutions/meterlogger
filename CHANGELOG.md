@@ -10,9 +10,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Optical (IR eye) reader for Kamstrup Multical heat meters via the KMP
   protocol, selected with `Heat.Reader: optical` (default stays `mbus`).
-  Supports the KMP generation (Multical 402, 403, 601, 602, 603, 801, 803);
-  the MC 66C and MC 401 use different optical protocols and are not
-  supported.
+  Supports the KMP generation (Multical 402, 403, 601, 602, 603, 801, 803).
+- Optical reader for the pre-KMP Kamstrup Multical 401 and 66C, selected
+  with `Heat.Reader: optical401`. Sends the ASCII poll at 300 baud and reads
+  the fixed ten-field telegram at 1200 baud. Value scaling is configurable
+  via the `Heat.Optical401` keys; defaults fit common Dutch district heating
+  installs.
 - Systemd template unit and setup recipe for running sources without
   containers (`deploy/systemd/`).
 

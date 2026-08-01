@@ -68,6 +68,14 @@ func setSourceDefaults() {
 	// without the key keep working.
 	viper.SetDefault("Heat.MbusAddress", 1)
 	viper.SetDefault("Heat.Reader", HeatReaderMbus)
+
+	// optical401 scaling defaults for common Dutch district heating installs;
+	// see documentation/configuration.md.
+	viper.SetDefault("Heat.Optical401.EnergyUnit", "GJ")
+	viper.SetDefault("Heat.Optical401.EnergyDecimals", 3) //nolint:mnd // documented default: raw/1000 GJ
+	viper.SetDefault("Heat.Optical401.VolumeDecimals", 3) //nolint:mnd // documented default: raw/1000 m3
+	viper.SetDefault("Heat.Optical401.PowerDecimals", 1)
+	viper.SetDefault("Heat.Optical401.FlowDecimals", 1)
 }
 
 func setSinkDefaults() {
