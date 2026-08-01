@@ -62,6 +62,12 @@ func TestLoad_DefaultsNoFile(t *testing.T) {
 	if cfg.Grid.Gas.Measurement != "gas_meter" {
 		t.Errorf("Grid.Gas.Measurement default = %q, want %q", cfg.Grid.Gas.Measurement, "gas_meter")
 	}
+	wantMQTT := MQTTConfig{
+		TopicPrefix: "meterlogger", HomeAssistantDiscovery: true, DiscoveryPrefix: "homeassistant", QoS: 1,
+	}
+	if cfg.MQTT != wantMQTT {
+		t.Errorf("MQTT defaults = %+v, want %+v", cfg.MQTT, wantMQTT)
+	}
 }
 
 func TestLoad_EnvOnlyOverride(t *testing.T) {
@@ -167,6 +173,9 @@ func TestSetSinkDefaults(t *testing.T) {
 		{"TDEngine.Port", 6041},
 		{"TDEngine.User", "root"},
 		{"TDEngine.Password", "taosdata"},
+		{"MQTT.TopicPrefix", "meterlogger"},
+		{"MQTT.DiscoveryPrefix", "homeassistant"},
+		{"MQTT.QoS", 1},
 	}
 
 	for _, tt := range tests {

@@ -88,6 +88,27 @@ TDEngine:
   Password: taosdata
   Database: meterlogger
 
+# ── MQTT sink (Home Assistant) ───────────────────────────────
+# Publishes every reading as JSON to an MQTT broker and announces the sensors
+# to Home Assistant via MQTT discovery: one device per meter, sensors with
+# correct device/state classes, Energy dashboard ready. No YAML needed on the
+# Home Assistant side. See documentation/deployment.md, section "Home
+# Assistant".
+MQTT:
+  Enabled: false
+  BrokerURL: tcp://mosquitto:1883 # or ssl://host:8883
+  Username: ""
+  Password: ""
+  # ClientID must be unique per broker. Empty means "meterlogger", or
+  # "meterlogger-<source>" when the --source flag is set. Set it explicitly
+  # when several processes share one broker without --source.
+  ClientID: ""
+  TopicPrefix: meterlogger # state topics: <prefix>/<measurement>
+  HomeAssistantDiscovery: true
+  DiscoveryPrefix: homeassistant # must match Home Assistant's discovery prefix
+  QoS: 1 # 0 or 1
+  RetainState: false # retain state messages (last reading visible to new subscribers)
+
 # ── OpenTelemetry tracing ──────────────────────────────────
 OTEL:
   Enabled: false

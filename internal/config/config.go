@@ -19,6 +19,7 @@ const (
 	SinkTimescaleDB = "timescaledb"
 	SinkClickHouse  = "clickhouse"
 	SinkTDEngine    = "tdengine"
+	SinkMQTT        = "mqtt"
 )
 
 // Source names as used by the --source flag.
@@ -51,6 +52,7 @@ type Config struct {
 	TimescaleDB   TimescaleDBConfig
 	ClickHouse    ClickHouseConfig
 	TDEngine      TDEngineConfig
+	MQTT          MQTTConfig
 	Ventilation   VentilationConfig
 	OTEL          OTELConfig
 	Profiling     ProfilingConfig
@@ -203,6 +205,33 @@ type ClickHouseConfig struct {
 	User     string
 	Password string
 	Database string
+}
+
+// MQTTConfig configures the MQTT sink, which publishes every reading to an
+// MQTT broker and announces the sensors to Home Assistant via MQTT discovery.
+// ClientID defaults to "meterlogger", suffixed with the --source filter when
+// one is set. MQTT client IDs must be unique per broker: when several
+// meterlogger processes share one broker, give each its own ClientID (or use
+// the --source filter, which makes the default unique per source).
+type MQTTConfig struct {
+	Enabled   bool
+	BrokerURL string // e.g. tcp://host:1883 or ssl://host:8883
+	Username  string
+	Password  string
+	ClientID  string
+	// TopicPrefix is the root of every state topic (default "meterlogger").
+	TopicPrefix string
+	// HomeAssistantDiscovery announces every sensor via retained MQTT
+	// discovery config messages (default true).
+	HomeAssistantDiscovery bool
+	// DiscoveryPrefix is the Home Assistant discovery prefix (default
+	// "homeassistant").
+	DiscoveryPrefix string
+	// QoS is the publish quality of service: 0 or 1 (default 1).
+	QoS int
+	// RetainState marks state messages as retained so subscribers see the
+	// last reading immediately (default false).
+	RetainState bool
 }
 
 // TDEngineConfig configures the TDEngine sink.

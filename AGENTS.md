@@ -45,8 +45,16 @@ For a sink with its own storage model (like ClickHouse or QuestDB):
 3. Wire it in `cmd/meterlogger/sinks.go` (`buildSourceSinks`); the compiler forces every
    source to provide a constructor for it.
 
-Either way, add the sink to the sink table in `documentation/README.md` and config examples
-in `documentation/configuration.md`.
+For a non-database sink (like stdout or MQTT): add a `sinkInit` row in
+`buildSourceSinks` and register the config struct, defaults, and validation in
+`internal/config/` (including the sink name constant and the "at least one sink" check
+in `Validate`). The MQTT sink additionally keeps one shared broker client per process in
+`cmd/meterlogger/mqtt.go`, closed from `runtime.go`; follow that pattern for other
+connection-holding non-DB sinks.
+
+Either way, add the sink to the sink table in `documentation/README.md` and the root
+`README.md`, and config examples in `documentation/configuration.md` and
+`config.example.yaml`.
 
 ## Adding a new source
 

@@ -51,6 +51,7 @@ At least one sink must be enabled. The process exits with a fatal error if all s
 | `TimescaleDB` | TimescaleDB (PostgreSQL ext) |     5432     |        yes         |
 | `ClickHouse`  | ClickHouse                   |     9000     |        yes         |
 | `TDEngine`    | TDEngine                     |     6041     |        yes         |
+| `MQTT`        | MQTT broker + Home Assistant |  1883/8883   |        n/a         |
 | `Stdout`      | Log output (debug only)      |      -       |        n/a         |
 
 The `Stdout` sink logs every record instead of persisting it. Use it to inspect meter data during
@@ -172,6 +173,22 @@ TDEngine:
   User: root
   Password: taosdata
   Database: meterlogger
+
+# ── MQTT sink (Home Assistant) ───────────────────────────────
+# Publishes every reading as JSON and announces the sensors to
+# Home Assistant via MQTT discovery. See deployment.md, section
+# "Home Assistant".
+MQTT:
+  Enabled: false
+  BrokerURL: tcp://mosquitto:1883   # or ssl://host:8883
+  Username: ""
+  Password: ""
+  ClientID: ""                 # default: meterlogger, plus "-<source>" with --source
+  TopicPrefix: meterlogger
+  HomeAssistantDiscovery: true
+  DiscoveryPrefix: homeassistant
+  QoS: 1                       # 0 or 1
+  RetainState: false           # retain state messages so subscribers see the last reading
 
 # ── OpenTelemetry tracing ──────────────────────────────────
 # Emit traces to an OTLP/gRPC collector. Logs auto-correlate via traceID/spanID.
@@ -316,6 +333,11 @@ TDENGINE_PORT=6041
 TDENGINE_USER=root
 TDENGINE_PASSWORD=taosdata
 TDENGINE_DATABASE=meterlogger
+
+MQTT_ENABLED=true
+MQTT_BROKERURL=tcp://mosquitto:1883
+MQTT_USERNAME=meterlogger
+MQTT_PASSWORD=secret
 
 HEAT_ENABLED=true
 HEAT_READER=mbus
@@ -503,6 +525,42 @@ capture, so expect one row per 5 minutes or per hour, not one per second. See
 | `TDEngine.User`     | string | `root`     |               |
 | `TDEngine.Password` | string | `taosdata` |               |
 | `TDEngine.Database` | string |            |               |
+
+### MQTT
+
+Publishes every reading as a flat JSON message and announces the sensors to Home Assistant via
+[MQTT discovery](https://www.home-assistant.io/integrations/mqtt/#mqtt-discovery). See
+[deployment.md - Home Assistant](./deployment.md#home-assistant) for what shows up in Home
+Assistant, broker requirements, and a Mosquitto compose snippet.
+
+| Key                           | Type   | Default         | Notes                                                    |
+|-------------------------------|--------|-----------------|----------------------------------------------------------|
+| `MQTT.Enabled`                | bool   | `false`         |                                                          |
+| `MQTT.BrokerURL`              | string |                 | `tcp://host:1883` or `ssl://host:8883`; required         |
+| `MQTT.Username`               | string |                 | Optional broker credentials                              |
+| `MQTT.Password`               | string |                 |                                                          |
+| `MQTT.ClientID`               | string | `meterlogger`   | With `--source`, defaults to `meterlogger-<source>`      |
+| `MQTT.TopicPrefix`            | string | `meterlogger`   | Root of every state topic                                |
+| `MQTT.HomeAssistantDiscovery` | bool   | `true`          | Publish retained discovery configs                       |
+| `MQTT.DiscoveryPrefix`        | string | `homeassistant` | Must match the discovery prefix in Home Assistant        |
+| `MQTT.QoS`                    | int    | `1`             | `0` or `1`                                               |
+| `MQTT.RetainState`            | bool   | `false`         | Retain state messages                                    |
+
+MQTT client IDs must be unique per broker. One meterlogger process uses one client. When several
+processes share a broker (the one-container-per-source model), give each its own `ClientID`, or
+rely on the `--source` filter, which makes the default id unique per source.
+
+State topics: `<TopicPrefix>/<Measurement>` per source (for example `meterlogger/grid_meter`).
+The DucoBox uses the same table split as the database sinks: `<prefix>/<base>_box_general`,
+`<prefix>/<base>_node/<node_id>`, `<prefix>/<base>_box_node/<node_id>`, and
+`<prefix>/<base>_valve/<node_id>`. Solar microinverters publish on
+`<prefix>/<measurement>_inverters/<inverter_serial>`. The sink availability topic is
+`<prefix>/status` (`online`/`offline`, retained, backed by an MQTT last will).
+
+Field names in the JSON payloads match the SQL sink column names. Heat energy additionally gets
+derived `energy_kwh` and `volume_m3` fields: Home Assistant's Energy dashboard works in kWh, so
+the joule counter is converted (1 kWh = 3.6 MJ) and the kWh field is the one announced via
+discovery. The `energy_gj` field is still published for consumers that prefer GJ.
 
 ### Stdout (debug)
 

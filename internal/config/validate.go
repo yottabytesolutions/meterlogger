@@ -8,7 +8,8 @@ func Validate(cfg Config, sourceFilter string) []string {
 	var errs []string
 
 	if !cfg.QuestDB.Enabled && !cfg.Postgres.Enabled && !cfg.MySQL.Enabled &&
-		!cfg.TimescaleDB.Enabled && !cfg.ClickHouse.Enabled && !cfg.TDEngine.Enabled {
+		!cfg.TimescaleDB.Enabled && !cfg.ClickHouse.Enabled && !cfg.TDEngine.Enabled &&
+		!cfg.MQTT.Enabled {
 		errs = append(errs, "no sinks enabled; set Enabled: true for at least one sink")
 	}
 
@@ -79,6 +80,23 @@ func sinkFieldErrors(cfg Config) []string {
 		if s.database == "" {
 			errs = append(errs, fmt.Sprintf("%s sink enabled but Database is empty", s.name))
 		}
+	}
+	errs = append(errs, mqttFieldErrors(cfg.MQTT)...)
+	return errs
+}
+
+// mqttFieldErrors checks the fields the MQTT sink needs to connect and
+// publish. Only evaluated when the sink is enabled.
+func mqttFieldErrors(cfg MQTTConfig) []string {
+	if !cfg.Enabled {
+		return nil
+	}
+	var errs []string
+	if cfg.BrokerURL == "" {
+		errs = append(errs, "mqtt sink enabled but BrokerURL is empty")
+	}
+	if cfg.QoS != 0 && cfg.QoS != 1 {
+		errs = append(errs, fmt.Sprintf("invalid MQTT.QoS %d; valid values are 0 and 1", cfg.QoS))
 	}
 	return errs
 }

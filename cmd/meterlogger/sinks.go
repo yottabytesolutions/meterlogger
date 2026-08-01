@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/clickhouse"
+	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/mqtt"
 	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/qdb"
 	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/sqlsink"
 	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/stdout"
@@ -33,6 +34,7 @@ func buildSourceSinks[R any](
 	dbs dbConnections,
 	measurement string,
 	newQuestDBWriter func(client *qdb.DBClient, measurement string, l *slog.Logger) R,
+	newMQTTWriter func(client *mqtt.Client, measurement string, l *slog.Logger) R,
 	newSQLStore func(ctx context.Context, db *sqlsink.DB, measurement string, l *slog.Logger) (R, error),
 	newClickHouseStore func(ctx context.Context, db *clickhouse.DB, measurement string, l *slog.Logger) (R, error),
 ) []R {
@@ -54,6 +56,14 @@ func buildSourceSinks[R any](
 				return zero, fmt.Errorf("stdout sink does not implement %T", zero)
 			}
 			return sink, nil
+		}},
+		{config.SinkMQTT, cfg.MQTT.Enabled, func() (R, error) {
+			client, err := sharedMQTTClient(ctx, l, healthSrv)
+			if err != nil {
+				var zero R
+				return zero, err
+			}
+			return newMQTTWriter(client, measurement, l), nil
 		}},
 	}
 	for _, db := range dbs.sql() {

@@ -94,8 +94,10 @@ func (rt *app) startSources(ctx context.Context) {
 }
 
 // shutdown releases everything newRuntime assembled, in reverse order: sink
-// connections first, then profiling, then tracing.
+// connections first, then profiling, then tracing. The MQTT client goes first
+// so its retained offline status reaches the broker before teardown.
 func (rt *app) shutdown() {
+	closeMQTT()
 	closeAll(rt.dbs.closers())
 	if err := rt.stopProfiling(); err != nil {
 		logger.Error("failed to stop profiling", slog.Any("error", err))

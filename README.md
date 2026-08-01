@@ -39,11 +39,15 @@ for each meter type you want to read.
 | TimescaleDB | PostgreSQL extension | yes               |
 | ClickHouse  | column-store, OLAP   | yes               |
 | TDEngine    | time-series, IoT     | yes               |
+| MQTT        | message broker, HA   | n/a               |
 | Stdout      | debug, logs records  | n/a               |
 
 At least one sink must be enabled. All enabled sinks receive every write.
 The stdout sink logs data instead of persisting it; enable it with
 `Stdout.Enabled: true` for debugging, not for production.
+The MQTT sink publishes every reading to a broker and announces the sensors
+to Home Assistant via MQTT discovery; see
+[deployment.md](documentation/deployment.md#home-assistant).
 
 ## Quick start
 
