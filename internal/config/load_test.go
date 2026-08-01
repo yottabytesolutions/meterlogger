@@ -56,6 +56,12 @@ func TestLoad_DefaultsNoFile(t *testing.T) {
 	if cfg.HTTPServer.Port != 8080 {
 		t.Errorf("HTTPServer.Port default = %d, want 8080", cfg.HTTPServer.Port)
 	}
+	if cfg.Grid.Gas.Enabled {
+		t.Error("Grid.Gas.Enabled should default to false")
+	}
+	if cfg.Grid.Gas.Measurement != "gas_meter" {
+		t.Errorf("Grid.Gas.Measurement default = %q, want %q", cfg.Grid.Gas.Measurement, "gas_meter")
+	}
 }
 
 func TestLoad_EnvOnlyOverride(t *testing.T) {

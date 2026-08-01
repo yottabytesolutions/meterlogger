@@ -155,6 +155,7 @@ func (gr *GridReader) ReadGridTelegrams(ctx context.Context) error {
 						gr.logger.ErrorContext(ctx, "Failed to parse telegram", slog.Any("error", parseErr))
 						continue
 					}
+					telegram.MBusDevices = parseMBusDevices(ctx, message, gr.logger)
 					gr.logger.DebugContext(ctx, "grid telegram parsed, queuing", debuglog.GridAttrs(telegram))
 					select {
 					case gr.telegrams <- telegram:

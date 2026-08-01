@@ -60,6 +60,35 @@ type GridTelegram struct {
 }
 ```
 
+### GasReading
+
+```go
+// internal/domain/gas.go
+type GasReading struct {
+    CapturedAt time.Time // meter-supplied capture time
+    ReceivedAt time.Time // when the carrying telegram was read
+    Channel    int       // M-Bus channel (1 to 4), assigned by installation order
+    DeviceType int       // EN 13757-3 medium code: 3 = gas
+    SerialNo   string
+    ReadingM3  float64   // cumulative gas volume (m³)
+}
+```
+
+Gas readings arrive as M-Bus subdevice lines inside the grid meter's P1 telegrams; see
+[meter-types.md](./meter-types.md#m-bus-subdevices-gas). Two timestamps matter:
+
+- **CapturedAt** is when the gas meter took the reading, as reported in the telegram. The meter
+  captures a new value every 5 minutes (DSMR 5) or hourly (DSMR 4 and older).
+- **ReceivedAt** is when MeterLogger read the telegram that carried the reading. Telegrams repeat
+  the last capture every second, so ReceivedAt advances while CapturedAt stays fixed.
+
+**Deduplication rule:** the service stores a row only when CapturedAt changes for a given channel.
+Repeated telegrams carrying the same capture are dropped. Expect one row per capture interval, not
+one per telegram.
+
+**Device type codes** follow EN 13757-3: `3` is gas and is the only medium stored today. Subdevices
+with other codes (4 heat, 7 water) are detected but skipped.
+
 ### EnvoySolarData
 
 ```go
@@ -196,6 +225,20 @@ Written by `qdb_grid_writer.go`.
 | `PowerOutputP1/P2/P3` | Long      | W                     |
 | `timestamp`           | Timestamp | From telegram.Time    |
 
+### gas_meter (configurable name)
+
+Written when `Grid.Gas.Enabled` is set; name from `Grid.Gas.Measurement`. One row per new gas
+meter capture (see the deduplication rule above).
+
+| Column        | Type      | Notes                                        |
+|---------------|-----------|----------------------------------------------|
+| `serial_no`   | Symbol    | Gas meter serial number                      |
+| `channel`     | Long      | M-Bus channel (1 to 4)                       |
+| `device_type` | Long      | EN 13757-3 medium code, `3` for gas          |
+| `received_at` | Timestamp | When the carrying telegram was read          |
+| `reading_m3`  | Double    | Cumulative gas volume (m³)                   |
+| `timestamp`   | Timestamp | CapturedAt: meter-supplied capture time      |
+
 ### solar (configurable name)
 
 Written by `qdb_solar_writer.go`.
@@ -288,6 +331,22 @@ types. The `schemastore` migration framework applies engine-specific DDL adjustm
 standard PostgreSQL schema.
 
 Refer to the `internal/adapters/sink/<backend>/` package for the exact DDL used by each engine.
+
+### Gas table (SQL sinks and ClickHouse)
+
+When `Grid.Gas.Enabled` is set, the SQL sinks and ClickHouse create a table named after
+`Grid.Gas.Measurement` (default `gas_meter`):
+
+| Column        | Type      | Notes                                   |
+|---------------|-----------|-----------------------------------------|
+| `ts`          | timestamp | CapturedAt: meter-supplied capture time |
+| `received_at` | timestamp | When the carrying telegram was read     |
+| `channel`     | int       | M-Bus channel (1 to 4)                  |
+| `device_type` | int       | EN 13757-3 medium code, `3` for gas     |
+| `serial_no`   | text      | Gas meter serial number                 |
+| `reading_m3`  | double    | Cumulative gas volume (m³)              |
+
+Deduplication happens in the service before the write; the stores insert what they are given.
 
 ---
 

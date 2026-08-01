@@ -76,6 +76,8 @@ func setSourceDefaults() {
 	viper.SetDefault("Heat.Optical401.VolumeDecimals", 3) //nolint:mnd // documented default: raw/1000 m3
 	viper.SetDefault("Heat.Optical401.PowerDecimals", 1)
 	viper.SetDefault("Heat.Optical401.FlowDecimals", 1)
+
+	viper.SetDefault("Grid.Gas.Measurement", "gas_meter")
 }
 
 func setSinkDefaults() {

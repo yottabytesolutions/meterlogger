@@ -236,6 +236,31 @@ Timestamps use the `Europe/Amsterdam` timezone.
 The reader computes CRC16-CCITT over the full message (from `/` to and including `!`) and compares it against the
 4-character hex value that follows `!`.
 
+### M-Bus subdevices (gas)
+
+DSMR meters can carry up to four subdevices (gas, water, thermal) attached to the electricity meter over M-Bus. Their
+readings appear as extra OBIS lines in the same P1 telegram, on channels 1 to 4:
+
+```
+0-1:24.1.0(003)
+0-1:96.1.0(4730303339303031393336393930363139)
+0-1:24.2.1(200101120000W)(00123.456*m3)
+```
+
+Key points:
+
+- **Channels are assigned by installation order**, not by medium. The gas meter can sit on any channel.
+- **Detection is by device type, never by channel.** `0-n:24.1.0` carries the EN 13757-3 medium code: `3` gas,
+  `4` heat, `7` water. MeterLogger stores gas (`3`) when `Grid.Gas.Enabled` is set; water and thermal subdevices are
+  detected but not stored yet.
+- **Supported telegram formats:** DSMR 2.2+ through DSMR 5. DSMR 5 meters capture a new gas value every 5 minutes;
+  DSMR 4 and older capture hourly. The telegram repeats the last capture every second, so readings are deduplicated
+  on the meter-supplied capture time before storage.
+
+There is no separate gas source or serial connection. Enabling `Grid.Gas` makes the grid source store the gas lines it
+already receives. See [configuration.md](./configuration.md#gridgas) for the config keys and
+[data-model.md](./data-model.md#gasreading) for the stored fields.
+
 ---
 
 ## Solar meter (Enphase Envoy)

@@ -108,6 +108,59 @@ func TestGridStore_InsertArgs(t *testing.T) {
 	}
 }
 
+func newGasStore(t *testing.T, dc dialectCase) (*sqlsink.GasStore, sqlmock.Sqlmock) {
+	t.Helper()
+	db, mock := testDB(t, dc.dialect)
+	expectMigrationAlreadyApplied(mock, dc, dc.prefix+"_gas_gas")
+	store, err := sqlsink.NewGasStore(context.Background(), db, "gas", testLogger())
+	if err != nil {
+		t.Fatalf("NewGasStore: %v", err)
+	}
+	return store, mock
+}
+
+// TestGasStore_InsertArgs asserts the exact argument order of the gas insert
+// for both placeholder styles, so a column/value transposition fails the test.
+func TestGasStore_InsertArgs(t *testing.T) {
+	capturedAt := time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
+	receivedAt := capturedAt.Add(2 * time.Minute)
+	reading := domain.GasReading{
+		CapturedAt: capturedAt,
+		ReceivedAt: receivedAt,
+		Channel:    1,
+		DeviceType: domain.DeviceTypeGas,
+		SerialNo:   "sn-gas-1",
+		ReadingM3:  1234.567,
+	}
+	for _, dc := range []dialectCase{dialectCases()[0], dialectCases()[1]} {
+		t.Run(dc.prefix, func(t *testing.T) {
+			store, mock := newGasStore(t, dc)
+			mock.ExpectExec("INSERT INTO gas").
+				WithArgs(capturedAt, receivedAt, 1, domain.DeviceTypeGas, "sn-gas-1", 1234.567).
+				WillReturnResult(sqlmock.NewResult(1, 1))
+			if err := store.StoreGasReading(context.Background(), reading); err != nil {
+				t.Errorf("StoreGasReading: %v", err)
+			}
+			if metErr := mock.ExpectationsWereMet(); metErr != nil {
+				t.Error(metErr)
+			}
+		})
+	}
+}
+
+func TestGasStore_FlushAndCloseAreNoOps(t *testing.T) {
+	store, mock := newGasStore(t, dialectCases()[0])
+	if err := store.Flush(context.Background()); err != nil {
+		t.Errorf("Flush: %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Errorf("Close: %v", err)
+	}
+	if metErr := mock.ExpectationsWereMet(); metErr != nil {
+		t.Error(metErr)
+	}
+}
+
 func TestSolarStore_InsertArgs(t *testing.T) {
 	dc := dialectCases()[0]
 	db, mock := testDB(t, dc.dialect)
@@ -292,6 +345,14 @@ func TestStore_ErrorPaths(t *testing.T) {
 		}
 		mock.ExpectExec("INSERT INTO grid").WillReturnError(errTest)
 		if storeErr := store.StoreGridTelegram(context.Background(), domain.GridTelegram{}); storeErr == nil {
+			t.Error("expected error, got nil")
+		}
+	})
+
+	t.Run("gas", func(t *testing.T) {
+		store, mock := newGasStore(t, dc)
+		mock.ExpectExec("INSERT INTO gas").WillReturnError(errTest)
+		if err := store.StoreGasReading(context.Background(), domain.GasReading{}); err == nil {
 			t.Error("expected error, got nil")
 		}
 	})

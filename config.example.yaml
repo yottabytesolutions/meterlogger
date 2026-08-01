@@ -131,6 +131,18 @@ Grid:
   SerialInterface: /dev/ttyUSB0
   # No ScrapeInterval: the meter pushes data every second
 
+  # Gas meter readings from the same P1 port. The gas meter is attached to
+  # the electricity meter over M-Bus; its readings arrive inside the P1
+  # telegrams. Gas requires the grid source: same process, same serial port.
+  # There is no separate gas source.
+  #
+  # The gas value updates every 5 minutes (DSMR 5) or hourly (DSMR 4 and
+  # older). Rows are stored only when the meter reports a new capture, not
+  # for every telegram.
+  Gas:
+    Enabled: false
+    Measurement: gas_meter # table name in all enabled sinks (default)
+
 # ── Solar (Enphase Envoy HTTP API) ─────────────────────────
 Enphase:
   Enabled: false

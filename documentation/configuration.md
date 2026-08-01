@@ -233,6 +233,12 @@ Grid:
   SerialInterface: /dev/ttyUSB1
   # No ScrapeInterval: the meter pushes data every second
 
+  # Gas meter readings carried in the same P1 telegrams. Not a standalone
+  # source: one process reads both power and gas from the P1 port.
+  Gas:
+    Enabled: false
+    Measurement: gas_meter       # table name in all enabled sinks
+
 # ── Solar (Enphase Envoy HTTP API) ─────────────────────────
 Enphase:
   Enabled: false               # disable if no Enphase system is present
@@ -319,6 +325,8 @@ HEAT_SCRAPEINTERVAL=30s
 
 GRID_ENABLED=true
 GRID_SERIALINTERFACE=/dev/ttyUSB1
+GRID_GAS_ENABLED=true
+GRID_GAS_MEASUREMENT=gas_meter
 
 FLUSHINTERVAL=10s
 HTTPSERVER_PORT=8080
@@ -371,6 +379,37 @@ off by a factor of ten.
 | `Grid.Enabled`         | bool   | Set `true` to activate          |
 | `Grid.SerialInterface` | string | e.g. `/dev/ttyUSB1`             |
 | `Grid.Measurement`     | string | Table name in all enabled sinks |
+
+#### Grid.Gas
+
+Many Dutch installations have the gas meter attached to the electricity meter over M-Bus. The gas
+readings then arrive on the P1 port, inside the same telegrams the grid source already reads. Set
+`Grid.Gas.Enabled: true` to store them.
+
+This is **not** a standalone source. One process reads both power and gas from the P1 port; there is
+no `--source gas` value and no separate serial connection. Gas readings only flow when the grid
+source runs (via `Grid.Enabled: true` or `--source grid`).
+
+| Key                    | Type   | Default     | Notes                           |
+|------------------------|--------|-------------|---------------------------------|
+| `Grid.Gas.Enabled`     | bool   | `false`     | Set `true` to store gas readings |
+| `Grid.Gas.Measurement` | string | `gas_meter` | Table name in all enabled sinks |
+
+```yaml
+Grid:
+  Enabled: true
+  Measurement: grid_meter
+  SerialInterface: /dev/ttyUSB1
+  Gas:
+    Enabled: true
+    Measurement: gas_meter
+```
+
+The gas meter updates its value every 5 minutes (DSMR 5) or hourly (DSMR 4 and older), while the
+telegram repeats the last capture far more often. A row is stored only when the meter reports a new
+capture, so expect one row per 5 minutes or per hour, not one per second. See
+[data-model.md](./data-model.md#gas_meter-configurable-name) for the table layout and
+[meter-types.md](./meter-types.md#m-bus-subdevices-gas) for the protocol details.
 
 ### Solar (Enphase)
 

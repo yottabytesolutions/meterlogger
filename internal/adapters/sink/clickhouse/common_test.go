@@ -98,6 +98,18 @@ func TestNewGridStore_MigrationRuns(t *testing.T) {
 	}
 }
 
+func TestNewGasStore_MigrationRuns(t *testing.T) {
+	db, mock := testDB(t)
+	expectCHMigrationFull(mock, "clickhouse_gas_gas", 1)
+	_, err := clickhouse.NewGasStore(context.Background(), db, "gas", testLogger())
+	if err != nil {
+		t.Fatalf("NewGasStore: %v", err)
+	}
+	if metErr := mock.ExpectationsWereMet(); metErr != nil {
+		t.Error(metErr)
+	}
+}
+
 func TestNewSolarStore_MigrationRuns(t *testing.T) {
 	db, mock := testDB(t)
 	expectCHMigrationFull(mock, "clickhouse_solar_solar", 2)

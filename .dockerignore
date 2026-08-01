@@ -21,7 +21,6 @@ Makefile
 README.md
 documentation/
 docker-compose.yaml
-schemas/
 testresponse/
 !go.mod
 !go.sum

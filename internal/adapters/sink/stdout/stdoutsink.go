@@ -36,6 +36,16 @@ func (s *Store) StoreGridTelegram(ctx context.Context, t domain.GridTelegram) er
 	return nil
 }
 
+// StoreGasReading logs a gas reading to stdout.
+func (s *Store) StoreGasReading(ctx context.Context, r domain.GasReading) error {
+	s.logger.DebugContext(ctx, "gas reading received",
+		slog.String("serial", r.SerialNo),
+		slog.Float64("readingM3", r.ReadingM3),
+		slog.Time("capturedAt", r.CapturedAt),
+	)
+	return nil
+}
+
 // StoreEnvoySolarData logs solar data to stdout.
 func (s *Store) StoreEnvoySolarData(ctx context.Context, d domain.EnvoySolarData) error {
 	s.logger.DebugContext(ctx, "solar data received",
