@@ -67,6 +67,7 @@ func setSourceDefaults() {
 	// became configurable; keep that as the default so existing configs
 	// without the key keep working.
 	viper.SetDefault("Heat.MbusAddress", 1)
+	viper.SetDefault("Heat.Reader", HeatReaderMbus)
 }
 
 func setSinkDefaults() {

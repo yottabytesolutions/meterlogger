@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Optical (IR eye) reader for Kamstrup Multical heat meters via the KMP
+  protocol, selected with `Heat.Reader: optical` (default stays `mbus`).
+  Supports the KMP generation (Multical 402, 403, 601, 602, 603, 801, 803);
+  the MC 66C and MC 401 use different optical protocols and are not
+  supported.
 - Systemd template unit and setup recipe for running sources without
   containers (`deploy/systemd/`).
 

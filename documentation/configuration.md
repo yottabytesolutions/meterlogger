@@ -192,9 +192,20 @@ Profiling:
 Heat:
   Enabled: true
   Measurement: heat_meter      # table name in all enabled sinks
+  Reader: mbus                 # mbus (default) or optical
   SerialInterface: /dev/ttyUSB0
-  MbusAddress: 1               # M-Bus device address (1 to 250)
+  MbusAddress: 1               # M-Bus device address (1 to 250), mbus reader only
   ScrapeInterval: 30s
+
+# Alternative: Kamstrup Multical over the optical (IR) eye. The IR head is a
+# USB serial device; the link runs at 1200 baud, 8 data bits, no parity,
+# 2 stop bits (fixed in code). See meter-types.md for supported models.
+# Heat:
+#   Enabled: true
+#   Measurement: heat_meter
+#   Reader: optical
+#   SerialInterface: /dev/ttyUSB0
+#   ScrapeInterval: 30s
 
 # ── Grid meter (DSMR P1 over serial) ───────────────────────
 Grid:
@@ -282,6 +293,7 @@ TDENGINE_PASSWORD=taosdata
 TDENGINE_DATABASE=meterlogger
 
 HEAT_ENABLED=true
+HEAT_READER=mbus
 HEAT_SERIALINTERFACE=/dev/ttyUSB0
 HEAT_MBUSADDRESS=1
 HEAT_SCRAPEINTERVAL=30s
@@ -313,8 +325,9 @@ HTTPSERVER_PORT=8080
 | Key                    | Type     | Notes                               |
 |------------------------|----------|-------------------------------------|
 | `Heat.Enabled`         | bool     | Set `true` to activate              |
+| `Heat.Reader`          | string   | `mbus` (default) or `optical` for the Kamstrup IR eye |
 | `Heat.SerialInterface` | string   | e.g. `/dev/ttyUSB0`                 |
-| `Heat.MbusAddress`     | int      | M-Bus device address, default `1` |
+| `Heat.MbusAddress`     | int      | M-Bus device address, default `1`; `mbus` reader only |
 | `Heat.ScrapeInterval`  | duration | How often to poll the meter         |
 | `Heat.Measurement`     | string   | Table name in all enabled sinks     |
 

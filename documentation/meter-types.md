@@ -105,6 +105,40 @@ The converter (`converters/gombus.go`) searches the M-Bus data records by unit t
 
 `MeterId` is formatted as `"{Manufacturer} ({DeviceType})"` using values from the M-Bus slave information header.
 
+### Optical interface (Kamstrup Multical)
+
+As an alternative to M-Bus, Kamstrup Multical heat meters can be read through their optical (IR) eye with
+`Heat.Reader: optical` (`internal/adapters/source/kamstrup/`). An IR read head clipped onto the meter's optical port
+appears as a USB serial device on the host.
+
+The reader speaks the Kamstrup KMP protocol and supports the KMP generation: Multical 402, 403, 601, 602, 603, 801,
+and 803. Two older models are **not** supported because they use different optical protocols and would need a separate
+reader: the MC 66C (pre-KMP) and the MC 401 (EN61107 fixed telegram).
+
+Serial settings (fixed in code):
+
+| Parameter | Value |
+|-----------|-------|
+| Baud rate | 1200  |
+| Data bits | 8     |
+| Parity    | None  |
+| Stop bits | 2     |
+
+Each scrape performs one KMP request/response exchange per value: `GetSerialNo` and `GetType` (cached after the first
+success), then the common heat meter registers: 60 (energy E1), 68 (volume V1), 86/87/89 (t1, t2, t1-t2), 74 (flow),
+80 (power), 124 (max flow), 128 (max power), and 1004 (hour counter). Each exchange has a 2 s timeout and up to 3
+attempts. Values are converted from the unit code the meter reports (kWh/GJ, l/m3, kW, and so on) to the same
+canonical units the M-Bus path stores; an unknown unit code fails the read rather than misinterpreting the value. A
+register the meter does not provide is logged once and its field stays 0. `MeterId` is `"Kamstrup (type <code>)"` with
+the raw KMP type code.
+
+Notes:
+
+- `MaxFlow` and `MaxPower` are the meter's **this-year** maxima: they count since the meter's target date, unlike the
+  running maxima some M-Bus meters report.
+- This path is validated against the KMP protocol specification and synthesized frames, not yet against a physical
+  meter.
+
 ---
 
 ## Grid meter (DSMR P1)

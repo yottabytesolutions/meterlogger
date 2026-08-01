@@ -163,6 +163,23 @@ func TestSourceFieldErrors(t *testing.T) {
 			wantErr: "solar (enphase) source enabled but Serial is empty",
 		},
 		{
+			name:    "heat with invalid reader",
+			cfg:     Config{Heat: HeatConfig{Enabled: true, SerialInterface: testSerialUSB0, Reader: "infrared"}},
+			wantErr: `invalid Heat.Reader "infrared"`,
+		},
+		{
+			name:    "heat optical reader without serial interface",
+			cfg:     Config{Heat: HeatConfig{Enabled: true, Reader: HeatReaderOptical}},
+			wantErr: "heat source enabled but SerialInterface is empty",
+		},
+		{
+			name: "heat optical reader with serial interface produces no error",
+			cfg: Config{
+				Heat: HeatConfig{Enabled: true, SerialInterface: testSerialUSB0, Reader: HeatReaderOptical},
+			},
+			wantErr: "",
+		},
+		{
 			name: "fully populated sources produce no error",
 			cfg: Config{
 				Heat:        HeatConfig{Enabled: true, SerialInterface: "/dev/ttyUSB0"},

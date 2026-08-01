@@ -25,6 +25,12 @@ to any sink. `--timeout` bounds the attempt:
 meterlogger probe --source grid --config config.yaml --timeout 30s
 ```
 
+The heat probe uses the reader selected by `Heat.Reader`. With a Kamstrup optical (IR) head:
+
+```sh
+HEAT_READER=optical HEAT_SERIALINTERFACE=/dev/ttyUSB0 meterlogger probe --source heat
+```
+
 Run both after any config or wiring change. A failing probe isolates the problem to the
 source side (device, network, credentials); a failing `validate --ping` isolates it to the sink
 side.

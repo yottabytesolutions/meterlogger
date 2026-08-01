@@ -29,6 +29,12 @@ const (
 	SourceVentilation = "ventilation"
 )
 
+// Heat.Reader values selecting the physical interface to the heat meter.
+const (
+	HeatReaderMbus    = "mbus"
+	HeatReaderOptical = "optical"
+)
+
 // Config is the top-level application configuration.
 type Config struct {
 	Debug         bool
@@ -93,10 +99,13 @@ type EnphaseConfig struct {
 	ScrapeInterval time.Duration
 }
 
-// HeatConfig configures the heat meter reader.
+// HeatConfig configures the heat meter reader. Reader selects the physical
+// interface: "mbus" (default) or "optical" for the Kamstrup IR eye.
+// MbusAddress only applies to the mbus reader.
 type HeatConfig struct {
 	Enabled         bool
 	Measurement     string
+	Reader          string
 	SerialInterface string
 	MbusAddress     int
 	ScrapeInterval  time.Duration

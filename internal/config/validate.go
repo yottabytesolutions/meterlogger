@@ -91,6 +91,16 @@ func sourceFieldErrors(cfg Config) []string {
 	if cfg.Heat.Enabled && cfg.Heat.SerialInterface == "" {
 		errs = append(errs, "heat source enabled but SerialInterface is empty")
 	}
+	// An empty Reader is accepted as mbus so a Config built without Load
+	// (tests, embedding) keeps the documented default.
+	switch cfg.Heat.Reader {
+	case "", HeatReaderMbus, HeatReaderOptical:
+	default:
+		errs = append(errs, fmt.Sprintf(
+			"invalid Heat.Reader %q; valid values are %s, %s",
+			cfg.Heat.Reader, HeatReaderMbus, HeatReaderOptical,
+		))
+	}
 	if cfg.Grid.Enabled && cfg.Grid.SerialInterface == "" {
 		errs = append(errs, "grid source enabled but SerialInterface is empty")
 	}
