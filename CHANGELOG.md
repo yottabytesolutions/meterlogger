@@ -32,6 +32,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   read head, selected with `Grid.Reader: sml` (default stays `dsmr`).
   Accepts both the standard X-25 frame CRC and the Holley Kermit variant.
   Works with factory-state meters that send only the energy total.
+- MQTT sink (`MQTT.Enabled`) that publishes every reading as flat JSON on
+  `<TopicPrefix>/<measurement>` and announces all sensors to Home Assistant
+  via retained MQTT discovery messages: one device per meter, correct
+  device/state classes and units, availability via a last-will status topic.
+  Grid, gas, and solar sensors slot straight into the Home Assistant Energy
+  dashboard; heat energy is published in kWh (converted from joules) for the
+  same reason. See documentation/deployment.md, section "Home Assistant".
 
 
 ## [1.3.0] - 2026-08-01

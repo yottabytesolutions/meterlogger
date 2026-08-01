@@ -16,8 +16,6 @@ const (
 	heatVolumeScale    = 1000.0
 	heatSecondsPerHour = 3600
 	heatFlowScale      = 1000.0
-	heatPowerDiv       = 1000 // mW → W
-	heatMaxPowerDiv    = 100
 )
 
 type HeatTelegramStore struct {
@@ -44,7 +42,7 @@ func (store *HeatTelegramStore) StoreHeatTelegram(ctx context.Context, telegram 
 		Symbol("device", fmt.Sprintf("Multical %s", telegram.MeterID)).
 		Symbol("serial", telegram.SerialNo).
 		Symbol("location", "meterkast").
-		Int64Column("power", telegram.ActualPower/heatPowerDiv).
+		Int64Column("power", telegram.ActualPower).
 		Int64Column("energy", telegram.Joules/heatEnergyScale).
 		Float64Column("t1", telegram.Tforward*heatTempScale).
 		Float64Column("t2", telegram.Treturn*heatTempScale).
@@ -52,7 +50,7 @@ func (store *HeatTelegramStore) StoreHeatTelegram(ctx context.Context, telegram 
 		Int64Column("volume", int64(telegram.VolumeCm3*heatVolumeScale)).
 		Int64Column("hours", telegram.SecondsCounter/heatSecondsPerHour).
 		Float64Column("max_flow", telegram.MaxFlow*heatFlowScale).
-		Int64Column("max_power", telegram.MaxPower/heatMaxPowerDiv).
+		Int64Column("max_power", telegram.MaxPower).
 		Int64Column("seconds", telegram.SecondsCounter).
 		At(ctx, telegram.Timestamp)
 }

@@ -12,6 +12,7 @@ Related: [configuration.md](./configuration.md) · [architecture.md](./architect
 - [Kubernetes](#kubernetes)
 - [Systemd](#systemd)
 - [Sink containers](#sink-containers)
+- [Home Assistant](#home-assistant)
 - [Observability infrastructure](#observability-infrastructure)
 - [Shutdown behaviour](#shutdown-behaviour)
 
@@ -413,6 +414,60 @@ volumes:
 ```
 
 Set `TDENGINE_ENABLED=true` and `TDENGINE_HOST=tdengine`. MeterLogger connects via the REST API on port 6041.
+
+---
+
+## Home Assistant
+
+The MQTT sink makes every meter show up in Home Assistant with zero YAML on the Home Assistant
+side. MeterLogger publishes retained MQTT discovery config messages, so Home Assistant creates:
+
+- One device per physical meter (grid meter, gas meter, heat meter, Enphase Envoy, DucoBox and
+  each of its nodes), grouped by meter serial.
+- Sensors with correct `device_class`, `state_class`, and units: energy counters (kWh, Wh),
+  power (W), voltage, current, temperatures, CO2, humidity, and the gas counter (m³).
+- Availability tracking: all sensors go unavailable when meterlogger stops or loses the broker,
+  via a retained last-will message on `<TopicPrefix>/status`.
+
+The grid energy counters, gas counter, and solar production sensor use
+`state_class: total_increasing` with energy/gas device classes, so they can be selected directly
+in the Home Assistant **Energy dashboard** (grid consumption/return, gas usage, solar
+production). Heat energy is published in kWh (converted from the meter's joule counter) for the
+same reason.
+
+Requirements: any MQTT 3.1.1 broker reachable by both meterlogger and Home Assistant, with the
+[MQTT integration](https://www.home-assistant.io/integrations/mqtt/) enabled in Home Assistant
+and its discovery prefix matching `MQTT.DiscoveryPrefix` (default `homeassistant`). Mosquitto
+works out of the box:
+
+```yaml
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf
+```
+
+Minimal `mosquitto.conf` for a trusted LAN (add `password_file` for authentication):
+
+```
+listener 1883
+allow_anonymous true
+```
+
+Configure each meterlogger container:
+
+```yaml
+environment:
+  MQTT_ENABLED: "true"
+  MQTT_BROKERURL: "tcp://mosquitto:1883"
+```
+
+Discovery for a meter is announced on the first reading that carries its serial number, so
+entities appear within one scrape interval after startup. See
+[configuration.md - MQTT](./configuration.md#mqtt) for the full key reference and topic scheme.
 
 ---
 

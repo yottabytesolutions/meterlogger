@@ -10,6 +10,7 @@ const (
 	testAdminUser   = "admin"
 	testSerialUSB0  = "/dev/ttyUSB0"
 	testEnvoyURL    = "url"
+	testBrokerURL   = "tcp://broker:1883"
 )
 
 func TestValidate_Valid(t *testing.T) {
@@ -29,6 +30,17 @@ func TestValidate_NoSinks(t *testing.T) {
 	errs := Validate(cfg, "")
 	if !containsSubstring(errs, "no sinks enabled") {
 		t.Errorf("Validate() = %v, want a no-sinks error", errs)
+	}
+}
+
+func TestValidate_MQTTCountsAsSink(t *testing.T) {
+	cfg := Config{
+		MQTT: MQTTConfig{Enabled: true, BrokerURL: testBrokerURL, QoS: 1},
+		Heat: HeatConfig{Enabled: true, SerialInterface: testSerialUSB0},
+	}
+
+	if errs := Validate(cfg, ""); len(errs) != 0 {
+		t.Errorf("Validate() = %v, want empty; MQTT alone should satisfy the sink requirement", errs)
 	}
 }
 
@@ -90,6 +102,26 @@ func TestSinkFieldErrors(t *testing.T) {
 			name:    "tdengine enabled without user",
 			cfg:     Config{TDEngine: TDEngineConfig{Enabled: true, Host: "h", Database: "d"}},
 			wantErr: "tdengine sink enabled but User is empty",
+		},
+		{
+			name:    "mqtt enabled without broker URL",
+			cfg:     Config{MQTT: MQTTConfig{Enabled: true, QoS: 1}},
+			wantErr: "mqtt sink enabled but BrokerURL is empty",
+		},
+		{
+			name:    "mqtt enabled with invalid QoS",
+			cfg:     Config{MQTT: MQTTConfig{Enabled: true, BrokerURL: testBrokerURL, QoS: 2}},
+			wantErr: "invalid MQTT.QoS 2",
+		},
+		{
+			name:    "mqtt disabled with invalid QoS produces no error",
+			cfg:     Config{MQTT: MQTTConfig{QoS: 7}},
+			wantErr: "",
+		},
+		{
+			name:    "mqtt enabled with broker URL and QoS 0 produces no error",
+			cfg:     Config{MQTT: MQTTConfig{Enabled: true, BrokerURL: testBrokerURL, QoS: 0}},
+			wantErr: "",
 		},
 		{
 			name:    "postgres disabled with empty fields produces no error",

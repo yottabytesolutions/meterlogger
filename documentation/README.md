@@ -36,6 +36,7 @@ providing fault isolation and visible restarts. See [deployment.md](./deployment
 | TimescaleDB | PostgreSQL extension  | yes               | Same schema as PostgreSQL               |
 | ClickHouse  | column-store (OLAP)   | yes               | High-throughput analytics workloads     |
 | TDEngine    | time-series           | yes               | Lightweight IoT time-series engine      |
+| MQTT        | message broker        | n/a               | Home Assistant via MQTT discovery       |
 | Stdout      | debug (log output)    | n/a               | `Stdout.Enabled: true`; not for production |
 
 All enabled sinks receive every write concurrently. At least one sink must be enabled.
@@ -63,6 +64,7 @@ internal/
       timescaledb/      ← TimescaleDB sink (with auto-migration)
       clickhouse/       ← ClickHouse sink (with auto-migration)
       tdengine/         ← TDEngine sink (with auto-migration)
+      mqtt/             ← MQTT sink (Home Assistant discovery)
       multisink/        ← fan-out: writes to all enabled sinks
       stdout/           ← debug sink (structured log output)
     schemastore/        ← shared schema migration framework (all engines)

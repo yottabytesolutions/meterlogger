@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/clickhouse"
+	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/mqtt"
 	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/multisink"
 	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/qdb"
 	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/sqlsink"
@@ -51,6 +52,9 @@ func buildGridSinks(
 		func(c *qdb.DBClient, m string, l *slog.Logger) domain.GridTelegramRepository {
 			return qdb.NewQuestDBGridWriter(c, m, l)
 		},
+		func(c *mqtt.Client, m string, l *slog.Logger) domain.GridTelegramRepository {
+			return mqtt.NewGridWriter(c, m, l)
+		},
 		func(ctx context.Context, db *sqlsink.DB, m string, l *slog.Logger) (domain.GridTelegramRepository, error) {
 			return sqlsink.NewGridStore(ctx, db, m, l)
 		},
@@ -69,6 +73,9 @@ func buildGasSinks(
 	return buildSourceSinks(ctx, l, healthSrv, dbs, cfg.Grid.Gas.Measurement,
 		func(c *qdb.DBClient, m string, l *slog.Logger) domain.GasRepository {
 			return qdb.NewQuestDBGasWriter(c, m, l)
+		},
+		func(c *mqtt.Client, m string, l *slog.Logger) domain.GasRepository {
+			return mqtt.NewGasWriter(c, m, l)
 		},
 		func(ctx context.Context, db *sqlsink.DB, m string, l *slog.Logger) (domain.GasRepository, error) {
 			return sqlsink.NewGasStore(ctx, db, m, l)

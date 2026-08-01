@@ -105,6 +105,13 @@ func setSinkDefaults() {
 	viper.SetDefault("TDEngine.Port", 6041) //nolint:mnd // documented default TDEngine REST port
 	viper.SetDefault("TDEngine.User", "root")
 	viper.SetDefault("TDEngine.Password", "taosdata")
+
+	// MQTT.ClientID has no static default: it is derived at startup from the
+	// --source filter, which config loading does not know about.
+	viper.SetDefault("MQTT.TopicPrefix", "meterlogger")
+	viper.SetDefault("MQTT.HomeAssistantDiscovery", true)
+	viper.SetDefault("MQTT.DiscoveryPrefix", "homeassistant")
+	viper.SetDefault("MQTT.QoS", 1)
 }
 
 // isConfigFileNotFound reports whether err indicates that no config file was

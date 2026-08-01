@@ -73,6 +73,12 @@ func TestLoad_DefaultsNoFile(t *testing.T) {
 	}
 	if cfg.Grid.Thermal.Measurement != "thermal_meter" {
 		t.Errorf("Grid.Thermal.Measurement default = %q, want %q", cfg.Grid.Thermal.Measurement, "thermal_meter")
+	wantMQTT := MQTTConfig{
+		TopicPrefix: "meterlogger", HomeAssistantDiscovery: true, DiscoveryPrefix: "homeassistant", QoS: 1,
+	}
+	if cfg.MQTT != wantMQTT {
+		t.Errorf("MQTT defaults = %+v, want %+v", cfg.MQTT, wantMQTT)
+
 	}
 }
 
@@ -179,6 +185,9 @@ func TestSetSinkDefaults(t *testing.T) {
 		{"TDEngine.Port", 6041},
 		{"TDEngine.User", "root"},
 		{"TDEngine.Password", "taosdata"},
+		{"MQTT.TopicPrefix", "meterlogger"},
+		{"MQTT.DiscoveryPrefix", "homeassistant"},
+		{"MQTT.QoS", 1},
 	}
 
 	for _, tt := range tests {

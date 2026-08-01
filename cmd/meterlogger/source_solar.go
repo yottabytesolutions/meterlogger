@@ -5,6 +5,7 @@ import (
 	"log/slog"
 
 	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/clickhouse"
+	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/mqtt"
 	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/multisink"
 	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/qdb"
 	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/sqlsink"
@@ -24,6 +25,9 @@ func buildSolarSinks(
 	return buildSourceSinks(ctx, l, healthSrv, dbs, cfg.Enphase.Measurement,
 		func(c *qdb.DBClient, m string, l *slog.Logger) domain.EnvoySolarRepository {
 			return qdb.NewQuestDBSolarWriter(c, m, l)
+		},
+		func(c *mqtt.Client, m string, l *slog.Logger) domain.EnvoySolarRepository {
+			return mqtt.NewSolarWriter(c, m, l)
 		},
 		func(ctx context.Context, db *sqlsink.DB, m string, l *slog.Logger) (domain.EnvoySolarRepository, error) {
 			return sqlsink.NewSolarStore(ctx, db, m, l)
