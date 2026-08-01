@@ -308,7 +308,7 @@ func TestGasFieldErrors(t *testing.T) {
 				Grid: GridConfig{
 					Enabled: true, SerialInterface: testSerialUSB0,
 					DecryptionKey:     "D491470F47126332B07D1923B3504188",
-					AuthenticationKey: "00112233445566778899AABBCCDDEEFF",
+					AuthenticationKey: "00112233445566778899AABBCCDDEEFF", // gitleaks:allow public spec constant
 				},
 			},
 			wantErr: "",

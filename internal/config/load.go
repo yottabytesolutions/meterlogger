@@ -81,7 +81,8 @@ func setSourceDefaults() {
 
 	// The fixed authentication key used by all Luxembourgish Smarty meters.
 	// Austrian users override it with the GAK from their grid operator.
-	viper.SetDefault("Grid.AuthenticationKey", "00112233445566778899AABBCCDDEEFF")
+	// The fixed Luxembourg AK is a public spec constant.
+	viper.SetDefault("Grid.AuthenticationKey", "00112233445566778899AABBCCDDEEFF") // gitleaks:allow
 }
 
 func setSinkDefaults() {

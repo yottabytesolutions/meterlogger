@@ -240,7 +240,7 @@ Grid:
   # DecryptionKey: "00000000000000000000000000000000"
   # AuthenticationKey defaults to the fixed Luxembourg AK; Austrian users
   # override it with their GAK when their operator uses one.
-  # AuthenticationKey: "00112233445566778899AABBCCDDEEFF"
+  # AuthenticationKey: "00112233445566778899AABBCCDDEEFF"  # gitleaks:allow public spec constant
 
   # Gas meter readings carried in the same P1 telegrams. Not a standalone
   # source: one process reads both power and gas from the P1 port.

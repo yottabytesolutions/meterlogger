@@ -15,11 +15,11 @@ import (
 
 // smartyKey is the decryption key for the public NEXXTLAB go-smarty-reader
 // test vector. It works only for that captured frame, not for any real meter.
-const smartyKey = "D491470F47126332B07D1923B3504188"
+const smartyKey = "D491470F47126332B07D1923B3504188" // gitleaks:allow published NEXXTLAB test vector key
 
 // luxembourgAuthKey is the fixed authentication key shared by all
 // Luxembourgish Smarty meters.
-const luxembourgAuthKey = "00112233445566778899AABBCCDDEEFF"
+const luxembourgAuthKey = "00112233445566778899AABBCCDDEEFF" // gitleaks:allow public spec constant
 
 // smartyFrameHex is the real 647-byte encrypted DLMS frame from the
 // go-smarty-reader test suite: system title 5341476770 01BD54, two-byte
