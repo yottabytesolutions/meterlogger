@@ -138,6 +138,28 @@ func TestSourceFieldErrors(t *testing.T) {
 			wantErr: "grid source enabled but SerialInterface is empty",
 		},
 		{
+			name: "gas enabled without measurement",
+			cfg: Config{
+				Grid: GridConfig{
+					Enabled:         true,
+					SerialInterface: testSerialUSB0,
+					Gas:             GasConfig{Enabled: true},
+				},
+			},
+			wantErr: "grid gas readings enabled but Grid.Gas.Measurement is empty",
+		},
+		{
+			name: "gas enabled with measurement produces no error",
+			cfg: Config{
+				Grid: GridConfig{
+					Enabled:         true,
+					SerialInterface: testSerialUSB0,
+					Gas:             GasConfig{Enabled: true, Measurement: "gas_meter"},
+				},
+			},
+			wantErr: "",
+		},
+		{
 			name:    "ventilation enabled without host URL",
 			cfg:     Config{Ventilation: VentilationConfig{Enabled: true}},
 			wantErr: "ventilation source enabled but HostURL is empty",

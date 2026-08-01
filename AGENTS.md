@@ -38,7 +38,8 @@ For a SQL database that fits an existing wire protocol (Postgres- or MySQL-compa
 
 For a sink with its own storage model (like ClickHouse or QuestDB):
 
-1. Create `internal/adapters/sink/<name>/` implementing the four repository interfaces.
+1. Create `internal/adapters/sink/<name>/` implementing the repository interfaces
+   (heat, grid, gas, solar, ventilation).
 2. Use `internal/adapters/schemastore/` for migrations (`NewSQLMigrator`,
    `NewClickHouseMigrator`, or `NewTDEngineMigrator`).
 3. Wire it in `cmd/meterlogger/sinks.go` (`buildSourceSinks`); the compiler forces every

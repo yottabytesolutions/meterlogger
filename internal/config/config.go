@@ -134,6 +134,15 @@ type GridConfig struct {
 	Enabled         bool
 	Measurement     string
 	SerialInterface string
+	Gas             GasConfig
+}
+
+// GasConfig configures storage of gas meter readings carried in the grid
+// meter's P1 telegrams. Gas is not a standalone source: readings only flow
+// when the grid source runs.
+type GasConfig struct {
+	Enabled     bool
+	Measurement string
 }
 
 // VentilationConfig configures the DucoBox ventilation reader.

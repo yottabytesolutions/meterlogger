@@ -46,6 +46,10 @@ type GridTelegram struct {
 	PowerOutputP2    int
 	PowerOutputP3    int
 
+	// MBusDevices carries the readings of meters attached over M-Bus
+	// (gas, water, thermal), when present in the telegram.
+	MBusDevices []MBusDeviceReading
+
 	/* Samenstelling van een P1 bericht
 	   Meter identificatie
 

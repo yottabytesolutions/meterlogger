@@ -389,6 +389,70 @@ func TestGridStore_Close(t *testing.T) {
 	}
 }
 
+// --- QuestDBGasWriter tests ---
+
+func TestNewQuestDBGasWriter(t *testing.T) {
+	client, _ := newTestDBClient()
+	writer := NewQuestDBGasWriter(client, "gas", testLogger())
+	if writer == nil {
+		t.Error("NewQuestDBGasWriter returned nil")
+	}
+}
+
+func TestQuestDBGasWriter_StoreGasReading(t *testing.T) {
+	client, sender := newTestDBClient()
+	writer := NewQuestDBGasWriter(client, "gas", testLogger())
+	capturedAt := time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
+	receivedAt := capturedAt.Add(90 * time.Second)
+	reading := domain.GasReading{
+		CapturedAt: capturedAt,
+		ReceivedAt: receivedAt,
+		Channel:    1,
+		DeviceType: domain.DeviceTypeGas,
+		SerialNo:   "4730303339",
+		ReadingM3:  1234.567,
+	}
+	if err := writer.StoreGasReading(context.Background(), reading); err != nil {
+		t.Fatalf("StoreGasReading() unexpected error: %v", err)
+	}
+
+	row := requireRows(t, sender, 1)[0]
+	assertTable(t, row, "gas")
+	assertSymbol(t, row, "serial_no", "4730303339")
+	assertColumn(t, row, "channel", int64(1))
+	assertColumn(t, row, "device_type", int64(domain.DeviceTypeGas))
+	assertColumn(t, row, "reading_m3", 1234.567)
+	assertColumn(t, row, "received_at", receivedAt)
+	assertAt(t, row, capturedAt)
+}
+
+func TestQuestDBGasWriter_StoreGasReading_WriteError(t *testing.T) {
+	client := &DBClient{
+		sender: &mockLineSender{atErr: errTest},
+		logger: testLogger(),
+	}
+	writer := NewQuestDBGasWriter(client, "gas", testLogger())
+	if err := writer.StoreGasReading(context.Background(), domain.GasReading{}); err == nil {
+		t.Error("StoreGasReading should return error when sender fails")
+	}
+}
+
+func TestQuestDBGasWriter_Flush(t *testing.T) {
+	client, _ := newTestDBClient()
+	writer := NewQuestDBGasWriter(client, "gas", testLogger())
+	if err := writer.Flush(context.Background()); err != nil {
+		t.Errorf("Flush() unexpected error: %v", err)
+	}
+}
+
+func TestQuestDBGasWriter_Close(t *testing.T) {
+	client, _ := newTestDBClient()
+	writer := NewQuestDBGasWriter(client, "gas", testLogger())
+	if err := writer.Close(); err != nil {
+		t.Errorf("Close() unexpected error: %v", err)
+	}
+}
+
 // --- DucoQuestDBRepository tests ---
 
 func TestNewDucoQuestDBRepository(t *testing.T) {

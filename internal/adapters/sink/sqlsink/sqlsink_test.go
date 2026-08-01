@@ -139,6 +139,10 @@ func TestMigrationComponentKeys(t *testing.T) {
 			_, err := sqlsink.NewGridStore(ctx, db, "m", testLogger())
 			return err
 		}},
+		{kind: "gas", tableCount: 1, construct: func(ctx context.Context, db *sqlsink.DB) error {
+			_, err := sqlsink.NewGasStore(ctx, db, "m", testLogger())
+			return err
+		}},
 		{kind: "solar", tableCount: 2, construct: func(ctx context.Context, db *sqlsink.DB) error {
 			_, err := sqlsink.NewSolarStore(ctx, db, "m", testLogger())
 			return err

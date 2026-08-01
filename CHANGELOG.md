@@ -16,6 +16,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the fixed ten-field telegram at 1200 baud. Value scaling is configurable
   via the `Heat.Optical401` keys; defaults fit common Dutch district heating
   installs.
+- Gas meter readings from the grid meter's P1 port (`Grid.Gas.Enabled`). The
+  gas meter is attached to the electricity meter over M-Bus; the grid source
+  stores its readings to a separate table (`Grid.Gas.Measurement`, default
+  `gas_meter`), deduplicated on the meter-supplied capture time.
 - Systemd template unit and setup recipe for running sources without
   containers (`deploy/systemd/`).
 

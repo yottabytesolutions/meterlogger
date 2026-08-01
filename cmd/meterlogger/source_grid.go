@@ -34,6 +34,24 @@ func buildGridSinks(
 	)
 }
 
+func buildGasSinks(
+	ctx context.Context, l *slog.Logger,
+	healthSrv *healthserver.Server,
+	dbs dbConnections,
+) []domain.GasRepository {
+	return buildSourceSinks(ctx, l, healthSrv, dbs, cfg.Grid.Gas.Measurement,
+		func(c *qdb.DBClient, m string, l *slog.Logger) domain.GasRepository {
+			return qdb.NewQuestDBGasWriter(c, m, l)
+		},
+		func(ctx context.Context, db *sqlsink.DB, m string, l *slog.Logger) (domain.GasRepository, error) {
+			return sqlsink.NewGasStore(ctx, db, m, l)
+		},
+		func(ctx context.Context, db *clickhouse.DB, m string, l *slog.Logger) (domain.GasRepository, error) {
+			return clickhouse.NewGasStore(ctx, db, m, l)
+		},
+	)
+}
+
 func runGridMeter(
 	ctx context.Context, l *slog.Logger,
 	healthSrv *healthserver.Server,
@@ -52,12 +70,23 @@ func runGridMeter(
 		}
 	}()
 
-	startService(
-		ctx, l, "Grid Meter", service.NewGridLoggingService(
-			gridmeter.NewGridReader(cfg.Grid.SerialInterface, l),
-			repo,
-			cfg.FlushInterval,
-			l,
-		).WithMetrics(appMetrics),
+	svc := service.NewGridLoggingService(
+		gridmeter.NewGridReader(cfg.Grid.SerialInterface, l),
+		repo,
+		cfg.FlushInterval,
+		l,
 	)
+
+	if cfg.Grid.Gas.Enabled {
+		gasSinks := buildGasSinks(ctx, l, healthSrv, dbs)
+		gasRepo := multisink.NewGasRepository(gasSinks, l)
+		defer func() {
+			if err := gasRepo.Close(); err != nil {
+				l.ErrorContext(ctx, "gas repo close error", slog.Any("error", err))
+			}
+		}()
+		svc = svc.WithGas(gasRepo)
+	}
+
+	startService(ctx, l, "Grid Meter", svc.WithMetrics(appMetrics))
 }

@@ -145,6 +145,17 @@ func gridColumns() []column {
 	}
 }
 
+func gasColumns() []column {
+	return []column{
+		{name: "ts", kind: kindTimestamp, notNull: true},
+		{name: "received_at", kind: kindTimestamp, notNull: true},
+		{name: "channel", kind: kindInt, notNull: true},
+		{name: "device_type", kind: kindInt, notNull: true},
+		{name: colSerialNo, kind: kindShortText, notNull: true},
+		{name: "reading_m3", kind: kindDouble, notNull: true},
+	}
+}
+
 func solarColumns() []column {
 	return []column{
 		{name: "ts", kind: kindTimestamp, notNull: true},

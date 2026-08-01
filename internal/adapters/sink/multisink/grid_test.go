@@ -1,3 +1,4 @@
+//nolint:dupl // gas and grid fan-out tests share the same shape but cover distinct domain types
 package multisink_test
 
 import (

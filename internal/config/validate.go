@@ -106,6 +106,12 @@ func sourceFieldErrors(cfg Config) []string {
 	if cfg.Grid.Enabled && cfg.Grid.SerialInterface == "" {
 		errs = append(errs, "grid source enabled but SerialInterface is empty")
 	}
+	// Gas rides on the grid source; it only flows when the grid source runs.
+	// That dependency is not validated here because the --source filter can
+	// still select grid at runtime regardless of Grid.Enabled.
+	if cfg.Grid.Gas.Enabled && cfg.Grid.Gas.Measurement == "" {
+		errs = append(errs, "grid gas readings enabled but Grid.Gas.Measurement is empty")
+	}
 	if cfg.Enphase.Enabled {
 		errs = append(errs, enphaseFieldErrors(cfg.Enphase)...)
 	}

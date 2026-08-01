@@ -39,6 +39,18 @@ func TestStoreGridTelegram(t *testing.T) {
 	}
 }
 
+func TestStoreGasReading(t *testing.T) {
+	store := newTestStore()
+	reading := domain.GasReading{
+		SerialNo:  "4730303339",
+		ReadingM3: 1234.567,
+	}
+	err := store.StoreGasReading(context.Background(), reading)
+	if err != nil {
+		t.Errorf("StoreGasReading() unexpected error: %v", err)
+	}
+}
+
 func TestStoreEnvoySolarData(t *testing.T) {
 	store := newTestStore()
 	data := domain.EnvoySolarData{
@@ -68,6 +80,9 @@ func TestStdoutStore_AllMethods(t *testing.T) {
 	}
 	if err := s.StoreGridTelegram(ctx, domain.GridTelegram{}); err != nil {
 		t.Errorf("StoreGridTelegram: %v", err)
+	}
+	if err := s.StoreGasReading(ctx, domain.GasReading{CapturedAt: time.Now()}); err != nil {
+		t.Errorf("StoreGasReading: %v", err)
 	}
 	if err := s.StoreEnvoySolarData(ctx, domain.EnvoySolarData{}); err != nil {
 		t.Errorf("StoreEnvoySolarData: %v", err)

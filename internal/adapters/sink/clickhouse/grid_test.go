@@ -77,6 +77,7 @@ func TestGridStore_StoreGridTelegram(t *testing.T) {
 	}
 }
 
+//nolint:dupl // mirrors the gas requeue test; the stores share behaviour but not types
 func TestGridStore_FlushErrorRequeues(t *testing.T) {
 	db, mock := testDB(t)
 	expectMigrationAlreadyApplied(mock, "clickhouse_grid_grid")
