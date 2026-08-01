@@ -172,7 +172,8 @@ Notes:
 
 ### Hardware
 
-Dutch smart meters expose a P1 port that pushes a telegram every second. The port uses an RJ-11 connector at 115200
+Dutch, Belgian, Luxembourgish, and Austrian smart meters expose a P1 port that pushes a telegram every second
+(every 10 seconds in Luxembourg). The port uses an RJ-11 connector at 115200
 baud. A USB-to-serial cable with an RJ-11 adapter is required.
 
 Serial settings (fixed in code):
@@ -236,7 +237,7 @@ Timestamps use the `Europe/Amsterdam` timezone.
 The reader computes CRC16-CCITT over the full message (from `/` to and including `!`) and compares it against the
 4-character hex value that follows `!`.
 
-### M-Bus subdevices (gas)
+### M-Bus subdevices (gas, water, thermal)
 
 DSMR meters can carry up to four subdevices (gas, water, thermal) attached to the electricity meter over M-Bus. Their
 readings appear as extra OBIS lines in the same P1 telegram, on channels 1 to 4:
@@ -250,16 +251,118 @@ readings appear as extra OBIS lines in the same P1 telegram, on channels 1 to 4:
 Key points:
 
 - **Channels are assigned by installation order**, not by medium. The gas meter can sit on any channel.
-- **Detection is by device type, never by channel.** `0-n:24.1.0` carries the EN 13757-3 medium code: `3` gas,
-  `4` heat, `7` water. MeterLogger stores gas (`3`) when `Grid.Gas.Enabled` is set; water and thermal subdevices are
-  detected but not stored yet.
-- **Supported telegram formats:** DSMR 2.2+ through DSMR 5. DSMR 5 meters capture a new gas value every 5 minutes;
-  DSMR 4 and older capture hourly. The telegram repeats the last capture every second, so readings are deduplicated
-  on the meter-supplied capture time before storage.
+- **Detection is by device type, never by channel.** `0-n:24.1.0` carries the EN 13757-3 medium code. Routing:
 
-There is no separate gas source or serial connection. Enabling `Grid.Gas` makes the grid source store the gas lines it
-already receives. See [configuration.md](./configuration.md#gridgas) for the config keys and
+  | Device type | Medium                    | Stored when              | Unit |
+  |------------:|---------------------------|--------------------------|------|
+  | `2`         | Slave e-meter             | Never (see below)        | -    |
+  | `3`         | Gas                       | `Grid.Gas.Enabled`       | m3   |
+  | `4`         | Heat                      | `Grid.Thermal.Enabled`   | GJ   |
+  | `6`         | Warm water                | `Grid.Water.Enabled`     | m3   |
+  | `7`         | Water                     | `Grid.Water.Enabled`     | m3   |
+  | `10`        | Cooling (outlet)          | `Grid.Thermal.Enabled`   | GJ   |
+  | `11`        | Cooling (inlet)           | `Grid.Thermal.Enabled`   | GJ   |
+  | `12`        | Heat and cooling combined | `Grid.Thermal.Enabled`   | GJ   |
+
+  A reading with a unit other than the expected one is skipped with a warning. Any other device
+  type, and any device whose storage is not enabled, is skipped with one log line per channel.
+- **Slave e-meters are excluded.** A slave electricity meter (device type `2`) publishes only a
+  kWh total on the master's telegram; read the slave meter from its own P1 port instead of the
+  master's M-Bus lines.
+- **Supported telegram formats:** DSMR 2.2+ through DSMR 5. DSMR 5 meters capture a new subdevice value every
+  5 minutes; DSMR 4 and older capture hourly. The telegram repeats the last capture every second, so readings are
+  deduplicated on the meter-supplied capture time before storage.
+- **Water on P1 is common in Belgium**, where Fluvius links the water meter to the digital electricity meter.
+  Thermal subdevices are rare in practice.
+
+There is no separate gas, water, or thermal source or serial connection. Enabling `Grid.Gas`, `Grid.Water`, or
+`Grid.Thermal` makes the grid source store the subdevice lines it already receives. See
+[configuration.md](./configuration.md#gridgas) for the config keys and
 [data-model.md](./data-model.md#gasreading) for the stored fields.
+
+### Belgium (Fluvius eMUCS)
+
+Belgian meters use the same transport (115200 8N1, same CRC) and are detected automatically; nothing needs to be
+configured. Dialect differences handled by the reader:
+
+- The protocol version is on `0-0:96.1.4` instead of `1-3:0.2.8`.
+- Peak demand fields for the capaciteitstarief are parsed and stored: current average demand (`1-0:1.4.0`) and the
+  running month's maximum with its capture time (`1-0:1.6.0`). The 13-month history (`0-0:98.1.0`) is parsed
+  defensively and ignored; Fluvius meters emit garbage timestamps in it for empty months.
+- Phase currents carry decimals (`000.27*A`); they are rounded to whole amperes.
+- Gas subdevices publish on `0-n:24.2.3` instead of `24.2.1`. **The Belgian gas volume is not temperature
+  corrected**; the DSO applies the correction in billing. Keep that in mind when comparing stored volumes against
+  invoices.
+- Water meters (device type `007`) publish on `24.2.1`; they are stored when `Grid.Water.Enabled` is set and
+  otherwise skipped with a one-time log line, like on Dutch meters.
+- Subdevice equipment ids are on `0-n:96.1.1` instead of `0-n:96.1.0`; both are accepted.
+
+### Luxembourg (Smarty) and Austria (Sagemcom T210-D)
+
+Luxembourgish Smarty meters and Austrian Sagemcom T210-D meters (deployed by EVN and Energienetze Steiermark) push
+AES-128-GCM encrypted DLMS frames over the same P1 port, one frame per 10 seconds in Luxembourg. Each frame starts
+with a `0xDB` tag and carries a system title, frame counter, ciphertext, and a 12-byte GCM tag. The reader detects the
+frame type per frame, decrypts with `Grid.DecryptionKey` and `Grid.AuthenticationKey`, and feeds the plaintext through
+the normal telegram path including CRC validation. A frame that fails authentication is dropped with a warning and the
+reader resynchronises on the next frame.
+
+The decrypted telegrams publish energy totals only (`1-0:1.8.0`/`2.8.0`, no tariff registers); the totals are stored
+in the tariff-1 counters with the tariff-2 counters at zero. The equipment id falls back to `0-0:42.0.0` when
+`0-0:96.1.1` is absent.
+
+**Not covered:** Wiener Netze meters push raw DLMS/COSEM APDUs without the DSMR text layer. That format is a
+different protocol, not a dialect, and this reader does not support it.
+
+---
+
+## Grid meter (SML)
+
+Selected with `Grid.Reader: sml`. German smart meters ("moderne Messeinrichtung") speak SML (Smart Message Language,
+BSI TR-03109-1) instead of DSMR. The meter pushes a binary SML file every one to five seconds through an optical
+(IR) interface; no request or wakeup is sent.
+
+### Hardware
+
+An IR read head (TTL or USB, e.g. the common Hichi/Volkszaehler heads) placed on the meter's optical port. The head
+appears as a USB serial device.
+
+Serial settings (fixed in code):
+
+| Parameter | Value |
+|-----------|-------|
+| Baud rate | 9600  |
+| Data bits | 8     |
+| Parity    | None  |
+| Stop bits | 1     |
+
+### Supported meters
+
+Tested against the SML dialects of: EMH eHZ and mMe4.0, ISKRA MT681, EasyMeter Q3A/Q3B, eBZ DD3 (SM variant), and
+Holley DTZ541. The Holley DTZ541 firmware computes the frame CRC with the wrong parameters (Kermit instead of X-25);
+the reader accepts both and logs once which variant the meter uses.
+
+Not supported: meters that emit plain ASCII D0/IEC 62056-21 output instead of SML, such as the EasyMeter Q3D and the
+eBZ DD3 OD variant. Those need a different reader.
+
+### Frame and parsing
+
+An SML transport frame is `1B1B1B1B 01010101`, the payload, up to three `00` fill bytes, and `1B1B1B1B 1A <fill>
+<crc16>`. The reader validates the CRC, then scans the payload for OBIS value-list entries instead of building a full
+SML tree. Recognized registers: energy counters (1.8.0/1/2, 2.8.0/1/2, Wh), total and per-phase active power (16.7.0,
+36/56/76.7.0 and 21/41/61.7.0, signed W), voltages, currents, server ID, and manufacturer. Unknown entries are
+ignored. Energy is converted from Wh to kWh so the stored columns match the DSMR reader.
+
+Signed power maps by sign: positive fills the usage column, negative magnitude fills the output column. A meter
+without tariff registers gets its 1.8.0 total stored in `usage_counter1`. The telegram timestamp is the receive
+time; SML value timestamps are usually absent.
+
+### Meter PIN and reduced telegrams
+
+Meters leave the factory in a restricted mode: the SML file then contains little more than the import energy total.
+The grid operator supplies a PIN; after entering it on the meter (via the optical button) and enabling the extended
+info mode (InF), the meter also sends active power and per-phase values. The reader handles both modes and never
+errors on absent optional registers. DSMR-only fields (brownouts, voltage spikes, M-Bus subdevices) stay zero;
+`Grid.Gas` cannot be combined with the SML reader.
 
 ---
 

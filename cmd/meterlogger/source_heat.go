@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/clickhouse"
+	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/mqtt"
 	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/multisink"
 	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/qdb"
 	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/sqlsink"
@@ -52,6 +53,9 @@ func buildHeatSinks(
 	return buildSourceSinks(ctx, l, healthSrv, dbs, cfg.Heat.Measurement,
 		func(c *qdb.DBClient, m string, l *slog.Logger) domain.HeatMeterRepository {
 			return qdb.NewQuestDBHeatTelegramWriter(c, m, l)
+		},
+		func(c *mqtt.Client, m string, l *slog.Logger) domain.HeatMeterRepository {
+			return mqtt.NewHeatWriter(c, m, l)
 		},
 		func(ctx context.Context, db *sqlsink.DB, m string, l *slog.Logger) (domain.HeatMeterRepository, error) {
 			return sqlsink.NewHeatStore(ctx, db, m, l)

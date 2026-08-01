@@ -61,7 +61,9 @@ func testPingDB(t *testing.T, d sqlsink.Dialect) (*sqlsink.DB, sqlmock.Sqlmock) 
 
 // expectMigrationFull expects a full migration run: ledger table create,
 // version query for the exact component key, table creates, version record.
-func expectMigrationFull(mock sqlmock.Sqlmock, dc dialectCase, component string, tableCount int) {
+// alterCount is the number of ALTER TABLE statements run by later migration
+// versions (grid version 2); each extra version records once more.
+func expectMigrationFull(mock sqlmock.Sqlmock, dc dialectCase, component string, tableCount, alterCount int) {
 	mock.ExpectExec("CREATE TABLE IF NOT EXISTS meterlogger_schema_migrations").
 		WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectQuery(dc.versionQuery).
@@ -75,15 +77,32 @@ func expectMigrationFull(mock sqlmock.Sqlmock, dc dialectCase, component string,
 	}
 	mock.ExpectExec("INSERT INTO meterlogger_schema_migrations").
 		WillReturnResult(sqlmock.NewResult(1, 1))
+	if alterCount == 0 {
+		return
+	}
+	for range alterCount {
+		mock.ExpectExec("ALTER TABLE").WillReturnResult(sqlmock.NewResult(0, 0))
+	}
+	mock.ExpectExec("INSERT INTO meterlogger_schema_migrations").
+		WillReturnResult(sqlmock.NewResult(1, 1))
 }
 
-func expectMigrationAlreadyApplied(mock sqlmock.Sqlmock, dc dialectCase, component string) {
+// expectMigrationAppliedAt expects the ledger to report version as already
+// applied, so no DDL runs.
+func expectMigrationAppliedAt(mock sqlmock.Sqlmock, dc dialectCase, component string, version int) {
 	mock.ExpectExec("CREATE TABLE IF NOT EXISTS meterlogger_schema_migrations").
 		WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectQuery(dc.versionQuery).
 		WithArgs(component).
-		WillReturnRows(sqlmock.NewRows([]string{"v"}).AddRow(1))
+		WillReturnRows(sqlmock.NewRows([]string{"v"}).AddRow(version))
 }
+
+func expectMigrationAlreadyApplied(mock sqlmock.Sqlmock, dc dialectCase, component string) {
+	expectMigrationAppliedAt(mock, dc, component, 1)
+}
+
+// latestGridVersion is the current grid schema version (peak demand columns).
+const latestGridVersion = 2
 
 func TestDB_Name(t *testing.T) {
 	for _, dc := range dialectCases() {
@@ -128,6 +147,7 @@ func TestMigrationComponentKeys(t *testing.T) {
 	type storeCase struct {
 		kind       string
 		tableCount int
+		alterCount int
 		construct  func(ctx context.Context, db *sqlsink.DB) error
 	}
 	stores := []storeCase{
@@ -135,12 +155,20 @@ func TestMigrationComponentKeys(t *testing.T) {
 			_, err := sqlsink.NewHeatStore(ctx, db, "m", testLogger())
 			return err
 		}},
-		{kind: "grid", tableCount: 1, construct: func(ctx context.Context, db *sqlsink.DB) error {
+		{kind: "grid", tableCount: 1, alterCount: 3, construct: func(ctx context.Context, db *sqlsink.DB) error {
 			_, err := sqlsink.NewGridStore(ctx, db, "m", testLogger())
 			return err
 		}},
 		{kind: "gas", tableCount: 1, construct: func(ctx context.Context, db *sqlsink.DB) error {
 			_, err := sqlsink.NewGasStore(ctx, db, "m", testLogger())
+			return err
+		}},
+		{kind: "water", tableCount: 1, construct: func(ctx context.Context, db *sqlsink.DB) error {
+			_, err := sqlsink.NewWaterStore(ctx, db, "m", testLogger())
+			return err
+		}},
+		{kind: "thermal", tableCount: 1, construct: func(ctx context.Context, db *sqlsink.DB) error {
+			_, err := sqlsink.NewThermalStore(ctx, db, "m", testLogger())
 			return err
 		}},
 		{kind: "solar", tableCount: 2, construct: func(ctx context.Context, db *sqlsink.DB) error {
@@ -157,7 +185,7 @@ func TestMigrationComponentKeys(t *testing.T) {
 			t.Run(dc.prefix+"_"+sc.kind, func(t *testing.T) {
 				db, mock := testDB(t, dc.dialect)
 				component := dc.prefix + "_" + sc.kind + "_m"
-				expectMigrationFull(mock, dc, component, sc.tableCount)
+				expectMigrationFull(mock, dc, component, sc.tableCount, sc.alterCount)
 				if err := sc.construct(context.Background(), db); err != nil {
 					t.Fatalf("construct: %v", err)
 				}

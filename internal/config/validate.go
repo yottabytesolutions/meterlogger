@@ -1,6 +1,21 @@
 package config
 
-import "fmt"
+import (
+	"encoding/hex"
+	"fmt"
+)
+
+// dlmsKeyHexLen is the length of a hex-encoded 128-bit DLMS key.
+const dlmsKeyHexLen = 32
+
+// isHexKey reports whether s is a valid hex-encoded 128-bit key.
+func isHexKey(s string) bool {
+	if len(s) != dlmsKeyHexLen {
+		return false
+	}
+	_, err := hex.DecodeString(s)
+	return err == nil
+}
 
 // Validate returns every configuration problem found in cfg, given the
 // --source filter in effect. An empty slice means the configuration is valid.
@@ -8,7 +23,8 @@ func Validate(cfg Config, sourceFilter string) []string {
 	var errs []string
 
 	if !cfg.QuestDB.Enabled && !cfg.Postgres.Enabled && !cfg.MySQL.Enabled &&
-		!cfg.TimescaleDB.Enabled && !cfg.ClickHouse.Enabled && !cfg.TDEngine.Enabled {
+		!cfg.TimescaleDB.Enabled && !cfg.ClickHouse.Enabled && !cfg.TDEngine.Enabled &&
+		!cfg.MQTT.Enabled {
 		errs = append(errs, "no sinks enabled; set Enabled: true for at least one sink")
 	}
 
@@ -80,6 +96,23 @@ func sinkFieldErrors(cfg Config) []string {
 			errs = append(errs, fmt.Sprintf("%s sink enabled but Database is empty", s.name))
 		}
 	}
+	errs = append(errs, mqttFieldErrors(cfg.MQTT)...)
+	return errs
+}
+
+// mqttFieldErrors checks the fields the MQTT sink needs to connect and
+// publish. Only evaluated when the sink is enabled.
+func mqttFieldErrors(cfg MQTTConfig) []string {
+	if !cfg.Enabled {
+		return nil
+	}
+	var errs []string
+	if cfg.BrokerURL == "" {
+		errs = append(errs, "mqtt sink enabled but BrokerURL is empty")
+	}
+	if cfg.QoS != 0 && cfg.QoS != 1 {
+		errs = append(errs, fmt.Sprintf("invalid MQTT.QoS %d; valid values are 0 and 1", cfg.QoS))
+	}
 	return errs
 }
 
@@ -106,12 +139,20 @@ func sourceFieldErrors(cfg Config) []string {
 	if cfg.Grid.Enabled && cfg.Grid.SerialInterface == "" {
 		errs = append(errs, "grid source enabled but SerialInterface is empty")
 	}
-	// Gas rides on the grid source; it only flows when the grid source runs.
-	// That dependency is not validated here because the --source filter can
-	// still select grid at runtime regardless of Grid.Enabled.
-	if cfg.Grid.Gas.Enabled && cfg.Grid.Gas.Measurement == "" {
-		errs = append(errs, "grid gas readings enabled but Grid.Gas.Measurement is empty")
+	// An empty Reader is accepted as dsmr so a Config built without Load
+	// (tests, embedding) keeps the documented default.
+	switch cfg.Grid.Reader {
+	case "", GridReaderDSMR:
+	case GridReaderSML:
+		if cfg.Grid.Gas.Enabled {
+			errs = append(errs, "Grid.Gas requires the dsmr reader; SML meters have no M-Bus subdevices")
+		}
+	default:
+		errs = append(errs, fmt.Sprintf(
+			"invalid Grid.Reader %q; valid values are %s, %s", cfg.Grid.Reader, GridReaderDSMR, GridReaderSML,
+		))
 	}
+	errs = append(errs, gridExtrasFieldErrors(cfg.Grid)...)
 	if cfg.Enphase.Enabled {
 		errs = append(errs, enphaseFieldErrors(cfg.Enphase)...)
 	}
@@ -150,6 +191,30 @@ func optical401FieldErrors(cfg Optical401Config) []string {
 				"invalid Heat.Optical401.%s %d; must be between 0 and %d", d.name, d.value, maxDecimals,
 			))
 		}
+	}
+	return errs
+}
+
+// gridExtrasFieldErrors checks the subdevice sections and decryption keys of
+// the grid source. Subdevices ride on the grid source; the dependency on the
+// grid source running is not validated because the --source filter can still
+// select grid at runtime regardless of Grid.Enabled.
+func gridExtrasFieldErrors(grid GridConfig) []string {
+	var errs []string
+	if grid.Gas.Enabled && grid.Gas.Measurement == "" {
+		errs = append(errs, "grid gas readings enabled but Grid.Gas.Measurement is empty")
+	}
+	if grid.Water.Enabled && grid.Water.Measurement == "" {
+		errs = append(errs, "grid water readings enabled but Grid.Water.Measurement is empty")
+	}
+	if grid.Thermal.Enabled && grid.Thermal.Measurement == "" {
+		errs = append(errs, "grid thermal readings enabled but Grid.Thermal.Measurement is empty")
+	}
+	if grid.DecryptionKey != "" && !isHexKey(grid.DecryptionKey) {
+		errs = append(errs, "Grid.DecryptionKey must be 32 hexadecimal characters (128-bit AES key)")
+	}
+	if grid.AuthenticationKey != "" && !isHexKey(grid.AuthenticationKey) {
+		errs = append(errs, "Grid.AuthenticationKey must be 32 hexadecimal characters (128-bit key)")
 	}
 	return errs
 }

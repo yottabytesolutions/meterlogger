@@ -51,6 +51,7 @@ At least one sink must be enabled. The process exits with a fatal error if all s
 | `TimescaleDB` | TimescaleDB (PostgreSQL ext) |     5432     |        yes         |
 | `ClickHouse`  | ClickHouse                   |     9000     |        yes         |
 | `TDEngine`    | TDEngine                     |     6041     |        yes         |
+| `MQTT`        | MQTT broker + Home Assistant |  1883/8883   |        n/a         |
 | `Stdout`      | Log output (debug only)      |      -       |        n/a         |
 
 The `Stdout` sink logs every record instead of persisting it. Use it to inspect meter data during
@@ -173,6 +174,22 @@ TDEngine:
   Password: taosdata
   Database: meterlogger
 
+# ── MQTT sink (Home Assistant) ───────────────────────────────
+# Publishes every reading as JSON and announces the sensors to
+# Home Assistant via MQTT discovery. See deployment.md, section
+# "Home Assistant".
+MQTT:
+  Enabled: false
+  BrokerURL: tcp://mosquitto:1883   # or ssl://host:8883
+  Username: ""
+  Password: ""
+  ClientID: ""                 # default: meterlogger, plus "-<source>" with --source
+  TopicPrefix: meterlogger
+  HomeAssistantDiscovery: true
+  DiscoveryPrefix: homeassistant
+  QoS: 1                       # 0 or 1
+  RetainState: false           # retain state messages so subscribers see the last reading
+
 # ── OpenTelemetry tracing ──────────────────────────────────
 # Emit traces to an OTLP/gRPC collector. Logs auto-correlate via traceID/spanID.
 OTEL:
@@ -226,12 +243,25 @@ Heat:
 #     PowerDecimals: 1           # raw/10 kW
 #     FlowDecimals: 1            # raw/10 l/h
 
-# ── Grid meter (DSMR P1 over serial) ───────────────────────
+# ── Grid meter (DSMR P1 or SML over serial) ────────────────
 Grid:
   Enabled: true
   Measurement: grid_meter
+  # Reader selects the protocol:
+  #   dsmr - Dutch/Belgian DSMR P1 meter (default)
+  #   sml  - German SML meter via IR read head
+  Reader: dsmr
   SerialInterface: /dev/ttyUSB1
   # No ScrapeInterval: the meter pushes data every second
+  # (Luxembourg Smarty meters push every 10 seconds)
+
+  # Only for encrypted meters (Luxembourg Smarty, Austrian Sagemcom T210-D):
+  # the 32-hex-char decryption key from your grid operator. Leave unset for
+  # plaintext meters (NL, BE).
+  # DecryptionKey: "00000000000000000000000000000000"
+  # AuthenticationKey defaults to the fixed Luxembourg AK; Austrian users
+  # override it with their GAK when their operator uses one.
+  # AuthenticationKey: "00112233445566778899AABBCCDDEEFF"  # gitleaks:allow public spec constant
 
   # Gas meter readings carried in the same P1 telegrams. Not a standalone
   # source: one process reads both power and gas from the P1 port.
@@ -317,6 +347,11 @@ TDENGINE_USER=root
 TDENGINE_PASSWORD=taosdata
 TDENGINE_DATABASE=meterlogger
 
+MQTT_ENABLED=true
+MQTT_BROKERURL=tcp://mosquitto:1883
+MQTT_USERNAME=meterlogger
+MQTT_PASSWORD=secret
+
 HEAT_ENABLED=true
 HEAT_READER=mbus
 HEAT_SERIALINTERFACE=/dev/ttyUSB0
@@ -327,6 +362,10 @@ GRID_ENABLED=true
 GRID_SERIALINTERFACE=/dev/ttyUSB1
 GRID_GAS_ENABLED=true
 GRID_GAS_MEASUREMENT=gas_meter
+GRID_WATER_ENABLED=true
+GRID_WATER_MEASUREMENT=water_meter
+GRID_THERMAL_ENABLED=true
+GRID_THERMAL_MEASUREMENT=thermal_meter
 
 FLUSHINTERVAL=10s
 HTTPSERVER_PORT=8080
@@ -374,11 +413,60 @@ off by a factor of ten.
 
 ### Grid
 
-| Key                    | Type   | Notes                           |
-|------------------------|--------|---------------------------------|
-| `Grid.Enabled`         | bool   | Set `true` to activate          |
-| `Grid.SerialInterface` | string | e.g. `/dev/ttyUSB1`             |
-| `Grid.Measurement`     | string | Table name in all enabled sinks |
+| Key                      | Type   | Notes                                                        |
+|--------------------------|--------|--------------------------------------------------------------|
+| `Grid.Enabled`           | bool   | Set `true` to activate                                       |
+| `Grid.Reader`            | string | `dsmr` (default) or `sml`, see below                         |
+| `Grid.SerialInterface`   | string | e.g. `/dev/ttyUSB1`                                          |
+| `Grid.Measurement`       | string | Table name in all enabled sinks                              |
+| `Grid.DecryptionKey`     | string | 32 hex chars. Enables decryption of encrypted DLMS telegrams (Luxembourg, Austria); dsmr reader only. Empty (default) reads plaintext only |
+| `Grid.AuthenticationKey` | string | 32 hex chars. Default `00112233445566778899AABBCCDDEEFF`, the fixed Luxembourg AK. Austrian users set their GAK |
+
+#### Grid.Reader
+
+The grid source speaks two protocols:
+
+- `dsmr` (default): DSMR P1 meters over a USB-to-P1 cable: the Netherlands,
+  Belgium (Fluvius eMUCS), Luxembourg (Smarty, encrypted), and the Austrian
+  DSOs using the same Sagemcom construction.
+- `sml`: German SML meters over an IR read head at 9600 baud 8N1. See
+  [meter-types.md](./meter-types.md#grid-meter-sml) for supported meters.
+
+```yaml
+Grid:
+  Enabled: true
+  Reader: sml
+  Measurement: grid_meter
+  SerialInterface: /dev/ttyUSB1
+```
+
+Field availability with `sml` depends on the meter's state. A meter in factory state sends only the
+import energy total (1-0:1.8.0), which lands in `usage_counter1`; every other column stays zero.
+After entering the meter PIN (from your grid operator) on the meter and enabling the extended info
+mode (InF), most meters also send active power, per-phase values, and the export registers. The
+reader works in both states. DSMR-only fields (brownouts, voltage spikes) always stay zero.
+
+The subdevice sections (`Grid.Gas`, `Grid.Water`, `Grid.Thermal`) require the `dsmr` reader; SML
+meters have no M-Bus subdevices. Enabling them with `sml` is a validation error.
+
+#### Encrypted meters (Luxembourg, Austria)
+
+Luxembourgish Smarty meters and Austrian Sagemcom T210-D meters push AES-GCM
+encrypted DLMS frames instead of plaintext telegrams. Set `Grid.DecryptionKey`
+to the 16-byte key (32 hex characters) for your meter:
+
+- **Luxembourg**: request the key from your DSO (Creos and the other Smarty
+  operators hand it out to the registered customer, via their customer portal
+  or support desk). Leave `Grid.AuthenticationKey` at its default; all Smarty
+  meters share the fixed AK.
+- **Austria (EVN, Energienetze Steiermark)**: request the key through your
+  grid operator's customer portal (EVN calls it the key for the
+  Kundenschnittstelle). If your operator also hands out a global
+  authentication key (GAK), set it as `Grid.AuthenticationKey`.
+
+Without a configured key the reader fails fast on the first encrypted frame
+with a message telling you to request the key. Belgian meters need no
+configuration at all: the Fluvius telegram dialect is detected automatically.
 
 #### Grid.Gas
 
@@ -409,7 +497,55 @@ The gas meter updates its value every 5 minutes (DSMR 5) or hourly (DSMR 4 and o
 telegram repeats the last capture far more often. A row is stored only when the meter reports a new
 capture, so expect one row per 5 minutes or per hour, not one per second. See
 [data-model.md](./data-model.md#gas_meter-configurable-name) for the table layout and
-[meter-types.md](./meter-types.md#m-bus-subdevices-gas) for the protocol details.
+[meter-types.md](./meter-types.md#m-bus-subdevices-gas-water-thermal) for the protocol details.
+
+#### Grid.Water
+
+Water meters can be attached to the electricity meter over M-Bus, exactly like gas. This is common
+in Belgium, where Fluvius links the water meter to the digital electricity meter. Set
+`Grid.Water.Enabled: true` to store the readings. Like gas, water rides on the grid source: the readings
+only flow when the grid source (the DSMR P1 reader) runs, and there is no `--source water` value.
+
+| Key                      | Type   | Default       | Notes                              |
+|--------------------------|--------|---------------|------------------------------------|
+| `Grid.Water.Enabled`     | bool   | `false`       | Set `true` to store water readings |
+| `Grid.Water.Measurement` | string | `water_meter` | Table name in all enabled sinks    |
+
+Both cold water (device type `7`) and warm water (device type `6`) meters are stored; the
+`device_type` column tells them apart. The reading must be reported in m3.
+
+#### Grid.Thermal
+
+Heat and cooling meters (district heating) can also sit on the P1 M-Bus channels. This is rare in
+practice. Set `Grid.Thermal.Enabled: true` to store them. Like gas, thermal rides on the grid
+source: the readings only flow when the grid source (the DSMR P1 reader) runs, and there
+is no `--source thermal` value.
+
+| Key                        | Type   | Default         | Notes                                |
+|----------------------------|--------|-----------------|--------------------------------------|
+| `Grid.Thermal.Enabled`     | bool   | `false`         | Set `true` to store thermal readings |
+| `Grid.Thermal.Measurement` | string | `thermal_meter` | Table name in all enabled sinks      |
+
+Device types `4` (heat), `10` and `11` (cooling) and `12` (combined heat/cool) are stored; the
+`device_type` column tells them apart. The reading must be reported in GJ; readings with any other
+unit are skipped with a warning.
+
+```yaml
+Grid:
+  Enabled: true
+  Measurement: grid_meter
+  SerialInterface: /dev/ttyUSB1
+  Water:
+    Enabled: true
+    Measurement: water_meter
+  Thermal:
+    Enabled: true
+    Measurement: thermal_meter
+```
+
+Water and thermal readings are deduplicated on the meter-supplied capture time, exactly like gas.
+See [data-model.md](./data-model.md#water_meter-configurable-name) for the table layouts and
+[meter-types.md](./meter-types.md#m-bus-subdevices-gas-water-thermal) for the protocol details.
 
 ### Solar (Enphase)
 
@@ -503,6 +639,42 @@ capture, so expect one row per 5 minutes or per hour, not one per second. See
 | `TDEngine.User`     | string | `root`     |               |
 | `TDEngine.Password` | string | `taosdata` |               |
 | `TDEngine.Database` | string |            |               |
+
+### MQTT
+
+Publishes every reading as a flat JSON message and announces the sensors to Home Assistant via
+[MQTT discovery](https://www.home-assistant.io/integrations/mqtt/#mqtt-discovery). See
+[deployment.md - Home Assistant](./deployment.md#home-assistant) for what shows up in Home
+Assistant, broker requirements, and a Mosquitto compose snippet.
+
+| Key                           | Type   | Default         | Notes                                                    |
+|-------------------------------|--------|-----------------|----------------------------------------------------------|
+| `MQTT.Enabled`                | bool   | `false`         |                                                          |
+| `MQTT.BrokerURL`              | string |                 | `tcp://host:1883` or `ssl://host:8883`; required         |
+| `MQTT.Username`               | string |                 | Optional broker credentials                              |
+| `MQTT.Password`               | string |                 |                                                          |
+| `MQTT.ClientID`               | string | `meterlogger`   | With `--source`, defaults to `meterlogger-<source>`      |
+| `MQTT.TopicPrefix`            | string | `meterlogger`   | Root of every state topic                                |
+| `MQTT.HomeAssistantDiscovery` | bool   | `true`          | Publish retained discovery configs                       |
+| `MQTT.DiscoveryPrefix`        | string | `homeassistant` | Must match the discovery prefix in Home Assistant        |
+| `MQTT.QoS`                    | int    | `1`             | `0` or `1`                                               |
+| `MQTT.RetainState`            | bool   | `false`         | Retain state messages                                    |
+
+MQTT client IDs must be unique per broker. One meterlogger process uses one client. When several
+processes share a broker (the one-container-per-source model), give each its own `ClientID`, or
+rely on the `--source` filter, which makes the default id unique per source.
+
+State topics: `<TopicPrefix>/<Measurement>` per source (for example `meterlogger/grid_meter`).
+The DucoBox uses the same table split as the database sinks: `<prefix>/<base>_box_general`,
+`<prefix>/<base>_node/<node_id>`, `<prefix>/<base>_box_node/<node_id>`, and
+`<prefix>/<base>_valve/<node_id>`. Solar microinverters publish on
+`<prefix>/<measurement>_inverters/<inverter_serial>`. The sink availability topic is
+`<prefix>/status` (`online`/`offline`, retained, backed by an MQTT last will).
+
+Field names in the JSON payloads match the SQL sink column names. Heat energy additionally gets
+derived `energy_kwh` and `volume_m3` fields: Home Assistant's Energy dashboard works in kWh, so
+the joule counter is converted (1 kWh = 3.6 MJ) and the kWh field is the one announced via
+discovery. The `energy_gj` field is still published for consumers that prefer GJ.
 
 ### Stdout (debug)
 

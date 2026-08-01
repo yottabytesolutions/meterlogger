@@ -3,6 +3,7 @@ package sqlsink
 import (
 	"context"
 	"log/slog"
+	"time"
 
 	"github.com/yottabytesolutions/meterlogger/internal/domain"
 )
@@ -15,10 +16,14 @@ type GridStore struct {
 	logger *slog.Logger
 }
 
-// NewGridStore creates and migrates a GridStore.
+// NewGridStore creates and migrates a GridStore. Version 2 adds the Belgian
+// peak demand columns.
 func NewGridStore(ctx context.Context, db *DB, table string, logger *slog.Logger) (*GridStore, error) {
-	tables := []migrationTable{{name: table, columns: gridColumns()}}
-	if err := migrate(ctx, db, "grid", table, "create grid table", tables, logger); err != nil {
+	tables := []migrationTable{{name: table, columns: gridColumnsV1()}}
+	demand := addColumnsMigration(
+		db.dialect, db.db, gridDemandVersion, "add peak demand columns", table, gridDemandColumns(),
+	)
+	if err := migrate(ctx, db, "grid", table, "create grid table", tables, logger, demand); err != nil {
 		return nil, err
 	}
 	return &GridStore{
@@ -42,12 +47,25 @@ func (s *GridStore) StoreGridTelegram(ctx context.Context, t domain.GridTelegram
 		t.CurrentP1, t.CurrentP2, t.CurrentP3,
 		t.PowerUsageP1, t.PowerUsageP2, t.PowerUsageP3,
 		t.PowerOutputP1, t.PowerOutputP2, t.PowerOutputP3,
+		t.AvgDemand, t.MaxDemandMonth, nullableTime(t.MaxDemandMonthAt),
 	)
 	if err != nil {
 		s.logger.ErrorContext(ctx, s.db.dialect.name+": StoreGridTelegram failed",
 			slog.String("table", s.table), slog.Any("error", err))
 	}
 	return err
+}
+
+// nullableTime maps the zero time to NULL. Meters without peak demand fields
+// leave MaxDemandMonthAt at its zero value, which is out of range for MySQL
+// DATETIME and meaningless everywhere else.
+//
+//nolint:ireturn // database/sql argument values are any by definition
+func nullableTime(t time.Time) any {
+	if t.IsZero() {
+		return nil
+	}
+	return t
 }
 
 // Flush is a no-op; writes auto-commit.

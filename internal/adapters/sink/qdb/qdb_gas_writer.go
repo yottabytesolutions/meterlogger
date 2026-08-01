@@ -1,3 +1,4 @@
+//nolint:dupl // gas, water and thermal writers share the same shape but persist distinct domain types
 package qdb
 
 import (

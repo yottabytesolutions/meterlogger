@@ -18,19 +18,25 @@ import (
 //nolint:gochecknoglobals // OTel tracer initialised at package level per OTel convention
 var gridTracer = otel.Tracer("grid-meter-service")
 
-// gasUnitM3 is the only unit accepted for a gas M-Bus subdevice reading.
-const gasUnitM3 = "m3"
+// Units accepted for M-Bus subdevice readings: volume meters report m3,
+// thermal meters report GJ.
+const (
+	unitM3 = "m3"
+	unitGJ = "GJ"
+)
 
 type GridLoggingService struct {
 	source         domain.GridTelegramReader
 	sink           domain.GridTelegramRepository
 	gasSink        domain.GasRepository
+	waterSink      domain.WaterRepository
+	thermalSink    domain.ThermalRepository
 	flushInterval  time.Duration
 	logger         *slog.Logger
 	metrics        *metrics.Metrics
 	dataFlowLogged bool
-	lastGasCapture map[int]time.Time
-	nonGasLogged   map[int]bool
+	lastCapture    map[int]time.Time
+	skipLogged     map[int]bool
 }
 
 func NewGridLoggingService(
@@ -40,13 +46,13 @@ func NewGridLoggingService(
 	logger *slog.Logger,
 ) *GridLoggingService {
 	return &GridLoggingService{
-		source:         source,
-		sink:           sink,
-		flushInterval:  flushInterval,
-		logger:         logger,
-		metrics:        metrics.NewNoop(),
-		lastGasCapture: make(map[int]time.Time),
-		nonGasLogged:   make(map[int]bool),
+		source:        source,
+		sink:          sink,
+		flushInterval: flushInterval,
+		logger:        logger,
+		metrics:       metrics.NewNoop(),
+		lastCapture:   make(map[int]time.Time),
+		skipLogged:    make(map[int]bool),
 	}
 }
 
@@ -60,6 +66,20 @@ func (s *GridLoggingService) WithMetrics(m *metrics.Metrics) *GridLoggingService
 // A nil repo leaves gas logging disabled.
 func (s *GridLoggingService) WithGas(repo domain.GasRepository) *GridLoggingService {
 	s.gasSink = repo
+	return s
+}
+
+// WithWater attaches a water repository fed from the telegram's M-Bus
+// subdevices. A nil repo leaves water logging disabled.
+func (s *GridLoggingService) WithWater(repo domain.WaterRepository) *GridLoggingService {
+	s.waterSink = repo
+	return s
+}
+
+// WithThermal attaches a thermal (heat and cooling) repository fed from the
+// telegram's M-Bus subdevices. A nil repo leaves thermal logging disabled.
+func (s *GridLoggingService) WithThermal(repo domain.ThermalRepository) *GridLoggingService {
+	s.thermalSink = repo
 	return s
 }
 
@@ -105,22 +125,34 @@ func (s *GridLoggingService) Start(ctx context.Context) {
 	}
 }
 
-// flushSinks flushes the grid repository and, when enabled, the gas
-// repository. Flush errors are logged but never escalate.
+// flushSinks flushes the grid repository and, when enabled, the gas, water
+// and thermal repositories. Flush errors are logged but never escalate.
 func (s *GridLoggingService) flushSinks(ctx context.Context) {
 	s.logger.DebugContext(ctx, "flushing grid meter data")
 	if err := withStoreTimeout(ctx, s.sink.Flush); err != nil {
 		s.logger.ErrorContext(ctx, "error flushing grid meter data", slog.Any("error", err))
 	}
-	if s.gasSink == nil {
+	s.flushSubdeviceSink(ctx, "gas", s.gasSink)
+	s.flushSubdeviceSink(ctx, "water", s.waterSink)
+	s.flushSubdeviceSink(ctx, "thermal", s.thermalSink)
+}
+
+// flusher is the Flush subset shared by the subdevice repositories.
+type flusher interface {
+	Flush(ctx context.Context) error
+}
+
+// flushSubdeviceSink flushes one optional subdevice repository.
+func (s *GridLoggingService) flushSubdeviceSink(ctx context.Context, kind string, sink flusher) {
+	if sink == nil {
 		return
 	}
-	if err := withStoreTimeout(ctx, s.gasSink.Flush); err != nil {
-		s.logger.ErrorContext(ctx, "error flushing gas meter data", slog.Any("error", err))
+	if err := withStoreTimeout(ctx, sink.Flush); err != nil {
+		s.logger.ErrorContext(ctx, "error flushing "+kind+" meter data", slog.Any("error", err))
 	}
 }
 
-// handleStore stores one grid telegram plus its gas subdevice readings and
+// handleStore stores one grid telegram plus its M-Bus subdevice readings and
 // escalates on repeated failures. Returns true if the service should stop.
 func (s *GridLoggingService) handleStore(
 	ctx context.Context, meterData domain.GridTelegram, consecutiveErrors *int,
@@ -130,7 +162,7 @@ func (s *GridLoggingService) handleStore(
 		failed++
 		s.logger.ErrorContext(ctx, "error storing grid meter data", slog.Any("error", err))
 	}
-	failed += s.storeGasReadings(ctx, meterData)
+	failed += s.storeMBusReadings(ctx, meterData)
 	if failed == 0 {
 		*consecutiveErrors = 0
 		return false
@@ -149,61 +181,123 @@ func (s *GridLoggingService) handleStore(
 	return false
 }
 
-// storeGasReadings stores the deduplicated gas captures carried by one
-// telegram and returns the number of failed stores. CapturedAt is the
-// deduplication key per channel; a failed store leaves the key unset so the
-// next telegram retries. Non-gas subdevices are logged once per channel and
-// then ignored.
-func (s *GridLoggingService) storeGasReadings(ctx context.Context, meterData domain.GridTelegram) int {
-	if s.gasSink == nil {
-		return 0
-	}
+// storeMBusReadings stores the deduplicated M-Bus subdevice captures carried
+// by one telegram and returns the number of failed stores. Routing is by
+// device type: gas, water and thermal go to their repositories; everything
+// else is skipped with one log line per channel.
+func (s *GridLoggingService) storeMBusReadings(ctx context.Context, meterData domain.GridTelegram) int {
 	failed := 0
 	for _, dev := range meterData.MBusDevices {
-		if dev.DeviceType != domain.DeviceTypeGas {
-			if !s.nonGasLogged[dev.Channel] {
-				s.nonGasLogged[dev.Channel] = true
-				s.logger.DebugContext(ctx, "ignoring non-gas M-Bus device",
-					slog.Int("channel", dev.Channel),
-					slog.Int("deviceType", dev.DeviceType),
-				)
+		switch dev.DeviceType {
+		case domain.DeviceTypeGas:
+			if s.gasSink == nil {
+				s.logSkippedOnce(ctx, dev, "gas storage not enabled")
+				continue
 			}
-			continue
+			failed += s.storeSubdeviceReading(ctx, "gas", unitM3, dev, func(c context.Context) error {
+				return s.gasSink.StoreGasReading(c, gasReading(dev, meterData.Time))
+			})
+		case domain.DeviceTypeWaterWarm, domain.DeviceTypeWater:
+			if s.waterSink == nil {
+				s.logSkippedOnce(ctx, dev, "water storage not enabled")
+				continue
+			}
+			failed += s.storeSubdeviceReading(ctx, "water", unitM3, dev, func(c context.Context) error {
+				return s.waterSink.StoreWaterReading(c, waterReading(dev, meterData.Time))
+			})
+		case domain.DeviceTypeHeat, domain.DeviceTypeCoolingOutlet,
+			domain.DeviceTypeCoolingInlet, domain.DeviceTypeHeatCool:
+			if s.thermalSink == nil {
+				s.logSkippedOnce(ctx, dev, "thermal storage not enabled")
+				continue
+			}
+			failed += s.storeSubdeviceReading(ctx, "thermal", unitGJ, dev, func(c context.Context) error {
+				return s.thermalSink.StoreThermalReading(c, thermalReading(dev, meterData.Time))
+			})
+		case domain.DeviceTypeSlaveEMeter:
+			s.logSkippedOnce(ctx, dev, "slave e-meter is not stored; read the slave meter from its own P1 port")
+		default:
+			s.logSkippedOnce(ctx, dev, "unsupported M-Bus device type")
 		}
-		if dev.Unit != gasUnitM3 {
-			s.logger.WarnContext(ctx, "gas reading with unexpected unit, skipping",
-				slog.Int("channel", dev.Channel),
-				slog.String("unit", dev.Unit),
-			)
-			continue
-		}
-		if last, seen := s.lastGasCapture[dev.Channel]; seen && last.Equal(dev.CapturedAt) {
-			continue
-		}
-		reading := domain.GasReading{
-			CapturedAt: dev.CapturedAt,
-			ReceivedAt: meterData.Time,
-			Channel:    dev.Channel,
-			DeviceType: dev.DeviceType,
-			SerialNo:   dev.SerialNo,
-			ReadingM3:  dev.Value,
-		}
-		err := withStoreTimeout(ctx, func(c context.Context) error {
-			return s.gasSink.StoreGasReading(c, reading)
-		})
-		if err != nil {
-			failed++
-			s.metrics.WriteErrorsTotal.WithLabelValues("multisink", "gas").Inc()
-			s.logger.ErrorContext(ctx, "error storing gas reading",
-				slog.Any("error", err),
-				slog.Int("channel", dev.Channel),
-			)
-			continue
-		}
-		s.metrics.WritesTotal.WithLabelValues("multisink", "gas").Inc()
-		s.lastGasCapture[dev.Channel] = dev.CapturedAt
 	}
 	return failed
+}
+
+// logSkippedOnce logs one skipped M-Bus subdevice per channel and stays
+// silent on repeats.
+func (s *GridLoggingService) logSkippedOnce(ctx context.Context, dev domain.MBusDeviceReading, reason string) {
+	if s.skipLogged[dev.Channel] {
+		return
+	}
+	s.skipLogged[dev.Channel] = true
+	s.logger.DebugContext(ctx, "ignoring M-Bus device: "+reason,
+		slog.Int("channel", dev.Channel),
+		slog.Int("deviceType", dev.DeviceType),
+	)
+}
+
+// storeSubdeviceReading stores one M-Bus subdevice capture with the shared
+// per-channel dedup. CapturedAt is the deduplication key; a failed store
+// leaves the key unset so the next telegram retries. Returns the number of
+// failed stores (0 or 1).
+func (s *GridLoggingService) storeSubdeviceReading(
+	ctx context.Context, kind, wantUnit string, dev domain.MBusDeviceReading,
+	store func(context.Context) error,
+) int {
+	if dev.Unit != wantUnit {
+		s.logger.WarnContext(ctx, kind+" reading with unexpected unit, skipping",
+			slog.Int("channel", dev.Channel),
+			slog.String("unit", dev.Unit),
+		)
+		return 0
+	}
+	if last, seen := s.lastCapture[dev.Channel]; seen && last.Equal(dev.CapturedAt) {
+		return 0
+	}
+	if err := withStoreTimeout(ctx, store); err != nil {
+		s.metrics.WriteErrorsTotal.WithLabelValues("multisink", kind).Inc()
+		s.logger.ErrorContext(ctx, "error storing "+kind+" reading",
+			slog.Any("error", err),
+			slog.Int("channel", dev.Channel),
+		)
+		return 1
+	}
+	s.metrics.WritesTotal.WithLabelValues("multisink", kind).Inc()
+	s.lastCapture[dev.Channel] = dev.CapturedAt
+	return 0
+}
+
+func gasReading(dev domain.MBusDeviceReading, receivedAt time.Time) domain.GasReading {
+	return domain.GasReading{
+		CapturedAt: dev.CapturedAt,
+		ReceivedAt: receivedAt,
+		Channel:    dev.Channel,
+		DeviceType: dev.DeviceType,
+		SerialNo:   dev.SerialNo,
+		ReadingM3:  dev.Value,
+	}
+}
+
+func waterReading(dev domain.MBusDeviceReading, receivedAt time.Time) domain.WaterReading {
+	return domain.WaterReading{
+		CapturedAt: dev.CapturedAt,
+		ReceivedAt: receivedAt,
+		Channel:    dev.Channel,
+		DeviceType: dev.DeviceType,
+		SerialNo:   dev.SerialNo,
+		ReadingM3:  dev.Value,
+	}
+}
+
+func thermalReading(dev domain.MBusDeviceReading, receivedAt time.Time) domain.ThermalReading {
+	return domain.ThermalReading{
+		CapturedAt: dev.CapturedAt,
+		ReceivedAt: receivedAt,
+		Channel:    dev.Channel,
+		DeviceType: dev.DeviceType,
+		SerialNo:   dev.SerialNo,
+		ReadingGJ:  dev.Value,
+	}
 }
 
 func (s *GridLoggingService) storeData(ctx context.Context, meterData domain.GridTelegram) error {

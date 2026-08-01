@@ -21,7 +21,8 @@ providing fault isolation and visible restarts. See [deployment.md](./deployment
 | Type          | Protocol               | Hardware interface     |
 |---------------|------------------------|------------------------|
 | `heat`        | M-Bus or optical (serial) | USB-to-M-Bus converter or IR read head |
-| `grid`        | DSMR P1 (serial)       | USB-to-P1 cable        |
+| `grid`        | DSMR P1 (NL, BE, LU, AT) or SML (serial) | USB-to-P1 cable or IR read head |
+
 | `solar`       | Enphase Envoy HTTP API | LAN / WiFi             |
 | `ventilation` | DucoBox HTTP API       | LAN / WiFi             |
 
@@ -35,6 +36,7 @@ providing fault isolation and visible restarts. See [deployment.md](./deployment
 | TimescaleDB | PostgreSQL extension  | yes               | Same schema as PostgreSQL               |
 | ClickHouse  | column-store (OLAP)   | yes               | High-throughput analytics workloads     |
 | TDEngine    | time-series           | yes               | Lightweight IoT time-series engine      |
+| MQTT        | message broker        | n/a               | Home Assistant via MQTT discovery       |
 | Stdout      | debug (log output)    | n/a               | `Stdout.Enabled: true`; not for production |
 
 All enabled sinks receive every write concurrently. At least one sink must be enabled.
@@ -49,6 +51,7 @@ internal/
   adapters/
     source/
       gridmeter/        ← DSMR P1 serial reader
+      sml/              ← SML (German meters) IR serial reader
       serialmbus/       ← M-Bus serial reader + protocol layer
       kamstrup/         ← Kamstrup KMP optical reader
       multical401/      ← Multical 401/66C optical reader
@@ -61,6 +64,7 @@ internal/
       timescaledb/      ← TimescaleDB sink (with auto-migration)
       clickhouse/       ← ClickHouse sink (with auto-migration)
       tdengine/         ← TDEngine sink (with auto-migration)
+      mqtt/             ← MQTT sink (Home Assistant discovery)
       multisink/        ← fan-out: writes to all enabled sinks
       stdout/           ← debug sink (structured log output)
     schemastore/        ← shared schema migration framework (all engines)

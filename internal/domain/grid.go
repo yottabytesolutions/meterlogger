@@ -46,6 +46,15 @@ type GridTelegram struct {
 	PowerOutputP2    int
 	PowerOutputP3    int
 
+	// Peak demand (Belgian capaciteitstarief) fields. Zero when the meter
+	// does not publish them (Dutch and Luxembourgish meters).
+	// AvgDemand is the current average demand (1-0:1.4.0) in watts.
+	// MaxDemandMonth is the running month's maximum average demand
+	// (1-0:1.6.0) in watts, captured at MaxDemandMonthAt.
+	AvgDemand        int
+	MaxDemandMonth   int
+	MaxDemandMonthAt time.Time
+
 	// MBusDevices carries the readings of meters attached over M-Bus
 	// (gas, water, thermal), when present in the telegram.
 	MBusDevices []MBusDeviceReading

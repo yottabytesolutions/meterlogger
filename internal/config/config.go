@@ -19,6 +19,7 @@ const (
 	SinkTimescaleDB = "timescaledb"
 	SinkClickHouse  = "clickhouse"
 	SinkTDEngine    = "tdengine"
+	SinkMQTT        = "mqtt"
 )
 
 // Source names as used by the --source flag.
@@ -36,6 +37,12 @@ const (
 	HeatReaderOptical401 = "optical401"
 )
 
+// Grid.Reader values selecting the protocol spoken by the grid meter.
+const (
+	GridReaderDSMR = "dsmr"
+	GridReaderSML  = "sml"
+)
+
 // Config is the top-level application configuration.
 type Config struct {
 	Debug         bool
@@ -51,6 +58,7 @@ type Config struct {
 	TimescaleDB   TimescaleDBConfig
 	ClickHouse    ClickHouseConfig
 	TDEngine      TDEngineConfig
+	MQTT          MQTTConfig
 	Ventilation   VentilationConfig
 	OTEL          OTELConfig
 	Profiling     ProfilingConfig
@@ -129,18 +137,47 @@ type Optical401Config struct {
 	FlowDecimals   int
 }
 
-// GridConfig configures the grid meter reader.
+// GridConfig configures the grid meter reader. Reader selects the
+// protocol: "dsmr" (default) for Dutch, Belgian, Luxembourgish, and
+// Austrian P1 meters, or "sml" for German SML meters read over an IR head.
+// DecryptionKey enables decryption of DLMS-encrypted P1 telegrams
+// (Luxembourg Smarty, Austrian Sagemcom T210-D); empty means plaintext only.
+// AuthenticationKey defaults to the fixed Luxembourg AK; Austrian users
+// override it with the GAK from their grid operator. Both are 32 hex chars.
+// Subdevices (Gas, Water, Thermal) only apply to the dsmr reader; SML
+// meters carry no M-Bus subdevices.
 type GridConfig struct {
-	Enabled         bool
-	Measurement     string
-	SerialInterface string
-	Gas             GasConfig
+	Enabled           bool
+	Measurement       string
+	Reader            string
+	SerialInterface   string
+	DecryptionKey     string
+	AuthenticationKey string
+	Gas               GasConfig
+	Water             WaterConfig
+	Thermal           ThermalConfig
 }
 
 // GasConfig configures storage of gas meter readings carried in the grid
 // meter's P1 telegrams. Gas is not a standalone source: readings only flow
 // when the grid source runs.
 type GasConfig struct {
+	Enabled     bool
+	Measurement string
+}
+
+// WaterConfig configures storage of water meter readings carried in the grid
+// meter's P1 telegrams. Water is not a standalone source: readings only flow
+// when the grid source runs.
+type WaterConfig struct {
+	Enabled     bool
+	Measurement string
+}
+
+// ThermalConfig configures storage of heat and cooling meter readings carried
+// in the grid meter's P1 telegrams. Thermal is not a standalone source:
+// readings only flow when the grid source runs.
+type ThermalConfig struct {
 	Enabled     bool
 	Measurement string
 }
@@ -203,6 +240,33 @@ type ClickHouseConfig struct {
 	User     string
 	Password string
 	Database string
+}
+
+// MQTTConfig configures the MQTT sink, which publishes every reading to an
+// MQTT broker and announces the sensors to Home Assistant via MQTT discovery.
+// ClientID defaults to "meterlogger", suffixed with the --source filter when
+// one is set. MQTT client IDs must be unique per broker: when several
+// meterlogger processes share one broker, give each its own ClientID (or use
+// the --source filter, which makes the default unique per source).
+type MQTTConfig struct {
+	Enabled   bool
+	BrokerURL string // e.g. tcp://host:1883 or ssl://host:8883
+	Username  string
+	Password  string
+	ClientID  string
+	// TopicPrefix is the root of every state topic (default "meterlogger").
+	TopicPrefix string
+	// HomeAssistantDiscovery announces every sensor via retained MQTT
+	// discovery config messages (default true).
+	HomeAssistantDiscovery bool
+	// DiscoveryPrefix is the Home Assistant discovery prefix (default
+	// "homeassistant").
+	DiscoveryPrefix string
+	// QoS is the publish quality of service: 0 or 1 (default 1).
+	QoS int
+	// RetainState marks state messages as retained so subscribers see the
+	// last reading immediately (default false).
+	RetainState bool
 }
 
 // TDEngineConfig configures the TDEngine sink.

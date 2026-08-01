@@ -46,6 +46,26 @@ func (s *Store) StoreGasReading(ctx context.Context, r domain.GasReading) error 
 	return nil
 }
 
+// StoreWaterReading logs a water reading to stdout.
+func (s *Store) StoreWaterReading(ctx context.Context, r domain.WaterReading) error {
+	s.logger.DebugContext(ctx, "water reading received",
+		slog.String("serial", r.SerialNo),
+		slog.Float64("readingM3", r.ReadingM3),
+		slog.Time("capturedAt", r.CapturedAt),
+	)
+	return nil
+}
+
+// StoreThermalReading logs a thermal reading to stdout.
+func (s *Store) StoreThermalReading(ctx context.Context, r domain.ThermalReading) error {
+	s.logger.DebugContext(ctx, "thermal reading received",
+		slog.String("serial", r.SerialNo),
+		slog.Float64("readingGJ", r.ReadingGJ),
+		slog.Time("capturedAt", r.CapturedAt),
+	)
+	return nil
+}
+
 // StoreEnvoySolarData logs solar data to stdout.
 func (s *Store) StoreEnvoySolarData(ctx context.Context, d domain.EnvoySolarData) error {
 	s.logger.DebugContext(ctx, "solar data received",

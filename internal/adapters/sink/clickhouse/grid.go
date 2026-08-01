@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"go.opentelemetry.io/otel"
 
@@ -73,8 +74,9 @@ func (s *GridStore) insertBatch(ctx context.Context, batch []domain.GridTelegram
              voltage_p1, voltage_p2, voltage_p3,
              current_p1, current_p2, current_p3,
              power_usage_p1, power_usage_p2, power_usage_p3,
-             power_output_p1, power_output_p2, power_output_p3)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, s.table,
+             power_output_p1, power_output_p2, power_output_p3,
+             avg_demand, max_demand_month, max_demand_month_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, s.table,
 		),
 	)
 	if err != nil {
@@ -94,6 +96,7 @@ func (s *GridStore) insertBatch(ctx context.Context, batch []domain.GridTelegram
 			t.CurrentP1, t.CurrentP2, t.CurrentP3,
 			t.PowerUsageP1, t.PowerUsageP2, t.PowerUsageP3,
 			t.PowerOutputP1, t.PowerOutputP2, t.PowerOutputP3,
+			t.AvgDemand, t.MaxDemandMonth, nullableTime(t.MaxDemandMonthAt),
 		)
 		if err != nil {
 			return fmt.Errorf("exec batch insert: %w", err)
@@ -104,6 +107,18 @@ func (s *GridStore) insertBatch(ctx context.Context, batch []domain.GridTelegram
 		return fmt.Errorf("commit clickhouse batch: %w", err)
 	}
 	return nil
+}
+
+// nullableTime maps the zero time to NULL: meters without peak demand fields
+// leave MaxDemandMonthAt unset, and the zero time is out of the DateTime64
+// range.
+//
+//nolint:ireturn // database/sql argument values are any by definition
+func nullableTime(t time.Time) any {
+	if t.IsZero() {
+		return nil
+	}
+	return t
 }
 
 // Close flushes pending rows with a bounded timeout. The shared DB is closed

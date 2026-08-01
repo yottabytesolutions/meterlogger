@@ -25,7 +25,8 @@ for each meter type you want to read.
 | Source        | Protocol                  | Connection                  |
 |---------------|---------------------------|-----------------------------|
 | `heat`        | M-Bus (EN 13757) or optical (Kamstrup KMP, Multical 401/66C) | USB M-Bus adapter or IR read head |
-| `grid`        | DSMR P1 Dutch smart meter, plus gas meter readings via the P1 M-Bus channel when enabled | USB-to-P1 serial cable |
+| `grid`        | DSMR P1 smart meter (NL, BE Fluvius, LU Smarty, AT Sagemcom T210-D) or German SML meter via IR read head, plus gas, water and thermal meter readings via the P1 M-Bus channels when enabled | USB-to-P1 serial cable or IR read head |
+
 | `solar`       | Enphase Envoy HTTP API    | Local network               |
 | `ventilation` | DucoBox HTTP API          | Local network               |
 
@@ -39,11 +40,15 @@ for each meter type you want to read.
 | TimescaleDB | PostgreSQL extension | yes               |
 | ClickHouse  | column-store, OLAP   | yes               |
 | TDEngine    | time-series, IoT     | yes               |
+| MQTT        | message broker, HA   | n/a               |
 | Stdout      | debug, logs records  | n/a               |
 
 At least one sink must be enabled. All enabled sinks receive every write.
 The stdout sink logs data instead of persisting it; enable it with
 `Stdout.Enabled: true` for debugging, not for production.
+The MQTT sink publishes every reading to a broker and announces the sensors
+to Home Assistant via MQTT discovery; see
+[deployment.md](documentation/deployment.md#home-assistant).
 
 ## Quick start
 

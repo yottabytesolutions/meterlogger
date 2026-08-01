@@ -15,7 +15,6 @@ import (
 
 	"github.com/yottabytesolutions/meterlogger/internal/adapters/source/ducobox"
 	"github.com/yottabytesolutions/meterlogger/internal/adapters/source/enphase"
-	"github.com/yottabytesolutions/meterlogger/internal/adapters/source/gridmeter"
 	"github.com/yottabytesolutions/meterlogger/internal/config"
 	"github.com/yottabytesolutions/meterlogger/internal/domain"
 )
@@ -137,7 +136,11 @@ func probeGrid(ctx context.Context, l *slog.Logger) (json.RawMessage, error) {
 	if cfg.Grid.SerialInterface == "" {
 		return nil, errors.New("grid source not configured: Grid.SerialInterface is empty")
 	}
-	telegram, err := readOneGridTelegram(ctx, gridmeter.NewGridReader(cfg.Grid.SerialInterface, l))
+	reader, err := newGridReader(l)
+	if err != nil {
+		return nil, err
+	}
+	telegram, err := readOneGridTelegram(ctx, reader)
 	if err != nil {
 		return nil, err
 	}

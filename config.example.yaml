@@ -88,6 +88,27 @@ TDEngine:
   Password: taosdata
   Database: meterlogger
 
+# ── MQTT sink (Home Assistant) ───────────────────────────────
+# Publishes every reading as JSON to an MQTT broker and announces the sensors
+# to Home Assistant via MQTT discovery: one device per meter, sensors with
+# correct device/state classes, Energy dashboard ready. No YAML needed on the
+# Home Assistant side. See documentation/deployment.md, section "Home
+# Assistant".
+MQTT:
+  Enabled: false
+  BrokerURL: tcp://mosquitto:1883 # or ssl://host:8883
+  Username: ""
+  Password: ""
+  # ClientID must be unique per broker. Empty means "meterlogger", or
+  # "meterlogger-<source>" when the --source flag is set. Set it explicitly
+  # when several processes share one broker without --source.
+  ClientID: ""
+  TopicPrefix: meterlogger # state topics: <prefix>/<measurement>
+  HomeAssistantDiscovery: true
+  DiscoveryPrefix: homeassistant # must match Home Assistant's discovery prefix
+  QoS: 1 # 0 or 1
+  RetainState: false # retain state messages (last reading visible to new subscribers)
+
 # ── OpenTelemetry tracing ──────────────────────────────────
 OTEL:
   Enabled: false
@@ -124,12 +145,28 @@ Heat:
   #   PowerDecimals: 1
   #   FlowDecimals: 1
 
-# ── Grid meter (DSMR P1 over serial) ───────────────────────
+# ── Grid meter (DSMR P1 or SML over serial) ────────────────
 Grid:
   Enabled: true
   Measurement: grid_meter
+  # Reader selects the protocol:
+  #   dsmr - Dutch/Belgian DSMR P1 meter over a USB-to-P1 cable (default)
+  #   sml  - German SML meter (EMH eHZ/mMe4.0, ISKRA MT681, EasyMeter
+  #          Q3A/Q3B, eBZ DD3 SM, Holley DTZ541) via IR read head, 9600 8N1.
+  #          Factory-state meters send only the energy total until the meter
+  #          PIN is entered and the extended info mode is enabled.
+  Reader: dsmr
   SerialInterface: /dev/ttyUSB0
   # No ScrapeInterval: the meter pushes data every second
+  # (every 10 seconds on Luxembourg Smarty meters)
+
+  # Only for encrypted meters (Luxembourg Smarty, Austrian Sagemcom T210-D):
+  # the 32-hex-char decryption key from your grid operator. Leave unset for
+  # plaintext meters (NL, BE).
+  # DecryptionKey: "00000000000000000000000000000000"
+  # AuthenticationKey defaults to the fixed Luxembourg AK; Austrian users
+  # override it with their GAK when their operator uses one.
+  # AuthenticationKey: "00112233445566778899AABBCCDDEEFF"  # gitleaks:allow public spec constant
 
   # Gas meter readings from the same P1 port. The gas meter is attached to
   # the electricity meter over M-Bus; its readings arrive inside the P1
@@ -142,6 +179,20 @@ Grid:
   Gas:
     Enabled: false
     Measurement: gas_meter # table name in all enabled sinks (default)
+
+  # Water meter readings from the same P1 port, exactly like gas. Common in
+  # Belgium, where Fluvius links the water meter to the digital electricity
+  # meter. Covers cold (device type 7) and warm (device type 6) water meters.
+  # Water:
+  #   Enabled: false
+  #   Measurement: water_meter # table name in all enabled sinks (default)
+
+  # Heat and cooling (district heating) meter readings from the same P1
+  # port, exactly like gas. Rare in practice. Covers device types 4 (heat),
+  # 10/11 (cooling) and 12 (heat/cool combined); readings must be in GJ.
+  # Thermal:
+  #   Enabled: false
+  #   Measurement: thermal_meter # table name in all enabled sinks (default)
 
 # ── Solar (Enphase Envoy HTTP API) ─────────────────────────
 Enphase:

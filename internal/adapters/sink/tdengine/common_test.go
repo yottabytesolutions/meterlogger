@@ -69,12 +69,14 @@ func TestBuildDSN(t *testing.T) {
 }
 
 // TDEngine's migrator tracks versions via SELECT MAX(version).
+// expectApplied reports the highest schema version of any store (grid v2)
+// as already applied so no DDL runs.
 func expectApplied(mock sqlmock.Sqlmock, component string) {
 	mock.ExpectExec("CREATE TABLE IF NOT EXISTS meterlogger_schema_migrations").
 		WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectQuery("SELECT MAX").
 		WithArgs(component).
-		WillReturnRows(sqlmock.NewRows([]string{"v"}).AddRow(1))
+		WillReturnRows(sqlmock.NewRows([]string{"v"}).AddRow(2))
 }
 
 // TestWiring exercises the delegation into sqlsink with the tdengine dialect:

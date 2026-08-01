@@ -1,3 +1,4 @@
+//nolint:dupl // gas, water and thermal stores share the same shape but persist distinct domain types
 package sqlsink
 
 import (

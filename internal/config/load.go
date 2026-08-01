@@ -77,7 +77,15 @@ func setSourceDefaults() {
 	viper.SetDefault("Heat.Optical401.PowerDecimals", 1)
 	viper.SetDefault("Heat.Optical401.FlowDecimals", 1)
 
+	viper.SetDefault("Grid.Reader", GridReaderDSMR)
 	viper.SetDefault("Grid.Gas.Measurement", "gas_meter")
+	viper.SetDefault("Grid.Water.Measurement", "water_meter")
+	viper.SetDefault("Grid.Thermal.Measurement", "thermal_meter")
+
+	// The fixed authentication key used by all Luxembourgish Smarty meters.
+	// Austrian users override it with the GAK from their grid operator.
+	// The fixed Luxembourg AK is a public spec constant.
+	viper.SetDefault("Grid.AuthenticationKey", "00112233445566778899AABBCCDDEEFF") // gitleaks:allow
 }
 
 func setSinkDefaults() {
@@ -97,6 +105,13 @@ func setSinkDefaults() {
 	viper.SetDefault("TDEngine.Port", 6041) //nolint:mnd // documented default TDEngine REST port
 	viper.SetDefault("TDEngine.User", "root")
 	viper.SetDefault("TDEngine.Password", "taosdata")
+
+	// MQTT.ClientID has no static default: it is derived at startup from the
+	// --source filter, which config loading does not know about.
+	viper.SetDefault("MQTT.TopicPrefix", "meterlogger")
+	viper.SetDefault("MQTT.HomeAssistantDiscovery", true)
+	viper.SetDefault("MQTT.DiscoveryPrefix", "homeassistant")
+	viper.SetDefault("MQTT.QoS", 1)
 }
 
 // isConfigFileNotFound reports whether err indicates that no config file was

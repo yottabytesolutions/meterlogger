@@ -10,6 +10,7 @@ const (
 	testAdminUser   = "admin"
 	testSerialUSB0  = "/dev/ttyUSB0"
 	testEnvoyURL    = "url"
+	testBrokerURL   = "tcp://broker:1883"
 )
 
 func TestValidate_Valid(t *testing.T) {
@@ -29,6 +30,17 @@ func TestValidate_NoSinks(t *testing.T) {
 	errs := Validate(cfg, "")
 	if !containsSubstring(errs, "no sinks enabled") {
 		t.Errorf("Validate() = %v, want a no-sinks error", errs)
+	}
+}
+
+func TestValidate_MQTTCountsAsSink(t *testing.T) {
+	cfg := Config{
+		MQTT: MQTTConfig{Enabled: true, BrokerURL: testBrokerURL, QoS: 1},
+		Heat: HeatConfig{Enabled: true, SerialInterface: testSerialUSB0},
+	}
+
+	if errs := Validate(cfg, ""); len(errs) != 0 {
+		t.Errorf("Validate() = %v, want empty; MQTT alone should satisfy the sink requirement", errs)
 	}
 }
 
@@ -90,6 +102,26 @@ func TestSinkFieldErrors(t *testing.T) {
 			name:    "tdengine enabled without user",
 			cfg:     Config{TDEngine: TDEngineConfig{Enabled: true, Host: "h", Database: "d"}},
 			wantErr: "tdengine sink enabled but User is empty",
+		},
+		{
+			name:    "mqtt enabled without broker URL",
+			cfg:     Config{MQTT: MQTTConfig{Enabled: true, QoS: 1}},
+			wantErr: "mqtt sink enabled but BrokerURL is empty",
+		},
+		{
+			name:    "mqtt enabled with invalid QoS",
+			cfg:     Config{MQTT: MQTTConfig{Enabled: true, BrokerURL: testBrokerURL, QoS: 2}},
+			wantErr: "invalid MQTT.QoS 2",
+		},
+		{
+			name:    "mqtt disabled with invalid QoS produces no error",
+			cfg:     Config{MQTT: MQTTConfig{QoS: 7}},
+			wantErr: "",
+		},
+		{
+			name:    "mqtt enabled with broker URL and QoS 0 produces no error",
+			cfg:     Config{MQTT: MQTTConfig{Enabled: true, BrokerURL: testBrokerURL, QoS: 0}},
+			wantErr: "",
 		},
 		{
 			name:    "postgres disabled with empty fields produces no error",
@@ -209,6 +241,60 @@ func TestSourceFieldErrors(t *testing.T) {
 	}
 }
 
+func TestSourceFieldErrors_GridReader(t *testing.T) {
+	grid := func(reader string, gasEnabled bool) Config {
+		return Config{Grid: GridConfig{
+			Enabled: true, SerialInterface: testSerialUSB0, Reader: reader,
+			Gas: GasConfig{Enabled: gasEnabled, Measurement: "gas"},
+		}}
+	}
+	tests := []struct {
+		name    string
+		cfg     Config
+		wantErr string
+	}{
+		{
+			name:    "invalid reader",
+			cfg:     grid("p1", false),
+			wantErr: `invalid Grid.Reader "p1"`,
+		},
+		{
+			name:    "sml reader produces no error",
+			cfg:     grid(GridReaderSML, false),
+			wantErr: "",
+		},
+		{
+			name:    "sml reader with gas enabled",
+			cfg:     grid(GridReaderSML, true),
+			wantErr: "Grid.Gas requires the dsmr reader",
+		},
+		{
+			name:    "dsmr reader with gas enabled produces no error",
+			cfg:     grid(GridReaderDSMR, true),
+			wantErr: "",
+		},
+		{
+			name:    "empty reader defaults to dsmr and allows gas",
+			cfg:     grid("", true),
+			wantErr: "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			errs := sourceFieldErrors(tt.cfg)
+			if tt.wantErr == "" {
+				if len(errs) != 0 {
+					t.Errorf("sourceFieldErrors() = %v, want empty", errs)
+				}
+				return
+			}
+			if !containsSubstring(errs, tt.wantErr) {
+				t.Errorf("sourceFieldErrors() = %v, want to contain %q", errs, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestSourceFieldErrors_Optical401(t *testing.T) {
 	heat := func(o Optical401Config) Config {
 		return Config{Heat: HeatConfig{
@@ -298,6 +384,113 @@ func TestGasFieldErrors(t *testing.T) {
 					Enabled:         true,
 					SerialInterface: testSerialUSB0,
 					Gas:             GasConfig{Enabled: true, Measurement: "gas_meter"},
+				},
+			},
+			wantErr: "",
+		},
+		{
+			name: "valid decryption keys produce no error",
+			cfg: Config{
+				Grid: GridConfig{
+					Enabled: true, SerialInterface: testSerialUSB0,
+					DecryptionKey:     "D491470F47126332B07D1923B3504188",
+					AuthenticationKey: "00112233445566778899AABBCCDDEEFF", // gitleaks:allow public spec constant
+				},
+			},
+			wantErr: "",
+		},
+		{
+			name: "decryption key wrong length",
+			cfg: Config{
+				Grid: GridConfig{Enabled: true, SerialInterface: testSerialUSB0, DecryptionKey: "ABCD"},
+			},
+			wantErr: "Grid.DecryptionKey must be 32 hexadecimal characters",
+		},
+		{
+			name: "decryption key not hex",
+			cfg: Config{
+				Grid: GridConfig{
+					Enabled: true, SerialInterface: testSerialUSB0,
+					DecryptionKey: "ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ",
+				},
+			},
+			wantErr: "Grid.DecryptionKey must be 32 hexadecimal characters",
+		},
+		{
+			name: "authentication key not hex",
+			cfg: Config{
+				Grid: GridConfig{
+					Enabled: true, SerialInterface: testSerialUSB0,
+					DecryptionKey:     "D491470F47126332B07D1923B3504188",
+					AuthenticationKey: "ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ",
+				},
+			},
+			wantErr: "Grid.AuthenticationKey must be 32 hexadecimal characters",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			errs := sourceFieldErrors(tt.cfg)
+			if tt.wantErr == "" {
+				if len(errs) != 0 {
+					t.Errorf("sourceFieldErrors() = %v, want empty", errs)
+				}
+				return
+			}
+			if !containsSubstring(errs, tt.wantErr) {
+				t.Errorf("sourceFieldErrors() = %v, want to contain %q", errs, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestWaterThermalFieldErrors(t *testing.T) {
+	tests := []struct {
+		name    string
+		cfg     Config
+		wantErr string
+	}{
+		{
+			name: "water enabled without measurement",
+			cfg: Config{
+				Grid: GridConfig{
+					Enabled:         true,
+					SerialInterface: testSerialUSB0,
+					Water:           WaterConfig{Enabled: true},
+				},
+			},
+			wantErr: "grid water readings enabled but Grid.Water.Measurement is empty",
+		},
+		{
+			name: "water enabled with measurement produces no error",
+			cfg: Config{
+				Grid: GridConfig{
+					Enabled:         true,
+					SerialInterface: testSerialUSB0,
+					Water:           WaterConfig{Enabled: true, Measurement: "water_meter"},
+				},
+			},
+			wantErr: "",
+		},
+		{
+			name: "thermal enabled without measurement",
+			cfg: Config{
+				Grid: GridConfig{
+					Enabled:         true,
+					SerialInterface: testSerialUSB0,
+					Thermal:         ThermalConfig{Enabled: true},
+				},
+			},
+			wantErr: "grid thermal readings enabled but Grid.Thermal.Measurement is empty",
+		},
+		{
+			name: "thermal enabled with measurement produces no error",
+			cfg: Config{
+				Grid: GridConfig{
+					Enabled:         true,
+					SerialInterface: testSerialUSB0,
+					Thermal:         ThermalConfig{Enabled: true, Measurement: "thermal_meter"},
 				},
 			},
 			wantErr: "",

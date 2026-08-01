@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"strconv"
 	"strings"
 	"sync"
@@ -49,6 +50,8 @@ type GridReader struct {
 	usbPort    string
 	telegrams  chan domain.GridTelegram
 	portReader io.Reader // if non-nil, used instead of opening the serial port
+	decryptor  *dlmsDecryptor
+	badFrames  int // encrypted frames dropped due to framing or decryption errors
 }
 
 func NewGridReader(usbPort string, logger *slog.Logger) *GridReader {
@@ -57,6 +60,17 @@ func NewGridReader(usbPort string, logger *slog.Logger) *GridReader {
 		usbPort:   usbPort,
 		telegrams: make(chan domain.GridTelegram),
 	}
+}
+
+// WithDecryption enables decryption of DLMS-encrypted telegrams (Luxembourg
+// Smarty, Austrian Sagemcom T210-D). Both keys are 32 hex characters.
+func (gr *GridReader) WithDecryption(decryptionKeyHex, authenticationKeyHex string) (*GridReader, error) {
+	decryptor, err := newDLMSDecryptor(decryptionKeyHex, authenticationKeyHex)
+	if err != nil {
+		return nil, err
+	}
+	gr.decryptor = decryptor
+	return gr, nil
 }
 
 // Telegrams returns the channel on which decoded telegrams are delivered.
@@ -69,7 +83,7 @@ func (gr *GridReader) Telegrams() <-chan domain.GridTelegram {
 // non-recoverable error occurs. It must be called at most once: it closes the
 // telegram channel on return.
 //
-//nolint:gocognit,nestif // complexity is inherent to the serial protocol state machine
+//nolint:gocognit // complexity is inherent to the serial protocol state machine
 func (gr *GridReader) ReadGridTelegrams(ctx context.Context) error {
 	defer close(gr.telegrams)
 	var src io.Reader
@@ -109,18 +123,39 @@ func (gr *GridReader) ReadGridTelegrams(ctx context.Context) error {
 		default:
 		}
 
-		line, err := reader.ReadString('\n')
+		head, err := reader.Peek(1)
 		if err != nil {
-			if errors.Is(err, io.EOF) {
-				// A closed serial stream means the producer is dead. Surface it
-				// so the service's error path terminates the process instead of
-				// staying ready with no data flow.
-				return fmt.Errorf("serial stream ended: %w", err)
+			if stop, readErr := gr.classifyReadError(ctx, err); stop {
+				return readErr
 			}
-			if errors.Is(err, syscall.EINTR) || errors.Is(err, io.ErrNoProgress) {
+			continue
+		}
+
+		// An encrypted DLMS frame; a plaintext telegram never contains 0xDB
+		// at the read position between lines.
+		if head[0] == dlmsStartByte {
+			messageBuilder.Reset()
+			messageStarted = false
+			if gr.decryptor == nil {
+				return errEncryptedWithoutKey
+			}
+			message, frameErr := gr.decryptor.readFrame(reader)
+			if frameErr != nil {
+				gr.badFrames++
+				gr.logger.WarnContext(ctx, "dropping encrypted frame", slog.Any("error", frameErr))
 				continue
 			}
-			gr.logger.ErrorContext(ctx, "Error reading from serial port", slog.Any("error", err))
+			if stopped := gr.deliver(ctx, message); stopped {
+				return nil
+			}
+			continue
+		}
+
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			if stop, readErr := gr.classifyReadError(ctx, err); stop {
+				return readErr
+			}
 			continue
 		}
 
@@ -146,27 +181,50 @@ func (gr *GridReader) ReadGridTelegrams(ctx context.Context) error {
 
 			// Check for the end of the message
 			if strings.HasPrefix(line, "!") {
-				message := messageBuilder.String()
 				messageStarted = false
-
-				if isValidChecksum(message) {
-					telegram, parseErr := parseTelegram(message)
-					if parseErr != nil {
-						gr.logger.ErrorContext(ctx, "Failed to parse telegram", slog.Any("error", parseErr))
-						continue
-					}
-					telegram.MBusDevices = parseMBusDevices(ctx, message, gr.logger)
-					gr.logger.DebugContext(ctx, "grid telegram parsed, queuing", debuglog.GridAttrs(telegram))
-					select {
-					case gr.telegrams <- telegram:
-					case <-ctx.Done():
-						return nil
-					}
-				} else {
-					gr.logger.WarnContext(ctx, "Invalid checksum for message")
+				if stopped := gr.deliver(ctx, messageBuilder.String()); stopped {
+					return nil
 				}
 			}
 		}
+	}
+}
+
+// classifyReadError decides how to react to a read error. EOF stops the
+// reader: a closed serial stream means the producer is dead, and surfacing it
+// lets the service's error path terminate the process instead of staying
+// ready with no data flow. Interrupts are retried; everything else is logged
+// and retried.
+func (gr *GridReader) classifyReadError(ctx context.Context, err error) (bool, error) {
+	if errors.Is(err, io.EOF) {
+		return true, fmt.Errorf("serial stream ended: %w", err)
+	}
+	if errors.Is(err, syscall.EINTR) || errors.Is(err, io.ErrNoProgress) {
+		return false, nil
+	}
+	gr.logger.ErrorContext(ctx, "Error reading from serial port", slog.Any("error", err))
+	return false, nil
+}
+
+// deliver validates, parses, and queues one complete telegram text. It
+// returns true when ctx was cancelled while queueing.
+func (gr *GridReader) deliver(ctx context.Context, message string) bool {
+	if !isValidChecksum(message) {
+		gr.logger.WarnContext(ctx, "Invalid checksum for message")
+		return false
+	}
+	telegram, parseErr := parseTelegram(message)
+	if parseErr != nil {
+		gr.logger.ErrorContext(ctx, "Failed to parse telegram", slog.Any("error", parseErr))
+		return false
+	}
+	telegram.MBusDevices = parseMBusDevices(ctx, message, gr.logger)
+	gr.logger.DebugContext(ctx, "grid telegram parsed, queuing", debuglog.GridAttrs(telegram))
+	select {
+	case gr.telegrams <- telegram:
+		return false
+	case <-ctx.Done():
+		return true
 	}
 }
 
@@ -267,20 +325,18 @@ func parseTelegram(message string) (domain.GridTelegram, error) {
 		return strconv.Atoi(val)
 	}
 
+	// Currents are integer amperes on Dutch meters (001*A) but carry
+	// decimals on Belgian meters (000.27*A); parse as float and round.
+	parseAmps := func(key string) int {
+		amps, ampErr := parseFloat(key)
+		if ampErr != nil {
+			return 0
+		}
+		return int(math.Round(amps))
+	}
+
 	// Parse required values with error checking
-	usageCounter1, err := parseFloat("1-0:1.8.1")
-	if err != nil {
-		return domain.GridTelegram{}, err
-	}
-	usageCounter2, err := parseFloat("1-0:1.8.2")
-	if err != nil {
-		return domain.GridTelegram{}, err
-	}
-	outputCounter1, err := parseFloat("1-0:2.8.1")
-	if err != nil {
-		return domain.GridTelegram{}, err
-	}
-	outputCounter2, err := parseFloat("1-0:2.8.2")
+	usageCounter1, usageCounter2, outputCounter1, outputCounter2, err := parseEnergyCounters(parseFloat, values)
 	if err != nil {
 		return domain.GridTelegram{}, err
 	}
@@ -303,9 +359,9 @@ func parseTelegram(message string) (domain.GridTelegram, error) {
 	voltageP1, _ := parseFloat("1-0:32.7.0")
 	voltageP2, _ := parseFloat("1-0:52.7.0")
 	voltageP3, _ := parseFloat("1-0:72.7.0")
-	currentP1, _ := parseInt("1-0:31.7.0")
-	currentP2, _ := parseInt("1-0:51.7.0")
-	currentP3, _ := parseInt("1-0:71.7.0")
+	currentP1 := parseAmps("1-0:31.7.0")
+	currentP2 := parseAmps("1-0:51.7.0")
+	currentP3 := parseAmps("1-0:71.7.0")
 	powerUsageP1, _ := parseFloat("1-0:21.7.0")
 	powerUsageP2, _ := parseFloat("1-0:41.7.0")
 	powerUsageP3, _ := parseFloat("1-0:61.7.0")
@@ -313,10 +369,14 @@ func parseTelegram(message string) (domain.GridTelegram, error) {
 	powerOutputP2, _ := parseFloat("1-0:42.7.0")
 	powerOutputP3, _ := parseFloat("1-0:62.7.0")
 
+	// Belgian capaciteitstarief peak demand fields; zero when absent.
+	avgDemandKW, _ := parseFloat("1-0:1.4.0")
+	maxDemandMonth, maxDemandMonthAt := parseMonthlyPeak(values["1-0:1.6.0"], location)
+
 	return domain.GridTelegram{
 		Time:             timestamp,
-		MeterMerkType:    values["1-3:0.2.8"],
-		Serienummer:      values["0-0:96.1.1"],
+		MeterMerkType:    firstValue(values, "1-3:0.2.8", "0-0:96.1.4"),
+		Serienummer:      firstValue(values, "0-0:96.1.1", "0-0:42.0.0"),
 		UsageCounter1:    usageCounter1,
 		UsageCounter2:    usageCounter2,
 		OutputCounter1:   outputCounter1,
@@ -341,5 +401,76 @@ func parseTelegram(message string) (domain.GridTelegram, error) {
 		PowerOutputP1:    int(powerOutputP1 * milliToUnit),
 		PowerOutputP2:    int(powerOutputP2 * milliToUnit),
 		PowerOutputP3:    int(powerOutputP3 * milliToUnit),
+		AvgDemand:        int(math.Round(avgDemandKW * milliToUnit)),
+		MaxDemandMonth:   maxDemandMonth,
+		MaxDemandMonthAt: maxDemandMonthAt,
 	}, nil
+}
+
+// parseEnergyCounters reads the energy registers and returns usage tariff 1
+// and 2 and output tariff 1 and 2. Dutch and Belgian meters publish tariffed
+// counters (1.8.1/1.8.2 and 2.8.1/2.8.2); Luxembourgish and Austrian meters
+// publish only totals (1.8.0/2.8.0). Totals land in counter 1 with counter 2
+// left at zero.
+func parseEnergyCounters(
+	parseFloat func(string) (float64, error), values map[string]string,
+) (float64, float64, float64, float64, error) {
+	if _, tariffed := values["1-0:1.8.1"]; tariffed {
+		usage1, err := parseFloat("1-0:1.8.1")
+		if err != nil {
+			return 0, 0, 0, 0, err
+		}
+		usage2, err := parseFloat("1-0:1.8.2")
+		if err != nil {
+			return 0, 0, 0, 0, err
+		}
+		output1, err := parseFloat("1-0:2.8.1")
+		if err != nil {
+			return 0, 0, 0, 0, err
+		}
+		output2, err := parseFloat("1-0:2.8.2")
+		if err != nil {
+			return 0, 0, 0, 0, err
+		}
+		return usage1, usage2, output1, output2, nil
+	}
+	usage1, err := parseFloat("1-0:1.8.0")
+	if err != nil {
+		return 0, 0, 0, 0, fmt.Errorf("no energy counters found (need 1-0:1.8.1 or 1-0:1.8.0): %w", err)
+	}
+	output1, err := parseFloat("1-0:2.8.0")
+	if err != nil {
+		return 0, 0, 0, 0, err
+	}
+	return usage1, 0, output1, 0, nil
+}
+
+// parseMonthlyPeak parses the "1-0:1.6.0(TST)(vv.vvv*kW)" running-month
+// maximum demand line. The nested groups were joined with '|' during line
+// splitting. The line is optional and defensively parsed: anything malformed
+// yields zero values.
+func parseMonthlyPeak(raw string, location *time.Location) (int, time.Time) {
+	timestampStr, valueStr, found := strings.Cut(raw, "|")
+	if !found {
+		return 0, time.Time{}
+	}
+	capturedAt, err := parseMBusTimestamp(timestampStr, location)
+	if err != nil {
+		return 0, time.Time{}
+	}
+	demandKW, err := strconv.ParseFloat(strings.Split(valueStr, "*")[0], 64)
+	if err != nil {
+		return 0, time.Time{}
+	}
+	return int(math.Round(demandKW * milliToUnit)), capturedAt
+}
+
+// firstValue returns the first key present in values, or an empty string.
+func firstValue(values map[string]string, keys ...string) string {
+	for _, key := range keys {
+		if v, ok := values[key]; ok {
+			return v
+		}
+	}
+	return ""
 }

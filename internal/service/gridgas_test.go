@@ -78,8 +78,8 @@ func TestGridLoggingService_StoreGasReadings_DedupsByCapturedAt(t *testing.T) {
 
 	// The same capture repeats in many telegrams; only the first one stores.
 	for range 3 {
-		if failed := svc.storeGasReadings(context.Background(), telegram); failed != 0 {
-			t.Fatalf("storeGasReadings() failed = %d, want 0", failed)
+		if failed := svc.storeMBusReadings(context.Background(), telegram); failed != 0 {
+			t.Fatalf("storeMBusReadings() failed = %d, want 0", failed)
 		}
 	}
 	if gas.storedCount() != 1 {
@@ -105,8 +105,8 @@ func TestGridLoggingService_StoreGasReadings_NewCaptureStored(t *testing.T) {
 	svc, _ := newGasTestService(gas)
 	first := time.Date(2024, 1, 2, 12, 5, 0, 0, time.UTC)
 
-	svc.storeGasReadings(context.Background(), gasTelegram(first, 1.0, "m3"))
-	svc.storeGasReadings(context.Background(), gasTelegram(first.Add(5*time.Minute), 1.1, "m3"))
+	svc.storeMBusReadings(context.Background(), gasTelegram(first, 1.0, "m3"))
+	svc.storeMBusReadings(context.Background(), gasTelegram(first.Add(5*time.Minute), 1.1, "m3"))
 
 	if gas.storedCount() != 2 {
 		t.Errorf("stored %d gas readings, want 2", gas.storedCount())
@@ -118,9 +118,9 @@ func TestGridLoggingService_StoreGasReadings_UnitMismatchSkipped(t *testing.T) {
 	svc, _ := newGasTestService(gas)
 	capturedAt := time.Date(2024, 1, 2, 12, 5, 0, 0, time.UTC)
 
-	failed := svc.storeGasReadings(context.Background(), gasTelegram(capturedAt, 1.0, "GJ"))
+	failed := svc.storeMBusReadings(context.Background(), gasTelegram(capturedAt, 1.0, "GJ"))
 	if failed != 0 {
-		t.Errorf("storeGasReadings() failed = %d, want 0 for a skipped unit mismatch", failed)
+		t.Errorf("storeMBusReadings() failed = %d, want 0 for a skipped unit mismatch", failed)
 	}
 	if gas.storedCount() != 0 {
 		t.Errorf("stored %d gas readings, want 0 for unit mismatch", gas.storedCount())
@@ -131,8 +131,8 @@ func TestGridLoggingService_StoreGasReadings_NilRepoSafe(t *testing.T) {
 	svc, _ := newGasTestService(nil)
 	capturedAt := time.Date(2024, 1, 2, 12, 5, 0, 0, time.UTC)
 
-	if failed := svc.storeGasReadings(context.Background(), gasTelegram(capturedAt, 1.0, "m3")); failed != 0 {
-		t.Errorf("storeGasReadings() failed = %d, want 0 with nil gas repo", failed)
+	if failed := svc.storeMBusReadings(context.Background(), gasTelegram(capturedAt, 1.0, "m3")); failed != 0 {
+		t.Errorf("storeMBusReadings() failed = %d, want 0 with nil gas repo", failed)
 	}
 }
 
@@ -151,14 +151,14 @@ func TestGridLoggingService_StoreGasReadings_NonGasDeviceIgnored(t *testing.T) {
 
 	// Repeat to exercise the log-once path; both passes must stay silent skips.
 	for range 2 {
-		if failed := svc.storeGasReadings(context.Background(), telegram); failed != 0 {
-			t.Fatalf("storeGasReadings() failed = %d, want 0", failed)
+		if failed := svc.storeMBusReadings(context.Background(), telegram); failed != 0 {
+			t.Fatalf("storeMBusReadings() failed = %d, want 0", failed)
 		}
 	}
 	if gas.storedCount() != 0 {
 		t.Errorf("stored %d gas readings, want 0 for non-gas device", gas.storedCount())
 	}
-	if !svc.nonGasLogged[2] {
+	if !svc.skipLogged[2] {
 		t.Error("non-gas channel 2 was not marked as logged")
 	}
 }

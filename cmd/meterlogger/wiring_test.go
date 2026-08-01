@@ -14,6 +14,7 @@ import (
 
 	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/postgres"
 	"github.com/yottabytesolutions/meterlogger/internal/adapters/sink/sqlsink"
+	"github.com/yottabytesolutions/meterlogger/internal/adapters/source/sml"
 	"github.com/yottabytesolutions/meterlogger/internal/config"
 	"github.com/yottabytesolutions/meterlogger/internal/metrics"
 )
@@ -245,6 +246,42 @@ func TestSourceEnabled(t *testing.T) {
 			sourceFilter = tt.filter
 			if got := sourceEnabled(tt.source); got != tt.want {
 				t.Errorf("sourceEnabled(%q) with filter %q = %v, want %v", tt.source, tt.filter, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNewGridReader(t *testing.T) {
+	origCfg := cfg
+	defer func() { cfg = origCfg }()
+
+	tests := []struct {
+		name    string
+		reader  string
+		wantSML bool
+		wantErr bool
+	}{
+		{name: "default is dsmr", reader: ""},
+		{name: "dsmr", reader: config.GridReaderDSMR},
+		{name: "sml", reader: config.GridReaderSML, wantSML: true},
+		{name: "invalid", reader: "p1", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg = config.Config{Grid: config.GridConfig{SerialInterface: "/dev/ttyUSB9", Reader: tt.reader}}
+			reader, err := newGridReader(testLogger())
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("newGridReader: %v", err)
+			}
+			_, isSML := reader.(*sml.Reader)
+			if isSML != tt.wantSML {
+				t.Errorf("reader type %T, wantSML=%v", reader, tt.wantSML)
 			}
 		})
 	}

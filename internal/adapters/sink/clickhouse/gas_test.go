@@ -1,3 +1,4 @@
+//nolint:dupl // gas, water and thermal store tests share the same shape but cover distinct domain types
 package clickhouse_test
 
 import (
@@ -60,7 +61,6 @@ func TestGasStore_StoreGasReading(t *testing.T) {
 	}
 }
 
-//nolint:dupl // mirrors the grid requeue test; the stores share behaviour but not types
 func TestGasStore_FlushErrorRequeues(t *testing.T) {
 	db, mock := testDB(t)
 	expectMigrationAlreadyApplied(mock, "clickhouse_gas_gas")
