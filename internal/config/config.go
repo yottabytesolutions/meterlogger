@@ -130,11 +130,17 @@ type Optical401Config struct {
 }
 
 // GridConfig configures the grid meter reader.
+// DecryptionKey enables decryption of DLMS-encrypted P1 telegrams
+// (Luxembourg Smarty, Austrian Sagemcom T210-D); empty means plaintext only.
+// AuthenticationKey defaults to the fixed Luxembourg AK; Austrian users
+// override it with the GAK from their grid operator. Both are 32 hex chars.
 type GridConfig struct {
-	Enabled         bool
-	Measurement     string
-	SerialInterface string
-	Gas             GasConfig
+	Enabled           bool
+	Measurement       string
+	SerialInterface   string
+	DecryptionKey     string
+	AuthenticationKey string
+	Gas               GasConfig
 }
 
 // GasConfig configures storage of gas meter readings carried in the grid

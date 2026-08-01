@@ -172,7 +172,8 @@ Notes:
 
 ### Hardware
 
-Dutch smart meters expose a P1 port that pushes a telegram every second. The port uses an RJ-11 connector at 115200
+Dutch, Belgian, Luxembourgish, and Austrian smart meters expose a P1 port that pushes a telegram every second
+(every 10 seconds in Luxembourg). The port uses an RJ-11 connector at 115200
 baud. A USB-to-serial cable with an RJ-11 adapter is required.
 
 Serial settings (fixed in code):
@@ -260,6 +261,39 @@ Key points:
 There is no separate gas source or serial connection. Enabling `Grid.Gas` makes the grid source store the gas lines it
 already receives. See [configuration.md](./configuration.md#gridgas) for the config keys and
 [data-model.md](./data-model.md#gasreading) for the stored fields.
+
+### Belgium (Fluvius eMUCS)
+
+Belgian meters use the same transport (115200 8N1, same CRC) and are detected automatically; nothing needs to be
+configured. Dialect differences handled by the reader:
+
+- The protocol version is on `0-0:96.1.4` instead of `1-3:0.2.8`.
+- Peak demand fields for the capaciteitstarief are parsed and stored: current average demand (`1-0:1.4.0`) and the
+  running month's maximum with its capture time (`1-0:1.6.0`). The 13-month history (`0-0:98.1.0`) is parsed
+  defensively and ignored; Fluvius meters emit garbage timestamps in it for empty months.
+- Phase currents carry decimals (`000.27*A`); they are rounded to whole amperes.
+- Gas subdevices publish on `0-n:24.2.3` instead of `24.2.1`. **The Belgian gas volume is not temperature
+  corrected**; the DSO applies the correction in billing. Keep that in mind when comparing stored volumes against
+  invoices.
+- Water meters (device type `007`) publish on `24.2.1`; they are detected and skipped with a one-time log line,
+  like on Dutch meters.
+- Subdevice equipment ids are on `0-n:96.1.1` instead of `0-n:96.1.0`; both are accepted.
+
+### Luxembourg (Smarty) and Austria (Sagemcom T210-D)
+
+Luxembourgish Smarty meters and Austrian Sagemcom T210-D meters (deployed by EVN and Energienetze Steiermark) push
+AES-128-GCM encrypted DLMS frames over the same P1 port, one frame per 10 seconds in Luxembourg. Each frame starts
+with a `0xDB` tag and carries a system title, frame counter, ciphertext, and a 12-byte GCM tag. The reader detects the
+frame type per frame, decrypts with `Grid.DecryptionKey` and `Grid.AuthenticationKey`, and feeds the plaintext through
+the normal telegram path including CRC validation. A frame that fails authentication is dropped with a warning and the
+reader resynchronises on the next frame.
+
+The decrypted telegrams publish energy totals only (`1-0:1.8.0`/`2.8.0`, no tariff registers); the totals are stored
+in the tariff-1 counters with the tariff-2 counters at zero. The equipment id falls back to `0-0:42.0.0` when
+`0-0:96.1.1` is absent.
+
+**Not covered:** Wiener Netze meters push raw DLMS/COSEM APDUs without the DSMR text layer. That format is a
+different protocol, not a dialect, and this reader does not support it.
 
 ---
 

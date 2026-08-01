@@ -1,6 +1,21 @@
 package config
 
-import "fmt"
+import (
+	"encoding/hex"
+	"fmt"
+)
+
+// dlmsKeyHexLen is the length of a hex-encoded 128-bit DLMS key.
+const dlmsKeyHexLen = 32
+
+// isHexKey reports whether s is a valid hex-encoded 128-bit key.
+func isHexKey(s string) bool {
+	if len(s) != dlmsKeyHexLen {
+		return false
+	}
+	_, err := hex.DecodeString(s)
+	return err == nil
+}
 
 // Validate returns every configuration problem found in cfg, given the
 // --source filter in effect. An empty slice means the configuration is valid.
@@ -111,6 +126,12 @@ func sourceFieldErrors(cfg Config) []string {
 	// still select grid at runtime regardless of Grid.Enabled.
 	if cfg.Grid.Gas.Enabled && cfg.Grid.Gas.Measurement == "" {
 		errs = append(errs, "grid gas readings enabled but Grid.Gas.Measurement is empty")
+	}
+	if cfg.Grid.DecryptionKey != "" && !isHexKey(cfg.Grid.DecryptionKey) {
+		errs = append(errs, "Grid.DecryptionKey must be 32 hexadecimal characters (128-bit AES key)")
+	}
+	if cfg.Grid.AuthenticationKey != "" && !isHexKey(cfg.Grid.AuthenticationKey) {
+		errs = append(errs, "Grid.AuthenticationKey must be 32 hexadecimal characters (128-bit key)")
 	}
 	if cfg.Enphase.Enabled {
 		errs = append(errs, enphaseFieldErrors(cfg.Enphase)...)

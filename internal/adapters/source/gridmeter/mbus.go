@@ -24,9 +24,14 @@ const (
 	winterOffsetSeconds = 1 * 60 * 60
 	summerOffsetSeconds = 2 * 60 * 60
 
-	mbusCodeDeviceType    = "24.1.0"
-	mbusCodeEquipmentID   = "96.1.0"
+	mbusCodeDeviceType  = "24.1.0"
+	mbusCodeEquipmentID = "96.1.0"
+	// mbusCodeEquipmentIDBE is the Belgian (Fluvius eMUCS) equipment id code.
+	mbusCodeEquipmentIDBE = "96.1.1"
 	mbusCodeCapture       = "24.2.1"
+	// mbusCodeCaptureBE is the Belgian gas reading code: the volume is NOT
+	// temperature corrected, unlike the Dutch 24.2.1 reading.
+	mbusCodeCaptureBE     = "24.2.3"
 	mbusCodeLegacyCapture = "24.3.0"
 
 	captureArgCount       = 2
@@ -68,9 +73,9 @@ func parseMBusDevices(ctx context.Context, message string, logger *slog.Logger) 
 		switch code {
 		case mbusCodeDeviceType:
 			lineErr = parseMBusDeviceType(args, state)
-		case mbusCodeEquipmentID:
+		case mbusCodeEquipmentID, mbusCodeEquipmentIDBE:
 			lineErr = parseMBusEquipmentID(args, state)
-		case mbusCodeCapture:
+		case mbusCodeCapture, mbusCodeCaptureBE:
 			lineErr = parseMBusCapture(args, location, state)
 		case mbusCodeLegacyCapture:
 			var next string
@@ -154,7 +159,8 @@ func parseMBusEquipmentID(args []string, state *mbusChannelState) error {
 	return nil
 }
 
-// parseMBusCapture parses a DSMR 4.x/5.x "0-n:24.2.1(TST)(value*unit)" line.
+// parseMBusCapture parses a DSMR 4.x/5.x "0-n:24.2.1(TST)(value*unit)" line
+// or the Belgian eMUCS "0-n:24.2.3" equivalent.
 func parseMBusCapture(args []string, location *time.Location, state *mbusChannelState) error {
 	if len(args) != captureArgCount {
 		return fmt.Errorf("capture: want %d groups, got %d", captureArgCount, len(args))

@@ -350,6 +350,9 @@ func TestGridStore_StoreGridTelegram(t *testing.T) {
 		CurrentP1:        2,
 		CurrentP2:        1,
 		CurrentP3:        3,
+		AvgDemand:        2351,
+		MaxDemandMonth:   2589,
+		MaxDemandMonthAt: ts.Add(-2 * time.Hour),
 	}
 	if err := writer.StoreGridTelegram(context.Background(), telegram); err != nil {
 		t.Fatalf("StoreGridTelegram() unexpected error: %v", err)
@@ -368,7 +371,26 @@ func TestGridStore_StoreGridTelegram(t *testing.T) {
 	assertColumn(t, row, "VoltageP3", 231.0)
 	assertColumn(t, row, "CurrentP1", int64(2))
 	assertColumn(t, row, "CurrentP3", int64(3))
+	assertColumn(t, row, "AvgDemand", int64(2351))
+	assertColumn(t, row, "MaxDemandMonth", int64(2589))
+	assertColumn(t, row, "MaxDemandMonthAt", ts.Add(-2*time.Hour))
 	assertAt(t, row, ts)
+}
+
+// TestGridStore_ZeroDemandTimeOmitted asserts that an unset MaxDemandMonthAt
+// writes no timestamp column: the zero time is not representable in ILP.
+func TestGridStore_ZeroDemandTimeOmitted(t *testing.T) {
+	client, sender := newTestDBClient()
+	writer := NewQuestDBGridWriter(client, "grid", testLogger())
+	ts := time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
+	if err := writer.StoreGridTelegram(context.Background(), domain.GridTelegram{Time: ts}); err != nil {
+		t.Fatalf("StoreGridTelegram() unexpected error: %v", err)
+	}
+	row := requireRows(t, sender, 1)[0]
+	assertColumn(t, row, "AvgDemand", int64(0))
+	if _, present := row.columns["MaxDemandMonthAt"]; present {
+		t.Error("MaxDemandMonthAt column written for zero time")
+	}
 }
 
 func TestGridStore_Flush(t *testing.T) {

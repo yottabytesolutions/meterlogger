@@ -27,11 +27,17 @@ func testDB(t *testing.T) (*clickhouse.DB, sqlmock.Sqlmock) {
 }
 
 func expectMigrationAlreadyApplied(mock sqlmock.Sqlmock, component string) {
+	expectMigrationAppliedAt(mock, component, 1)
+}
+
+// expectMigrationAppliedAt reports version as already applied so no DDL runs.
+// The grid store is at version 2 (peak demand columns).
+func expectMigrationAppliedAt(mock sqlmock.Sqlmock, component string, version int) {
 	mock.ExpectExec("CREATE TABLE IF NOT EXISTS meterlogger_schema_migrations").
 		WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectQuery("SELECT COALESCE").
 		WithArgs(component).
-		WillReturnRows(sqlmock.NewRows([]string{"v"}).AddRow(1))
+		WillReturnRows(sqlmock.NewRows([]string{"v"}).AddRow(version))
 }
 
 func TestHeatStore_StoreHeatTelegram(t *testing.T) {

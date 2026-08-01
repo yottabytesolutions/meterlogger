@@ -14,7 +14,7 @@ import (
 
 func TestGridStore_StoreGridTelegram(t *testing.T) {
 	db, mock := testDB(t)
-	expectMigrationAlreadyApplied(mock, "clickhouse_grid_grid")
+	expectMigrationAppliedAt(mock, "clickhouse_grid_grid", 2)
 
 	store, storeErr := clickhouse.NewGridStore(context.Background(), db, "grid", testLogger())
 	if storeErr != nil {
@@ -23,6 +23,9 @@ func TestGridStore_StoreGridTelegram(t *testing.T) {
 
 	tel := domain.GridTelegram{
 		Time:             time.Now(),
+		AvgDemand:        2351,
+		MaxDemandMonth:   2589,
+		MaxDemandMonthAt: time.Now().Add(-time.Hour),
 		MeterMerkType:    "ISK",
 		Serienummer:      "123",
 		UsageCounter1:    1.1,
@@ -64,6 +67,7 @@ func TestGridStore_StoreGridTelegram(t *testing.T) {
 			tel.CurrentP1, tel.CurrentP2, tel.CurrentP3,
 			tel.PowerUsageP1, tel.PowerUsageP2, tel.PowerUsageP3,
 			tel.PowerOutputP1, tel.PowerOutputP2, tel.PowerOutputP3,
+			tel.AvgDemand, tel.MaxDemandMonth, tel.MaxDemandMonthAt,
 		).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
@@ -77,10 +81,9 @@ func TestGridStore_StoreGridTelegram(t *testing.T) {
 	}
 }
 
-//nolint:dupl // mirrors the gas requeue test; the stores share behaviour but not types
 func TestGridStore_FlushErrorRequeues(t *testing.T) {
 	db, mock := testDB(t)
-	expectMigrationAlreadyApplied(mock, "clickhouse_grid_grid")
+	expectMigrationAppliedAt(mock, "clickhouse_grid_grid", 2)
 
 	store, storeErr := clickhouse.NewGridStore(context.Background(), db, "grid", testLogger())
 	if storeErr != nil {
@@ -111,7 +114,7 @@ func TestGridStore_FlushErrorRequeues(t *testing.T) {
 
 func TestGridStore_CloseFlushesPending(t *testing.T) {
 	db, mock := testDB(t)
-	expectMigrationAlreadyApplied(mock, "clickhouse_grid_grid")
+	expectMigrationAppliedAt(mock, "clickhouse_grid_grid", 2)
 
 	store, storeErr := clickhouse.NewGridStore(context.Background(), db, "grid", testLogger())
 	if storeErr != nil {
@@ -135,7 +138,7 @@ func TestGridStore_CloseFlushesPending(t *testing.T) {
 
 func TestGridStore_FlushAndClose(t *testing.T) {
 	db, mock := testDB(t)
-	expectMigrationAlreadyApplied(mock, "clickhouse_grid_grid")
+	expectMigrationAppliedAt(mock, "clickhouse_grid_grid", 2)
 
 	store, storeErr := clickhouse.NewGridStore(context.Background(), db, "grid", testLogger())
 	if storeErr != nil {

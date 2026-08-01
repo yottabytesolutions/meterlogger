@@ -21,7 +21,7 @@ providing fault isolation and visible restarts. See [deployment.md](./deployment
 | Type          | Protocol               | Hardware interface     |
 |---------------|------------------------|------------------------|
 | `heat`        | M-Bus or optical (serial) | USB-to-M-Bus converter or IR read head |
-| `grid`        | DSMR P1 (serial)       | USB-to-P1 cable        |
+| `grid`        | DSMR P1 (serial): NL, BE, LU, AT | USB-to-P1 cable        |
 | `solar`       | Enphase Envoy HTTP API | LAN / WiFi             |
 | `ventilation` | DucoBox HTTP API       | LAN / WiFi             |
 

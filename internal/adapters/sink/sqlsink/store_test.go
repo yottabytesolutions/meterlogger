@@ -70,12 +70,13 @@ func TestHeatStore_InsertArgs(t *testing.T) {
 func TestGridStore_InsertArgs(t *testing.T) {
 	dc := dialectCases()[0]
 	db, mock := testDB(t, dc.dialect)
-	expectMigrationAlreadyApplied(mock, dc, "postgres_grid_grid")
+	expectMigrationAppliedAt(mock, dc, "postgres_grid_grid", latestGridVersion)
 	store, err := sqlsink.NewGridStore(context.Background(), db, "grid", testLogger())
 	if err != nil {
 		t.Fatalf("NewGridStore: %v", err)
 	}
 	ts := time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
+	demandTS := time.Date(2026, 7, 1, 9, 30, 0, 0, time.UTC)
 	telegram := domain.GridTelegram{
 		Time: ts, MeterMerkType: "ISK", Serienummer: "sn1",
 		UsageCounter1: 1.1, UsageCounter2: 2.2, OutputCounter1: 3.3, OutputCounter2: 4.4,
@@ -86,6 +87,7 @@ func TestGridStore_InsertArgs(t *testing.T) {
 		CurrentP1: 7, CurrentP2: 8, CurrentP3: 9,
 		PowerUsageP1: 10, PowerUsageP2: 11, PowerUsageP3: 12,
 		PowerOutputP1: 13, PowerOutputP2: 14, PowerOutputP3: 15,
+		AvgDemand: 2351, MaxDemandMonth: 2589, MaxDemandMonthAt: demandTS,
 	}
 	mock.ExpectExec("INSERT INTO grid").
 		WithArgs(
@@ -98,9 +100,43 @@ func TestGridStore_InsertArgs(t *testing.T) {
 			7, 8, 9,
 			10, 11, 12,
 			13, 14, 15,
+			2351, 2589, demandTS,
 		).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	if storeErr := store.StoreGridTelegram(context.Background(), telegram); storeErr != nil {
+		t.Errorf("StoreGridTelegram: %v", storeErr)
+	}
+	if metErr := mock.ExpectationsWereMet(); metErr != nil {
+		t.Error(metErr)
+	}
+}
+
+// TestGridStore_ZeroDemandTimeIsNull asserts that an unset MaxDemandMonthAt
+// is inserted as NULL, not as the zero time.
+func TestGridStore_ZeroDemandTimeIsNull(t *testing.T) {
+	dc := dialectCases()[0]
+	db, mock := testDB(t, dc.dialect)
+	expectMigrationAppliedAt(mock, dc, "postgres_grid_grid", latestGridVersion)
+	store, err := sqlsink.NewGridStore(context.Background(), db, "grid", testLogger())
+	if err != nil {
+		t.Fatalf("NewGridStore: %v", err)
+	}
+	ts := time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
+	mock.ExpectExec("INSERT INTO grid").
+		WithArgs(
+			ts, "", "",
+			0.0, 0.0, 0.0, 0.0,
+			0, 0,
+			0, 0, 0,
+			0, 0, 0,
+			0.0, 0.0, 0.0,
+			0, 0, 0,
+			0, 0, 0,
+			0, 0, 0,
+			0, 0, nil,
+		).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	if storeErr := store.StoreGridTelegram(context.Background(), domain.GridTelegram{Time: ts}); storeErr != nil {
 		t.Errorf("StoreGridTelegram: %v", storeErr)
 	}
 	if metErr := mock.ExpectationsWereMet(); metErr != nil {
@@ -338,7 +374,7 @@ func TestStore_ErrorPaths(t *testing.T) {
 
 	t.Run("grid", func(t *testing.T) {
 		db, mock := testDB(t, dc.dialect)
-		expectMigrationAlreadyApplied(mock, dc, "postgres_grid_grid")
+		expectMigrationAppliedAt(mock, dc, "postgres_grid_grid", latestGridVersion)
 		store, err := sqlsink.NewGridStore(context.Background(), db, "grid", testLogger())
 		if err != nil {
 			t.Fatalf("NewGridStore: %v", err)

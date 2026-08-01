@@ -88,7 +88,12 @@ func TestNewHeatStore_MigrationRuns(t *testing.T) {
 
 func TestNewGridStore_MigrationRuns(t *testing.T) {
 	db, mock := testDB(t)
+	// Version 1 creates the table, version 2 adds the peak demand columns;
+	// each version records in the ledger.
 	expectCHMigrationFull(mock, "clickhouse_grid_grid", 1)
+	mock.ExpectExec("ALTER TABLE grid").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("INSERT INTO meterlogger_schema_migrations").
+		WillReturnResult(sqlmock.NewResult(1, 1))
 	_, err := clickhouse.NewGridStore(context.Background(), db, "grid", testLogger())
 	if err != nil {
 		t.Fatalf("NewGridStore: %v", err)

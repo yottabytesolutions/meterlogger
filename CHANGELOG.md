@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Belgian (Fluvius eMUCS) grid meter support: version line on `0-0:96.1.4`,
+  gas subdevices on `0-n:24.2.3` (volume not temperature corrected), water
+  meters detected and skipped, decimal phase currents, and peak demand
+  (capaciteitstarief) fields stored in three new grid columns: `avg_demand`,
+  `max_demand_month`, `max_demand_month_at` (grid schema migration v2, added
+  automatically).
+- Encrypted DLMS telegram support for Luxembourgish Smarty and Austrian
+  Sagemcom T210-D meters (EVN, Energienetze Steiermark) via
+  `Grid.DecryptionKey` and `Grid.AuthenticationKey`. Frames are AES-128-GCM
+  decrypted and fed through the normal telegram path. Telegrams with energy
+  totals only (`1.8.0`/`2.8.0`) and the `0-0:42.0.0` equipment id are
+  accepted. Wiener Netze raw DLMS push is not supported.
+
 ## [1.3.0] - 2026-08-01
 
 ### Added

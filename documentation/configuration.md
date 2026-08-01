@@ -232,6 +232,15 @@ Grid:
   Measurement: grid_meter
   SerialInterface: /dev/ttyUSB1
   # No ScrapeInterval: the meter pushes data every second
+  # (Luxembourg Smarty meters push every 10 seconds)
+
+  # Only for encrypted meters (Luxembourg Smarty, Austrian Sagemcom T210-D):
+  # the 32-hex-char decryption key from your grid operator. Leave unset for
+  # plaintext meters (NL, BE).
+  # DecryptionKey: "00000000000000000000000000000000"
+  # AuthenticationKey defaults to the fixed Luxembourg AK; Austrian users
+  # override it with their GAK when their operator uses one.
+  # AuthenticationKey: "00112233445566778899AABBCCDDEEFF"
 
   # Gas meter readings carried in the same P1 telegrams. Not a standalone
   # source: one process reads both power and gas from the P1 port.
@@ -374,11 +383,32 @@ off by a factor of ten.
 
 ### Grid
 
-| Key                    | Type   | Notes                           |
-|------------------------|--------|---------------------------------|
-| `Grid.Enabled`         | bool   | Set `true` to activate          |
-| `Grid.SerialInterface` | string | e.g. `/dev/ttyUSB1`             |
-| `Grid.Measurement`     | string | Table name in all enabled sinks |
+| Key                      | Type   | Notes                                                        |
+|--------------------------|--------|--------------------------------------------------------------|
+| `Grid.Enabled`           | bool   | Set `true` to activate                                       |
+| `Grid.SerialInterface`   | string | e.g. `/dev/ttyUSB1`                                          |
+| `Grid.Measurement`       | string | Table name in all enabled sinks                              |
+| `Grid.DecryptionKey`     | string | 32 hex chars. Enables decryption of encrypted DLMS telegrams (Luxembourg, Austria). Empty (default) reads plaintext only |
+| `Grid.AuthenticationKey` | string | 32 hex chars. Default `00112233445566778899AABBCCDDEEFF`, the fixed Luxembourg AK. Austrian users set their GAK |
+
+#### Encrypted meters (Luxembourg, Austria)
+
+Luxembourgish Smarty meters and Austrian Sagemcom T210-D meters push AES-GCM
+encrypted DLMS frames instead of plaintext telegrams. Set `Grid.DecryptionKey`
+to the 16-byte key (32 hex characters) for your meter:
+
+- **Luxembourg**: request the key from your DSO (Creos and the other Smarty
+  operators hand it out to the registered customer, via their customer portal
+  or support desk). Leave `Grid.AuthenticationKey` at its default; all Smarty
+  meters share the fixed AK.
+- **Austria (EVN, Energienetze Steiermark)**: request the key through your
+  grid operator's customer portal (EVN calls it the key for the
+  Kundenschnittstelle). If your operator also hands out a global
+  authentication key (GAK), set it as `Grid.AuthenticationKey`.
+
+Without a configured key the reader fails fast on the first encrypted frame
+with a message telling you to request the key. Belgian meters need no
+configuration at all: the Fluvius telegram dialect is detected automatically.
 
 #### Grid.Gas
 

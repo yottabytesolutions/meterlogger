@@ -302,6 +302,45 @@ func TestGasFieldErrors(t *testing.T) {
 			},
 			wantErr: "",
 		},
+		{
+			name: "valid decryption keys produce no error",
+			cfg: Config{
+				Grid: GridConfig{
+					Enabled: true, SerialInterface: testSerialUSB0,
+					DecryptionKey:     "D491470F47126332B07D1923B3504188",
+					AuthenticationKey: "00112233445566778899AABBCCDDEEFF",
+				},
+			},
+			wantErr: "",
+		},
+		{
+			name: "decryption key wrong length",
+			cfg: Config{
+				Grid: GridConfig{Enabled: true, SerialInterface: testSerialUSB0, DecryptionKey: "ABCD"},
+			},
+			wantErr: "Grid.DecryptionKey must be 32 hexadecimal characters",
+		},
+		{
+			name: "decryption key not hex",
+			cfg: Config{
+				Grid: GridConfig{
+					Enabled: true, SerialInterface: testSerialUSB0,
+					DecryptionKey: "ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ",
+				},
+			},
+			wantErr: "Grid.DecryptionKey must be 32 hexadecimal characters",
+		},
+		{
+			name: "authentication key not hex",
+			cfg: Config{
+				Grid: GridConfig{
+					Enabled: true, SerialInterface: testSerialUSB0,
+					DecryptionKey:     "D491470F47126332B07D1923B3504188",
+					AuthenticationKey: "ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ",
+				},
+			},
+			wantErr: "Grid.AuthenticationKey must be 32 hexadecimal characters",
+		},
 	}
 
 	for _, tt := range tests {

@@ -16,7 +16,7 @@ type GridStore struct {
 
 func (w *GridStore) StoreGridTelegram(ctx context.Context, telegram domain.GridTelegram) error {
 	w.logger.DebugContext(ctx, "qdb: buffering grid telegram", debuglog.GridAttrs(telegram))
-	return w.client.sender.
+	sender := w.client.sender.
 		Table(w.table).
 		Symbol("MeterMerkType", telegram.MeterMerkType).
 		Symbol("Serienummer", telegram.Serienummer).
@@ -44,7 +44,14 @@ func (w *GridStore) StoreGridTelegram(ctx context.Context, telegram domain.GridT
 		Int64Column("PowerOutputP1", int64(telegram.PowerOutputP1)).
 		Int64Column("PowerOutputP2", int64(telegram.PowerOutputP2)).
 		Int64Column("PowerOutputP3", int64(telegram.PowerOutputP3)).
-		At(ctx, telegram.Time)
+		Int64Column("AvgDemand", int64(telegram.AvgDemand)).
+		Int64Column("MaxDemandMonth", int64(telegram.MaxDemandMonth))
+	// The zero time is not representable in ILP; only meters that publish
+	// peak demand set MaxDemandMonthAt.
+	if !telegram.MaxDemandMonthAt.IsZero() {
+		sender = sender.TimestampColumn("MaxDemandMonthAt", telegram.MaxDemandMonthAt)
+	}
+	return sender.At(ctx, telegram.Time)
 }
 
 func (w *GridStore) Flush(ctx context.Context) error {

@@ -130,6 +130,15 @@ Grid:
   Measurement: grid_meter
   SerialInterface: /dev/ttyUSB0
   # No ScrapeInterval: the meter pushes data every second
+  # (every 10 seconds on Luxembourg Smarty meters)
+
+  # Only for encrypted meters (Luxembourg Smarty, Austrian Sagemcom T210-D):
+  # the 32-hex-char decryption key from your grid operator. Leave unset for
+  # plaintext meters (NL, BE).
+  # DecryptionKey: "00000000000000000000000000000000"
+  # AuthenticationKey defaults to the fixed Luxembourg AK; Austrian users
+  # override it with their GAK when their operator uses one.
+  # AuthenticationKey: "00112233445566778899AABBCCDDEEFF"
 
   # Gas meter readings from the same P1 port. The gas meter is attached to
   # the electricity meter over M-Bus; its readings arrive inside the P1

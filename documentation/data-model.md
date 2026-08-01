@@ -57,8 +57,17 @@ type GridTelegram struct {
     CurrentP1, CurrentP2, CurrentP3        int     // A
     PowerUsageP1, PowerUsageP2, PowerUsageP3  int  // W
     PowerOutputP1, PowerOutputP2, PowerOutputP3 int // W
+
+    // Peak demand (Belgian capaciteitstarief); zero when the meter
+    // does not publish them
+    AvgDemand        int       // W, current average demand (1-0:1.4.0)
+    MaxDemandMonth   int       // W, running-month maximum (1-0:1.6.0)
+    MaxDemandMonthAt time.Time // capture time of the maximum
 }
 ```
+
+Luxembourgish and Austrian meters publish only energy totals; those land in `UsageCounter1` and
+`OutputCounter1` with the tariff-2 counters at zero.
 
 ### GasReading
 
@@ -223,7 +232,15 @@ Written by `qdb_grid_writer.go`.
 | `CurrentP1/P2/P3`     | Long      | A                     |
 | `PowerUsageP1/P2/P3`  | Long      | W                     |
 | `PowerOutputP1/P2/P3` | Long      | W                     |
+| `AvgDemand`           | Long      | W, Belgian peak demand; 0 elsewhere |
+| `MaxDemandMonth`      | Long      | W, running-month maximum; 0 elsewhere |
+| `MaxDemandMonthAt`    | Timestamp | Only written when the meter publishes peak demand |
 | `timestamp`           | Timestamp | From telegram.Time    |
+
+The SQL sinks (Postgres, TimescaleDB, MySQL, TDEngine, ClickHouse) store the same peak demand
+fields as nullable columns `avg_demand`, `max_demand_month`, and `max_demand_month_at`, added by
+grid schema migration version 2. `max_demand_month_at` is NULL when the meter does not publish
+peak demand.
 
 ### gas_meter (configurable name)
 

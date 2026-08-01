@@ -30,6 +30,10 @@ type column struct {
 
 const colSerialNo = "serial_no"
 
+// gridDemandVersion is the grid schema version that adds the Belgian peak
+// demand columns.
+const gridDemandVersion = 2
+
 // migrationTable pairs a concrete table name with its column definitions.
 type migrationTable struct {
 	name    string
@@ -82,15 +86,17 @@ func createTablesMigration(d Dialect, db *sql.DB, description string, tables []m
 
 // migrate runs the version ledger for one store kind. The component key is
 // "<dialect>_<kind>_<table>" and must not change: existing deployments track
-// applied migrations under these exact keys.
+// applied migrations under these exact keys. Extra migrations run after the
+// initial table creation, ordered by version.
 func migrate(
 	ctx context.Context, db *DB, kind, table, description string,
-	tables []migrationTable, logger *slog.Logger,
+	tables []migrationTable, logger *slog.Logger, extra ...schemastore.Migration,
 ) error {
 	d := db.dialect
 	m := d.newMigrator(db.db, logger)
 	component := d.name + "_" + kind + "_" + table
-	if err := m.Migrate(ctx, component, createTablesMigration(d, db.db, description, tables)); err != nil {
+	migrations := append(createTablesMigration(d, db.db, description, tables), extra...)
+	if err := m.Migrate(ctx, component, migrations); err != nil {
 		return fmt.Errorf("%s %s migration: %w", d.name, kind, err)
 	}
 	return nil
@@ -113,7 +119,9 @@ func heatColumns() []column {
 	}
 }
 
-func gridColumns() []column {
+// gridColumnsV1 is the grid table as created by migration version 1. It must
+// not change: version 2 adds the peak demand columns on top of it.
+func gridColumnsV1() []column {
 	return []column{
 		{name: "ts", kind: kindTimestamp, notNull: true},
 		{name: "meter_type", kind: kindText},
@@ -142,6 +150,45 @@ func gridColumns() []column {
 		{name: "power_output_p1", kind: kindBigInt},
 		{name: "power_output_p2", kind: kindBigInt},
 		{name: "power_output_p3", kind: kindBigInt},
+	}
+}
+
+// gridDemandColumns are the Belgian peak demand (capaciteitstarief) columns
+// added by grid migration version 2. Nullable: rows from meters without these
+// fields carry zeros for the demand values and NULL for the capture time.
+func gridDemandColumns() []column {
+	return []column{
+		{name: "avg_demand", kind: kindBigInt},
+		{name: "max_demand_month", kind: kindBigInt},
+		{name: "max_demand_month_at", kind: kindTimestamp},
+	}
+}
+
+func gridColumns() []column {
+	return append(gridColumnsV1(), gridDemandColumns()...)
+}
+
+// addColumnsMigration builds a migration that adds cols to an existing table
+// with one ALTER TABLE ADD COLUMN statement per column. Columns are added
+// nullable on every dialect so existing rows stay valid.
+func addColumnsMigration(
+	d Dialect, db *sql.DB, version int, description, table string, cols []column,
+) schemastore.Migration {
+	return schemastore.Migration{
+		Version:     version,
+		Description: description,
+		Up: func(ctx context.Context) error {
+			for _, c := range cols {
+				// The table name comes from config and the column names from the
+				// static schema definitions, not from user input.
+				//nolint:gosec // G202: no user input in this DDL
+				stmt := "ALTER TABLE " + table + " ADD COLUMN " + d.quoteIdent(c.name) + " " + d.typeName(c.kind)
+				if _, err := db.ExecContext(ctx, stmt); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
 	}
 }
 

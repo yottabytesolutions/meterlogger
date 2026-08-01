@@ -10,6 +10,10 @@ import (
 
 // Table names in the DDL below come from config, not user input.
 
+// gridDemandVersion is the grid schema version that adds the Belgian peak
+// demand columns.
+const gridDemandVersion = 2
+
 func heatMigrations(db *sql.DB, table string) []schemastore.Migration {
 	return []schemastore.Migration{
 		{
@@ -77,6 +81,21 @@ func gridMigrations(db *sql.DB, table string) []schemastore.Migration {
     power_output_p2    Int64,
     power_output_p3    Int64
 ) ENGINE = MergeTree() ORDER BY (ts)`, table,
+					),
+				)
+				return err
+			},
+		},
+		{
+			Version:     gridDemandVersion,
+			Description: "add peak demand columns",
+			Up: func(ctx context.Context) error {
+				_, err := db.ExecContext(
+					ctx, fmt.Sprintf(
+						`ALTER TABLE %s
+    ADD COLUMN avg_demand          Int64,
+    ADD COLUMN max_demand_month    Int64,
+    ADD COLUMN max_demand_month_at Nullable(DateTime64(9, 'UTC'))`, table,
 					),
 				)
 				return err

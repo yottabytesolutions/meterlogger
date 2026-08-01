@@ -70,8 +70,18 @@ func runGridMeter(
 		}
 	}()
 
+	reader := gridmeter.NewGridReader(cfg.Grid.SerialInterface, l)
+	if cfg.Grid.DecryptionKey != "" {
+		var keyErr error
+		reader, keyErr = reader.WithDecryption(cfg.Grid.DecryptionKey, cfg.Grid.AuthenticationKey)
+		if keyErr != nil {
+			l.ErrorContext(ctx, "invalid grid decryption configuration", slog.Any("error", keyErr))
+			return
+		}
+	}
+
 	svc := service.NewGridLoggingService(
-		gridmeter.NewGridReader(cfg.Grid.SerialInterface, l),
+		reader,
 		repo,
 		cfg.FlushInterval,
 		l,
