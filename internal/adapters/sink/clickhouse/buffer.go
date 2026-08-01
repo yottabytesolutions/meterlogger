@@ -2,6 +2,7 @@ package clickhouse
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -81,6 +82,41 @@ func closeWithFinalFlush(flush func(context.Context) error) error {
 	defer cancel()
 	if err := flush(ctx); err != nil {
 		return fmt.Errorf("final flush on close: %w", err)
+	}
+	return nil
+}
+
+// flushBatch drains one buffer and inserts its rows inside a dedicated
+// transaction. The clickhouse-go driver supports exactly one prepared batch
+// per transaction, so a flush spanning several tables must run one
+// transaction per table. On failure the rows are re-queued for the next
+// flush.
+func flushBatch[T any](
+	ctx context.Context,
+	db *sql.DB,
+	logger *slog.Logger,
+	table string,
+	buf *batchBuffer[T],
+	insert func(ctx context.Context, tx *sql.Tx, rows []T) error,
+) error {
+	rows := buf.take()
+	if len(rows) == 0 {
+		return nil
+	}
+	err := func() error {
+		tx, txErr := db.BeginTx(ctx, nil)
+		if txErr != nil {
+			return fmt.Errorf("begin clickhouse transaction: %w", txErr)
+		}
+		defer func() { _ = tx.Rollback() }()
+		if insErr := insert(ctx, tx, rows); insErr != nil {
+			return insErr
+		}
+		return tx.Commit()
+	}()
+	if err != nil {
+		warnDropped(ctx, logger, table, buf.requeue(rows))
+		return fmt.Errorf("%s: %w", table, err)
 	}
 	return nil
 }

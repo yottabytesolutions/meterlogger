@@ -31,6 +31,9 @@ type Dialect struct {
 	placeholder schemastore.PlaceholderStyle
 	typeName    func(columnKind) string
 	notNull     bool
+	// quoteChar wraps column identifiers in DDL and inserts so reserved
+	// words like the duco "show" column work on every dialect.
+	quoteChar   string
 	newMigrator func(db *sql.DB, logger *slog.Logger) migrator
 	postCreate  func(ctx context.Context, db *sql.DB, table string) error
 }
@@ -123,6 +126,7 @@ func PostgresDialect() Dialect {
 		placeholder: schemastore.DollarPlaceholder,
 		typeName:    postgresTypeName,
 		notNull:     true,
+		quoteChar:   `"`,
 		newMigrator: newSQLMigrator(schemastore.DollarPlaceholder),
 		postCreate:  nil,
 	}
@@ -156,6 +160,7 @@ func MySQLDialect() Dialect {
 		placeholder: schemastore.QuestionPlaceholder,
 		typeName:    mysqlTypeName,
 		notNull:     true,
+		quoteChar:   "`",
 		newMigrator: newSQLMigrator(schemastore.QuestionPlaceholder),
 		postCreate:  nil,
 	}
@@ -170,9 +175,15 @@ func TDEngineDialect() Dialect {
 		placeholder: schemastore.QuestionPlaceholder,
 		typeName:    tdengineTypeName,
 		notNull:     false,
+		quoteChar:   "`",
 		newMigrator: func(db *sql.DB, logger *slog.Logger) migrator {
 			return schemastore.NewTDEngineMigrator(db, logger)
 		},
 		postCreate: nil,
 	}
+}
+
+// quoteIdent wraps a column name in the dialect's identifier quotes.
+func (d Dialect) quoteIdent(name string) string {
+	return d.quoteChar + name + d.quoteChar
 }

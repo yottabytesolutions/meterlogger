@@ -45,13 +45,17 @@ func TestSolarStore_StoreEnvoySolarData(t *testing.T) {
 		t.Error(expectErr)
 	}
 
+	// One transaction per table: the driver allows a single prepared batch
+	// per transaction.
 	inv := data.Inverters[0]
 	mock.ExpectBegin()
 	mock.ExpectPrepare("INSERT INTO solar")
-	mock.ExpectPrepare("INSERT INTO solar_inverters")
 	mock.ExpectExec("INSERT INTO solar").
 		WithArgs(data.ReadingTime, data.EnvoySerial, data.ProductionWh, data.Watt, data.PanelCount).
 		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+	mock.ExpectBegin()
+	mock.ExpectPrepare("INSERT INTO solar_inverters")
 	mock.ExpectExec("INSERT INTO solar_inverters").
 		WithArgs(
 			inv.ReportTime, data.EnvoySerial, inv.SerialNumber, inv.Chaneid,
@@ -108,10 +112,14 @@ func TestSolarStore_InverterError(t *testing.T) {
 		},
 	)
 
+	// The main batch commits in its own transaction; the inverter batch
+	// fails and is re-queued alone.
 	mock.ExpectBegin()
 	mock.ExpectPrepare("INSERT INTO solar")
-	mock.ExpectPrepare("INSERT INTO solar_inverters")
 	mock.ExpectExec("INSERT INTO solar").WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+	mock.ExpectBegin()
+	mock.ExpectPrepare("INSERT INTO solar_inverters")
 	mock.ExpectExec("INSERT INTO solar_inverters").WillReturnError(errors.New("inverter insert failed"))
 	mock.ExpectRollback()
 
@@ -120,11 +128,9 @@ func TestSolarStore_InverterError(t *testing.T) {
 		t.Error("expected error but got nil")
 	}
 
-	// The failed batch is re-queued: the next flush inserts it in full.
+	// Only the re-queued inverter batch flushes on retry.
 	mock.ExpectBegin()
-	mock.ExpectPrepare("INSERT INTO solar")
 	mock.ExpectPrepare("INSERT INTO solar_inverters")
-	mock.ExpectExec("INSERT INTO solar").WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectExec("INSERT INTO solar_inverters").WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
 
@@ -149,7 +155,6 @@ func TestSolarStore_CloseFlushesPending(t *testing.T) {
 
 	mock.ExpectBegin()
 	mock.ExpectPrepare("INSERT INTO solar")
-	mock.ExpectPrepare("INSERT INTO solar_inverters")
 	mock.ExpectExec("INSERT INTO solar").WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
 

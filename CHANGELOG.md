@@ -8,6 +8,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [1.2.0] - 2026-08-01
 
+### Fixed
+
+- The MySQL ventilation sink failed its schema migration because the node
+  table has a column named `show`, a reserved word. All generated SQL now
+  quotes column identifiers per dialect.
+- The ClickHouse solar and ventilation sinks silently lost data: the driver
+  supports one prepared batch per transaction, so flushes spanning several
+  tables dropped every batch after the first. Each table now flushes in its
+  own transaction. Both bugs were caught by the new integration tests.
+
 ### Added
 
 - `meterlogger validate` checks the configuration and exits nonzero on problems;

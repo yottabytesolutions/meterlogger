@@ -3,6 +3,7 @@ package clickhouse
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -78,53 +79,16 @@ func (s *DucoStore) StoreNodeData(ctx context.Context, nodeData domain.DucoNodeS
 	return nil
 }
 
-// Flush performs a batch insert of all buffered duco rows in one transaction.
-// On failure the batches are re-queued for the next flush.
+// Flush inserts every buffered duco table batch, one transaction per table
+// (the driver allows a single prepared batch per transaction). Failed
+// batches are re-queued for the next flush.
 func (s *DucoStore) Flush(ctx context.Context) error {
-	boxes := s.boxes.take()
-	sensors := s.sensors.take()
-	boxNodes := s.boxNodes.take()
-	valves := s.valves.take()
-	if len(boxes)+len(sensors)+len(boxNodes)+len(valves) == 0 {
-		return nil
-	}
-	if err := s.insertBatches(ctx, boxes, sensors, boxNodes, valves); err != nil {
-		warnDropped(ctx, s.logger, s.base+"_box_general", s.boxes.requeue(boxes))
-		warnDropped(ctx, s.logger, s.base+"_node", s.sensors.requeue(sensors))
-		warnDropped(ctx, s.logger, s.base+"_box_node", s.boxNodes.requeue(boxNodes))
-		warnDropped(ctx, s.logger, s.base+"_valve", s.valves.requeue(valves))
-		return err
-	}
-	return nil
-}
-
-func (s *DucoStore) insertBatches(
-	ctx context.Context,
-	boxes []ducoBoxRow, sensors []ducoSensorRow, boxNodes []ducoBoxNodeRow, valves []ducoValveRow,
-) error {
-	tx, err := s.db.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("begin clickhouse transaction: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	if err = s.insertBoxRows(ctx, tx, boxes); err != nil {
-		return err
-	}
-	if err = s.insertSensorRows(ctx, tx, sensors); err != nil {
-		return err
-	}
-	if err = s.insertBoxNodeRows(ctx, tx, boxNodes); err != nil {
-		return err
-	}
-	if err = s.insertValveRows(ctx, tx, valves); err != nil {
-		return err
-	}
-
-	if err = tx.Commit(); err != nil {
-		return fmt.Errorf("commit clickhouse duco batch: %w", err)
-	}
-	return nil
+	return errors.Join(
+		flushBatch(ctx, s.db.db, s.logger, s.base+"_box_general", &s.boxes, s.insertBoxRows),
+		flushBatch(ctx, s.db.db, s.logger, s.base+"_node", &s.sensors, s.insertSensorRows),
+		flushBatch(ctx, s.db.db, s.logger, s.base+"_box_node", &s.boxNodes, s.insertBoxNodeRows),
+		flushBatch(ctx, s.db.db, s.logger, s.base+"_valve", &s.valves, s.insertValveRows),
+	)
 }
 
 // Table names below come from config, not user input.
