@@ -226,10 +226,14 @@ Heat:
 #     PowerDecimals: 1           # raw/10 kW
 #     FlowDecimals: 1            # raw/10 l/h
 
-# ── Grid meter (DSMR P1 over serial) ───────────────────────
+# ── Grid meter (DSMR P1 or SML over serial) ────────────────
 Grid:
   Enabled: true
   Measurement: grid_meter
+  # Reader selects the protocol:
+  #   dsmr - Dutch/Belgian DSMR P1 meter (default)
+  #   sml  - German SML meter via IR read head
+  Reader: dsmr
   SerialInterface: /dev/ttyUSB1
   # No ScrapeInterval: the meter pushes data every second
 
@@ -374,11 +378,37 @@ off by a factor of ten.
 
 ### Grid
 
-| Key                    | Type   | Notes                           |
-|------------------------|--------|---------------------------------|
-| `Grid.Enabled`         | bool   | Set `true` to activate          |
-| `Grid.SerialInterface` | string | e.g. `/dev/ttyUSB1`             |
-| `Grid.Measurement`     | string | Table name in all enabled sinks |
+| Key                    | Type   | Notes                                          |
+|------------------------|--------|------------------------------------------------|
+| `Grid.Enabled`         | bool   | Set `true` to activate                         |
+| `Grid.Reader`          | string | `dsmr` (default) or `sml`, see below           |
+| `Grid.SerialInterface` | string | e.g. `/dev/ttyUSB1`                            |
+| `Grid.Measurement`     | string | Table name in all enabled sinks                |
+
+#### Grid.Reader
+
+The grid source speaks two protocols:
+
+- `dsmr` (default): Dutch/Belgian DSMR P1 meters over a USB-to-P1 cable.
+- `sml`: German SML meters over an IR read head at 9600 baud 8N1. See
+  [meter-types.md](./meter-types.md#grid-meter-sml) for supported meters.
+
+```yaml
+Grid:
+  Enabled: true
+  Reader: sml
+  Measurement: grid_meter
+  SerialInterface: /dev/ttyUSB1
+```
+
+Field availability with `sml` depends on the meter's state. A meter in factory state sends only the
+import energy total (1-0:1.8.0), which lands in `usage_counter1`; every other column stays zero.
+After entering the meter PIN (from your grid operator) on the meter and enabling the extended info
+mode (InF), most meters also send active power, per-phase values, and the export registers. The
+reader works in both states. DSMR-only fields (brownouts, voltage spikes) always stay zero.
+
+`Grid.Gas` requires the `dsmr` reader; SML meters have no M-Bus subdevices. Enabling both is a
+validation error.
 
 #### Grid.Gas
 

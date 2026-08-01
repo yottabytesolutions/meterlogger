@@ -77,6 +77,7 @@ func setSourceDefaults() {
 	viper.SetDefault("Heat.Optical401.PowerDecimals", 1)
 	viper.SetDefault("Heat.Optical401.FlowDecimals", 1)
 
+	viper.SetDefault("Grid.Reader", GridReaderDSMR)
 	viper.SetDefault("Grid.Gas.Measurement", "gas_meter")
 }
 

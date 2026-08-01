@@ -209,6 +209,60 @@ func TestSourceFieldErrors(t *testing.T) {
 	}
 }
 
+func TestSourceFieldErrors_GridReader(t *testing.T) {
+	grid := func(reader string, gasEnabled bool) Config {
+		return Config{Grid: GridConfig{
+			Enabled: true, SerialInterface: testSerialUSB0, Reader: reader,
+			Gas: GasConfig{Enabled: gasEnabled, Measurement: "gas"},
+		}}
+	}
+	tests := []struct {
+		name    string
+		cfg     Config
+		wantErr string
+	}{
+		{
+			name:    "invalid reader",
+			cfg:     grid("p1", false),
+			wantErr: `invalid Grid.Reader "p1"`,
+		},
+		{
+			name:    "sml reader produces no error",
+			cfg:     grid(GridReaderSML, false),
+			wantErr: "",
+		},
+		{
+			name:    "sml reader with gas enabled",
+			cfg:     grid(GridReaderSML, true),
+			wantErr: "Grid.Gas requires the dsmr reader",
+		},
+		{
+			name:    "dsmr reader with gas enabled produces no error",
+			cfg:     grid(GridReaderDSMR, true),
+			wantErr: "",
+		},
+		{
+			name:    "empty reader defaults to dsmr and allows gas",
+			cfg:     grid("", true),
+			wantErr: "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			errs := sourceFieldErrors(tt.cfg)
+			if tt.wantErr == "" {
+				if len(errs) != 0 {
+					t.Errorf("sourceFieldErrors() = %v, want empty", errs)
+				}
+				return
+			}
+			if !containsSubstring(errs, tt.wantErr) {
+				t.Errorf("sourceFieldErrors() = %v, want to contain %q", errs, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestSourceFieldErrors_Optical401(t *testing.T) {
 	heat := func(o Optical401Config) Config {
 		return Config{Heat: HeatConfig{

@@ -124,10 +124,17 @@ Heat:
   #   PowerDecimals: 1
   #   FlowDecimals: 1
 
-# ── Grid meter (DSMR P1 over serial) ───────────────────────
+# ── Grid meter (DSMR P1 or SML over serial) ────────────────
 Grid:
   Enabled: true
   Measurement: grid_meter
+  # Reader selects the protocol:
+  #   dsmr - Dutch/Belgian DSMR P1 meter over a USB-to-P1 cable (default)
+  #   sml  - German SML meter (EMH eHZ/mMe4.0, ISKRA MT681, EasyMeter
+  #          Q3A/Q3B, eBZ DD3 SM, Holley DTZ541) via IR read head, 9600 8N1.
+  #          Factory-state meters send only the energy total until the meter
+  #          PIN is entered and the extended info mode is enabled.
+  Reader: dsmr
   SerialInterface: /dev/ttyUSB0
   # No ScrapeInterval: the meter pushes data every second
 

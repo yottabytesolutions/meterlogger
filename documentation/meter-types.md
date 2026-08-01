@@ -263,6 +263,57 @@ already receives. See [configuration.md](./configuration.md#gridgas) for the con
 
 ---
 
+## Grid meter (SML)
+
+Selected with `Grid.Reader: sml`. German smart meters ("moderne Messeinrichtung") speak SML (Smart Message Language,
+BSI TR-03109-1) instead of DSMR. The meter pushes a binary SML file every one to five seconds through an optical
+(IR) interface; no request or wakeup is sent.
+
+### Hardware
+
+An IR read head (TTL or USB, e.g. the common Hichi/Volkszaehler heads) placed on the meter's optical port. The head
+appears as a USB serial device.
+
+Serial settings (fixed in code):
+
+| Parameter | Value |
+|-----------|-------|
+| Baud rate | 9600  |
+| Data bits | 8     |
+| Parity    | None  |
+| Stop bits | 1     |
+
+### Supported meters
+
+Tested against the SML dialects of: EMH eHZ and mMe4.0, ISKRA MT681, EasyMeter Q3A/Q3B, eBZ DD3 (SM variant), and
+Holley DTZ541. The Holley DTZ541 firmware computes the frame CRC with the wrong parameters (Kermit instead of X-25);
+the reader accepts both and logs once which variant the meter uses.
+
+Not supported: meters that emit plain ASCII D0/IEC 62056-21 output instead of SML, such as the EasyMeter Q3D and the
+eBZ DD3 OD variant. Those need a different reader.
+
+### Frame and parsing
+
+An SML transport frame is `1B1B1B1B 01010101`, the payload, up to three `00` fill bytes, and `1B1B1B1B 1A <fill>
+<crc16>`. The reader validates the CRC, then scans the payload for OBIS value-list entries instead of building a full
+SML tree. Recognized registers: energy counters (1.8.0/1/2, 2.8.0/1/2, Wh), total and per-phase active power (16.7.0,
+36/56/76.7.0 and 21/41/61.7.0, signed W), voltages, currents, server ID, and manufacturer. Unknown entries are
+ignored. Energy is converted from Wh to kWh so the stored columns match the DSMR reader.
+
+Signed power maps by sign: positive fills the usage column, negative magnitude fills the output column. A meter
+without tariff registers gets its 1.8.0 total stored in `usage_counter1`. The telegram timestamp is the receive
+time; SML value timestamps are usually absent.
+
+### Meter PIN and reduced telegrams
+
+Meters leave the factory in a restricted mode: the SML file then contains little more than the import energy total.
+The grid operator supplies a PIN; after entering it on the meter (via the optical button) and enabling the extended
+info mode (InF), the meter also sends active power and per-phase values. The reader handles both modes and never
+errors on absent optional registers. DSMR-only fields (brownouts, voltage spikes, M-Bus subdevices) stay zero;
+`Grid.Gas` cannot be combined with the SML reader.
+
+---
+
 ## Solar meter (Enphase Envoy)
 
 ### Hardware
