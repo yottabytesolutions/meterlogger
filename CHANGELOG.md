@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-08-01
+
 ### Added
 
 - Optical (IR eye) reader for Kamstrup Multical heat meters via the KMP
