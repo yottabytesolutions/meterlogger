@@ -152,24 +152,7 @@ func sourceFieldErrors(cfg Config) []string {
 			"invalid Grid.Reader %q; valid values are %s, %s", cfg.Grid.Reader, GridReaderDSMR, GridReaderSML,
 		))
 	}
-	// Gas rides on the grid source; it only flows when the grid source runs.
-	// That dependency is not validated here because the --source filter can
-	// still select grid at runtime regardless of Grid.Enabled.
-	if cfg.Grid.Gas.Enabled && cfg.Grid.Gas.Measurement == "" {
-		errs = append(errs, "grid gas readings enabled but Grid.Gas.Measurement is empty")
-	}
-	if cfg.Grid.Water.Enabled && cfg.Grid.Water.Measurement == "" {
-		errs = append(errs, "grid water readings enabled but Grid.Water.Measurement is empty")
-	}
-	if cfg.Grid.Thermal.Enabled && cfg.Grid.Thermal.Measurement == "" {
-		errs = append(errs, "grid thermal readings enabled but Grid.Thermal.Measurement is empty")
-	}
-	if cfg.Grid.DecryptionKey != "" && !isHexKey(cfg.Grid.DecryptionKey) {
-		errs = append(errs, "Grid.DecryptionKey must be 32 hexadecimal characters (128-bit AES key)")
-	}
-	if cfg.Grid.AuthenticationKey != "" && !isHexKey(cfg.Grid.AuthenticationKey) {
-		errs = append(errs, "Grid.AuthenticationKey must be 32 hexadecimal characters (128-bit key)")
-	}
+	errs = append(errs, gridExtrasFieldErrors(cfg.Grid)...)
 	if cfg.Enphase.Enabled {
 		errs = append(errs, enphaseFieldErrors(cfg.Enphase)...)
 	}
@@ -208,6 +191,30 @@ func optical401FieldErrors(cfg Optical401Config) []string {
 				"invalid Heat.Optical401.%s %d; must be between 0 and %d", d.name, d.value, maxDecimals,
 			))
 		}
+	}
+	return errs
+}
+
+// gridExtrasFieldErrors checks the subdevice sections and decryption keys of
+// the grid source. Subdevices ride on the grid source; the dependency on the
+// grid source running is not validated because the --source filter can still
+// select grid at runtime regardless of Grid.Enabled.
+func gridExtrasFieldErrors(grid GridConfig) []string {
+	var errs []string
+	if grid.Gas.Enabled && grid.Gas.Measurement == "" {
+		errs = append(errs, "grid gas readings enabled but Grid.Gas.Measurement is empty")
+	}
+	if grid.Water.Enabled && grid.Water.Measurement == "" {
+		errs = append(errs, "grid water readings enabled but Grid.Water.Measurement is empty")
+	}
+	if grid.Thermal.Enabled && grid.Thermal.Measurement == "" {
+		errs = append(errs, "grid thermal readings enabled but Grid.Thermal.Measurement is empty")
+	}
+	if grid.DecryptionKey != "" && !isHexKey(grid.DecryptionKey) {
+		errs = append(errs, "Grid.DecryptionKey must be 32 hexadecimal characters (128-bit AES key)")
+	}
+	if grid.AuthenticationKey != "" && !isHexKey(grid.AuthenticationKey) {
+		errs = append(errs, "Grid.AuthenticationKey must be 32 hexadecimal characters (128-bit key)")
 	}
 	return errs
 }

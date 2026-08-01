@@ -1,3 +1,4 @@
+//nolint:dupl // golden tests per writer are parallel by design
 package mqtt
 
 import (
@@ -284,8 +285,8 @@ func TestGasWriter_PublishesStateAndDiscovery(t *testing.T) {
 	}
 	got := decodePayload(t, states[0])
 	want := map[string]any{
-		"ts": tsNoon, "received_at": "2026-07-01T12:00:30Z",
-		"channel": 1.0, "device_type": 3.0, "serial_no": "G456", "reading_m3": 1234.567,
+		"ts": tsNoon, fieldReceivedAt: tsHalfPast,
+		fieldChannel: 1.0, fieldDeviceType: 3.0, fieldSerialNo: "G456", "reading_m3": 1234.567,
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("state payload = %v, want %v", got, want)
@@ -505,3 +506,98 @@ func TestDucoWriter_UnknownNodeTypeIsSkipped(t *testing.T) {
 type unknownNode struct{}
 
 func (unknownNode) NodeDevType() string { return "???" }
+
+const (
+	tsHalfPast      = "2026-07-01T12:00:30Z"
+	fieldChannel    = "channel"
+	fieldReceivedAt = "received_at"
+	fieldDeviceType = "device_type"
+)
+
+func TestWaterWriter_PublishesStateAndDiscovery(t *testing.T) {
+	fp := newFakePaho()
+	w := NewWaterWriter(newTestClient(fp, testConfig()), "water_meter", testLogger())
+	r := domain.WaterReading{
+		CapturedAt: time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC),
+		ReceivedAt: time.Date(2026, 7, 1, 12, 0, 30, 0, time.UTC),
+		Channel:    2,
+		DeviceType: domain.DeviceTypeWater,
+		SerialNo:   "WTR1",
+		ReadingM3:  872.234,
+	}
+
+	if err := w.StoreWaterReading(context.Background(), r); err != nil {
+		t.Fatalf("StoreWaterReading: %v", err)
+	}
+
+	states := fp.byTopic("meterlogger/water_meter")
+	if len(states) != 1 {
+		t.Fatalf("state publications = %d, want 1", len(states))
+	}
+	got := decodePayload(t, states[0])
+	want := map[string]any{
+		"ts": tsNoon, fieldReceivedAt: tsHalfPast,
+		fieldChannel: 2.0, fieldDeviceType: 7.0, fieldSerialNo: "WTR1", "reading_m3": 872.234,
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("state payload = %v, want %v", got, want)
+	}
+
+	configs := fp.byTopic("homeassistant/sensor/meterlogger_water_WTR1/reading_m3/config")
+	if len(configs) != 1 {
+		t.Fatalf("discovery configs = %d, want 1", len(configs))
+	}
+	gotCfg := decodePayload(t, configs[0])
+	wantCfg := goldenDiscovery(
+		"meterlogger_water_WTR1_reading_m3", "Water consumption", "meterlogger/water_meter", "reading_m3",
+		goldenDevice("meterlogger_water_WTR1", "Water meter WTR1", "", ""),
+		classWater, stateTotalIncreasing, unitM3,
+	)
+	if !reflect.DeepEqual(gotCfg, wantCfg) {
+		t.Errorf("discovery config = %v, want %v", gotCfg, wantCfg)
+	}
+}
+
+func TestThermalWriter_PublishesStateAndDiscovery(t *testing.T) {
+	fp := newFakePaho()
+	w := NewThermalWriter(newTestClient(fp, testConfig()), "thermal_meter", testLogger())
+	r := domain.ThermalReading{
+		CapturedAt: time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC),
+		ReceivedAt: time.Date(2026, 7, 1, 12, 0, 30, 0, time.UTC),
+		Channel:    3,
+		DeviceType: domain.DeviceTypeHeat,
+		SerialNo:   "THM1",
+		ReadingGJ:  507.109,
+	}
+
+	if err := w.StoreThermalReading(context.Background(), r); err != nil {
+		t.Fatalf("StoreThermalReading: %v", err)
+	}
+
+	states := fp.byTopic("meterlogger/thermal_meter")
+	if len(states) != 1 {
+		t.Fatalf("state publications = %d, want 1", len(states))
+	}
+	got := decodePayload(t, states[0])
+	want := map[string]any{
+		"ts": tsNoon, fieldReceivedAt: tsHalfPast,
+		fieldChannel: 3.0, fieldDeviceType: 4.0, fieldSerialNo: "THM1", "reading_gj": 507.109,
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("state payload = %v, want %v", got, want)
+	}
+
+	configs := fp.byTopic("homeassistant/sensor/meterlogger_thermal_THM1/reading_gj/config")
+	if len(configs) != 1 {
+		t.Fatalf("discovery configs = %d, want 1", len(configs))
+	}
+	gotCfg := decodePayload(t, configs[0])
+	wantCfg := goldenDiscovery(
+		"meterlogger_thermal_THM1_reading_gj", "Thermal energy", "meterlogger/thermal_meter", "reading_gj",
+		goldenDevice("meterlogger_thermal_THM1", "Thermal meter THM1", "", ""),
+		classEnergy, stateTotalIncreasing, unitGJ,
+	)
+	if !reflect.DeepEqual(gotCfg, wantCfg) {
+		t.Errorf("discovery config = %v, want %v", gotCfg, wantCfg)
+	}
+}

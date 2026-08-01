@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-08-02
+
+### Fixed
+
+- QuestDB heat power and maximum power were stored three orders of magnitude
+  too small: the writer still divided by the milliwatt units of the M-Bus
+  library used before the gombus migration. Existing QuestDB heat history
+  shows a step change at this release.
+
 ### Added
 
 - Belgian (Fluvius eMUCS) grid meter support: version line on `0-0:96.1.4`,
@@ -27,7 +36,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `Grid.DecryptionKey` and `Grid.AuthenticationKey`. Frames are AES-128-GCM
   decrypted and fed through the normal telegram path. Telegrams with energy
   totals only (`1.8.0`/`2.8.0`) and the `0-0:42.0.0` equipment id are
-  accepted. Wiener Netze raw DLMS push is not supported.- SML reader for German electricity meters (EMH eHZ and mMe4.0, ISKRA
+  accepted. Wiener Netze raw DLMS push is not supported.
+- SML reader for German electricity meters (EMH eHZ and mMe4.0, ISKRA
   MT681, EasyMeter Q3A/Q3B, eBZ DD3 SM variant, Holley DTZ541) over an IR
   read head, selected with `Grid.Reader: sml` (default stays `dsmr`).
   Accepts both the standard X-25 frame CRC and the Holley Kermit variant.
@@ -38,7 +48,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   device/state classes and units, availability via a last-will status topic.
   Grid, gas, and solar sensors slot straight into the Home Assistant Energy
   dashboard; heat energy is published in kWh (converted from joules) for the
-  same reason. See documentation/deployment.md, section "Home Assistant".
+  same reason. Water and thermal subdevice readings are announced too. See documentation/deployment.md, section "Home Assistant".
 
 
 ## [1.3.0] - 2026-08-01

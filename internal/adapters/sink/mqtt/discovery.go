@@ -16,6 +16,7 @@ const (
 	classVoltage     = "voltage"
 	classCurrent     = "current"
 	classGas         = "gas"
+	classWater       = "water"
 	classCO2         = "carbon_dioxide"
 	classHumidity    = "humidity"
 
@@ -29,9 +30,14 @@ const (
 	unitVolt    = "V"
 	unitAmpere  = "A"
 	unitM3      = "m³"
-	unitPPM     = "ppm"
-	unitPercent = "%"
-	unitRPM     = "rpm"
+	unitGJ      = "GJ"
+
+	// fieldReadingM3 is the JSON field and HA value key shared by the gas
+	// and water writers.
+	fieldReadingM3 = "reading_m3"
+	unitPPM        = "ppm"
+	unitPercent    = "%"
+	unitRPM        = "rpm"
 )
 
 // sensor describes one Home Assistant entity derived from a state topic. id

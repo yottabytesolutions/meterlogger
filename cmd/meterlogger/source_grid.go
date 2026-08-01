@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -29,7 +30,7 @@ func newGridReader(l *slog.Logger) (domain.GridTelegramReader, error) {
 	switch cfg.Grid.Reader {
 	case config.GridReaderSML:
 		if cfg.Grid.DecryptionKey != "" {
-			return nil, fmt.Errorf("Grid.DecryptionKey only applies to the dsmr reader")
+			return nil, errors.New("Grid.DecryptionKey only applies to the dsmr reader")
 		}
 		return sml.NewReader(cfg.Grid.SerialInterface, l), nil
 	case "", config.GridReaderDSMR:
@@ -96,6 +97,9 @@ func buildWaterSinks(
 		func(c *qdb.DBClient, m string, l *slog.Logger) domain.WaterRepository {
 			return qdb.NewQuestDBWaterWriter(c, m, l)
 		},
+		func(c *mqtt.Client, m string, l *slog.Logger) domain.WaterRepository {
+			return mqtt.NewWaterWriter(c, m, l)
+		},
 		func(ctx context.Context, db *sqlsink.DB, m string, l *slog.Logger) (domain.WaterRepository, error) {
 			return sqlsink.NewWaterStore(ctx, db, m, l)
 		},
@@ -114,6 +118,9 @@ func buildThermalSinks(
 	return buildSourceSinks(ctx, l, healthSrv, dbs, cfg.Grid.Thermal.Measurement,
 		func(c *qdb.DBClient, m string, l *slog.Logger) domain.ThermalRepository {
 			return qdb.NewQuestDBThermalWriter(c, m, l)
+		},
+		func(c *mqtt.Client, m string, l *slog.Logger) domain.ThermalRepository {
+			return mqtt.NewThermalWriter(c, m, l)
 		},
 		func(ctx context.Context, db *sqlsink.DB, m string, l *slog.Logger) (domain.ThermalRepository, error) {
 			return sqlsink.NewThermalStore(ctx, db, m, l)
@@ -170,8 +177,8 @@ func runGridMeter(
 		waterSinks := buildWaterSinks(ctx, l, healthSrv, dbs)
 		waterRepo := multisink.NewWaterRepository(waterSinks, l)
 		defer func() {
-			if err := waterRepo.Close(); err != nil {
-				l.ErrorContext(ctx, "water repo close error", slog.Any("error", err))
+			if closeErr := waterRepo.Close(); closeErr != nil {
+				l.ErrorContext(ctx, "water repo close error", slog.Any("error", closeErr))
 			}
 		}()
 		svc = svc.WithWater(waterRepo)
@@ -181,8 +188,8 @@ func runGridMeter(
 		thermalSinks := buildThermalSinks(ctx, l, healthSrv, dbs)
 		thermalRepo := multisink.NewThermalRepository(thermalSinks, l)
 		defer func() {
-			if err := thermalRepo.Close(); err != nil {
-				l.ErrorContext(ctx, "thermal repo close error", slog.Any("error", err))
+			if closeErr := thermalRepo.Close(); closeErr != nil {
+				l.ErrorContext(ctx, "thermal repo close error", slog.Any("error", closeErr))
 			}
 		}()
 		svc = svc.WithThermal(thermalRepo)
