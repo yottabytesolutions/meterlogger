@@ -36,18 +36,10 @@ type migrationTable struct {
 	columns []column
 }
 
-func columnNames(cols []column) []string {
-	names := make([]string, len(cols))
-	for i, c := range cols {
-		names[i] = c.name
-	}
-	return names
-}
-
 func createTableSQL(d Dialect, table string, cols []column) string {
 	defs := make([]string, len(cols))
 	for i, c := range cols {
-		def := c.name + " " + d.typeName(c.kind)
+		def := d.quoteIdent(c.name) + " " + d.typeName(c.kind)
 		if c.notNull && d.notNull {
 			def += " NOT NULL"
 		}
@@ -58,8 +50,12 @@ func createTableSQL(d Dialect, table string, cols []column) string {
 }
 
 func insertSQL(d Dialect, table string, cols []column) string {
-	names := strings.Join(columnNames(cols), ", ")
-	return "INSERT INTO " + table + " (" + names + ") VALUES (" + d.placeholders(len(cols)) + ")"
+	names := make([]string, len(cols))
+	for i, c := range cols {
+		names[i] = d.quoteIdent(c.name)
+	}
+	return "INSERT INTO " + table + " (" + strings.Join(names, ", ") +
+		") VALUES (" + d.placeholders(len(cols)) + ")"
 }
 
 func createTablesMigration(d Dialect, db *sql.DB, description string, tables []migrationTable) []schemastore.Migration {

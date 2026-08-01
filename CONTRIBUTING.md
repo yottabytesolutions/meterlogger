@@ -12,12 +12,12 @@ A change is in scope if it:
 
 - Fixes a defect against documented behaviour.
 - Improves documentation, tests, or build tooling.
-- Adds a new sink or source that follows the patterns described in [documentation/architecture.md](documentation/architecture.md) and the project's `CLAUDE.md`.
+- Adds a new sink or source that follows the patterns described in [documentation/architecture.md](documentation/architecture.md) and the project's `AGENTS.md`.
 - Improves observability, performance, or security without breaking existing behaviour.
 
 A change is likely out of scope if it:
 
-- Changes the architectural rules listed in `CLAUDE.md` (clean architecture, one container per source, fail-fast, etc.).
+- Changes the architectural rules listed in `AGENTS.md` (clean architecture, one container per source, fail-fast, etc.).
 - Adds optional features behind feature flags.
 - Vendors large external dependencies.
 - Renames public configuration keys without a clear migration path.
@@ -47,7 +47,7 @@ The lint and test suites must both pass with zero issues before a pull request c
 
 ## Code style
 
-The full set of project rules lives in `CLAUDE.md`. Highlights:
+The full set of project rules lives in `AGENTS.md`. Highlights:
 
 - Services depend only on interfaces in `internal/domain/`. Do not import an adapter package from `internal/service/`.
 - Use `log/slog`, not the standard `log` package, outside `cmd/meterlogger/`.
@@ -67,7 +67,7 @@ The full set of project rules lives in `CLAUDE.md`. Highlights:
 
 ## Adding a sink or source
 
-Follow the patterns documented in `CLAUDE.md` and `documentation/architecture.md`. In short:
+Follow the patterns documented in `AGENTS.md` and `documentation/architecture.md`. In short:
 
 - A new sink lives under `internal/adapters/sink/<name>/` and registers in `cmd/meterlogger/config.go`, `db.go`, and the four `source_*.go` files. Add it to the sink table in `documentation/README.md` and the config examples in `documentation/configuration.md`.
 - A new source lives under `internal/adapters/source/<name>/`, defines its reader and repository interfaces in `internal/domain/`, ships per-sink store methods, has a `multisink` wrapper, and is wired through a new `cmd/meterlogger/source_<name>.go`.

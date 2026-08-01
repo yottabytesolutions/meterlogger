@@ -6,6 +6,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-08-01
+
+### Fixed
+
+- The MySQL ventilation sink failed its schema migration because the node
+  table has a column named `show`, a reserved word. All generated SQL now
+  quotes column identifiers per dialect.
+- The ClickHouse solar and ventilation sinks silently lost data: the driver
+  supports one prepared batch per transaction, so flushes spanning several
+  tables dropped every batch after the first. Each table now flushes in its
+  own transaction. Both bugs were caught by the new integration tests.
+
+### Added
+
+- `meterlogger validate` checks the configuration and exits nonzero on problems;
+  `--ping` also connects to every enabled sink and reports per-sink health.
+- `meterlogger probe --source <name>` takes a single reading from one source and
+  prints it as JSON, for commissioning and hardware checks.
+- Kubernetes deployment example in `deploy/kubernetes.yaml` with probe wiring
+  and serial device access notes.
+- Weekly govulncheck scan and an integration test suite that runs the SQL and
+  ClickHouse sinks against real databases in CI.
+- CI enforces the 80 percent coverage floor.
+
+### Changed
+
+- Release notes are generated from this changelog; tagging a version without a
+  changelog entry fails the release.
+- Agent instructions moved from CLAUDE.md to AGENTS.md.
+
 ## [1.1.1] - 2026-07-31
 
 ### Fixed

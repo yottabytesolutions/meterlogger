@@ -79,6 +79,8 @@ func TestDucoStore_FlushBatchesAllTables(t *testing.T) {
 	_ = store.StoreNodeData(context.Background(), domain.DucoNodeBoxStatus{})
 	_ = store.StoreNodeData(context.Background(), domain.DucoNodeBoxValveStatus{})
 
+	// One transaction per table: the driver allows a single prepared batch
+	// per transaction.
 	mock.ExpectBegin()
 	mock.ExpectPrepare("INSERT INTO duco_box_general")
 	mock.ExpectExec("INSERT INTO duco_box_general").
@@ -92,10 +94,16 @@ func TestDucoStore_FlushBatchesAllTables(t *testing.T) {
 			box.General.InstallerState, box.WeatherStation.Present,
 		).
 		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+	mock.ExpectBegin()
 	mock.ExpectPrepare("INSERT INTO duco_node")
 	mock.ExpectExec("INSERT INTO duco_node").WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+	mock.ExpectBegin()
 	mock.ExpectPrepare("INSERT INTO duco_box_node")
 	mock.ExpectExec("INSERT INTO duco_box_node").WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+	mock.ExpectBegin()
 	mock.ExpectPrepare("INSERT INTO duco_valve")
 	mock.ExpectExec("INSERT INTO duco_valve").WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
@@ -114,21 +122,25 @@ func TestDucoStore_FlushErrorRequeues(t *testing.T) {
 	_ = store.StoreBoxStatus(context.Background(), testBoxStatus())
 	_ = store.StoreNodeData(context.Background(), domain.DucoNodeBoxValveStatus{})
 
+	// box_general fails and is re-queued; the valve batch has its own
+	// transaction and still lands.
 	mock.ExpectBegin()
 	mock.ExpectPrepare("INSERT INTO duco_box_general")
 	mock.ExpectExec("INSERT INTO duco_box_general").WillReturnError(errors.New("insert failed"))
 	mock.ExpectRollback()
+	mock.ExpectBegin()
+	mock.ExpectPrepare("INSERT INTO duco_valve")
+	mock.ExpectExec("INSERT INTO duco_valve").WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
 
 	if flushErr := store.Flush(context.Background()); flushErr == nil {
 		t.Error("expected error but got nil")
 	}
 
-	// The failed batches are re-queued: the next flush inserts them all.
+	// The re-queued box_general batch flushes on retry.
 	mock.ExpectBegin()
 	mock.ExpectPrepare("INSERT INTO duco_box_general")
 	mock.ExpectExec("INSERT INTO duco_box_general").WillReturnResult(sqlmock.NewResult(1, 1))
-	mock.ExpectPrepare("INSERT INTO duco_valve")
-	mock.ExpectExec("INSERT INTO duco_valve").WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
 
 	if retryErr := store.Flush(context.Background()); retryErr != nil {

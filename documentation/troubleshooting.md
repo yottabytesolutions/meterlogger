@@ -7,6 +7,30 @@ Common problems when getting MeterLogger running for the first time, and how to 
 
 ---
 
+## Commissioning checks
+
+Two subcommands verify a setup before running the collector for real.
+
+`meterlogger validate` parses the config and reports every problem at once. With `--ping` it also
+connects to each enabled sink:
+
+```sh
+meterlogger validate --config config.yaml --ping
+```
+
+`meterlogger probe` performs a single read from one source and prints the result, without writing
+to any sink. `--timeout` bounds the attempt:
+
+```sh
+meterlogger probe --source grid --config config.yaml --timeout 30s
+```
+
+Run both after any config or wiring change. A failing probe isolates the problem to the
+source side (device, network, credentials); a failing `validate --ping` isolates it to the sink
+side.
+
+---
+
 ## Serial port permission errors (heat / grid)
 
 Both the heat meter (M-Bus) and grid meter (DSMR P1) sources open a serial device such as

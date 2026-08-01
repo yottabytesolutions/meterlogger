@@ -1,4 +1,4 @@
-# MeterLogger - Claude Instructions
+# MeterLogger - Agent Instructions
 
 ## After every code change
 

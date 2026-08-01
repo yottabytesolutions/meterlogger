@@ -1,0 +1,110 @@
+name: Integration Tests
+
+on:
+  schedule:
+    # Weekly, Monday 05:43 UTC.
+    - cron: '43 5 * * 1'
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'internal/adapters/sink/**'
+      - 'integration/**'
+      - '.github/workflows/integration.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  databases:
+    runs-on: ubuntu-latest
+    # TDEngine and QuestDB are deliberately absent: neither ships an official
+    # image with a service-container-friendly health check and stable wire
+    # setup, so they stay covered by unit tests only.
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: meter
+          POSTGRES_PASSWORD: meterpass
+          POSTGRES_DB: meterlogger
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U meter -d meterlogger"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+      timescaledb:
+        image: timescale/timescaledb:latest-pg17
+        env:
+          POSTGRES_USER: meter
+          POSTGRES_PASSWORD: meterpass
+          POSTGRES_DB: meterlogger
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U meter -d meterlogger"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_ROOT_PASSWORD: rootpass
+          MYSQL_USER: meter
+          MYSQL_PASSWORD: meterpass
+          MYSQL_DATABASE: meterlogger
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -prootpass --silent"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 24
+
+      clickhouse:
+        image: clickhouse/clickhouse-server:24
+        env:
+          CLICKHOUSE_DB: meterlogger
+        ports:
+          - 9000:9000
+        options: >-
+          --health-cmd "clickhouse-client --query 'SELECT 1'"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Run integration tests
+        env:
+          POSTGRES_HOST: 127.0.0.1
+          POSTGRES_PORT: '5432'
+          POSTGRES_USER: meter
+          POSTGRES_PASSWORD: meterpass
+          POSTGRES_DB: meterlogger
+          TIMESCALEDB_HOST: 127.0.0.1
+          TIMESCALEDB_PORT: '5433'
+          TIMESCALEDB_USER: meter
+          TIMESCALEDB_PASSWORD: meterpass
+          TIMESCALEDB_DB: meterlogger
+          MYSQL_HOST: 127.0.0.1
+          MYSQL_PORT: '3306'
+          MYSQL_USER: meter
+          MYSQL_PASSWORD: meterpass
+          MYSQL_DB: meterlogger
+          CLICKHOUSE_HOST: 127.0.0.1
+          CLICKHOUSE_PORT: '9000'
+          CLICKHOUSE_USER: default
+          CLICKHOUSE_PASSWORD: ''
+          CLICKHOUSE_DB: meterlogger
+        run: go test -tags integration -v ./integration/...

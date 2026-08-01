@@ -104,7 +104,8 @@ CA certificates, and a non-root user record. The `HEALTHCHECK` directive runs
 `meterlogger healthcheck`, which probes `/readyz`.
 
 See [documentation/deployment.md](documentation/deployment.md) for a full
-multi-source docker-compose example.
+multi-source docker-compose example, and [deploy/kubernetes.yaml](deploy/kubernetes.yaml)
+for a Kubernetes equivalent.
 
 ## Documentation
 
@@ -114,13 +115,13 @@ multi-source docker-compose example.
 | [documentation/configuration.md](documentation/configuration.md) | All configuration options with annotated examples                  |
 | [documentation/meter-types.md](documentation/meter-types.md)     | Per-source deep dive: protocols, hardware, read flows              |
 | [documentation/data-model.md](documentation/data-model.md)       | Domain types and database table schemas                            |
-| [documentation/deployment.md](documentation/deployment.md)       | Building, running locally, Docker, docker-compose                  |
+| [documentation/deployment.md](documentation/deployment.md)       | Building, running locally, Docker, docker-compose, Kubernetes      |
 | [documentation/observability.md](documentation/observability.md) | Health endpoints, Prometheus metrics, tracing, profiling, alerting |
 | [documentation/troubleshooting.md](documentation/troubleshooting.md) | Common first-run problems and how to diagnose them             |
 | [documentation/README.md](documentation/README.md)               | Documentation index and quick orientation                          |
 | [CONTRIBUTING.md](CONTRIBUTING.md)                               | How to propose changes                                             |
 | [SECURITY.md](SECURITY.md)                                       | Security disclosure process                                        |
-| [CLAUDE.md](CLAUDE.md)                                           | Architectural rules and code style enforced for every change       |
+| [AGENTS.md](AGENTS.md)                                           | Architectural rules and code style enforced for every change       |
 
 ## Architecture at a glance
 
