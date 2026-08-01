@@ -8,3 +8,4 @@ bin/
 *.out
 /.output.txt
 /meterlogger
+/CLAUDE.md

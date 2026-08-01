@@ -12,7 +12,7 @@ providing fault isolation and visible restarts. See [deployment.md](./deployment
 | [configuration.md](./configuration.md) | All configuration options with annotated examples                  |
 | [meter-types.md](./meter-types.md)     | Per-meter-type deep dive: protocols, hardware, wiring              |
 | [data-model.md](./data-model.md)       | Domain types and database table schemas                            |
-| [deployment.md](./deployment.md)       | Building, running locally, Docker, docker-compose, OTel, Pyroscope |
+| [deployment.md](./deployment.md)       | Building, running locally, Docker, docker-compose, Kubernetes, OTel, Pyroscope |
 | [observability.md](./observability.md) | Health endpoints, Prometheus metrics, tracing, profiling, alerting |
 | [troubleshooting.md](./troubleshooting.md) | Common first-run problems and how to diagnose them             |
 

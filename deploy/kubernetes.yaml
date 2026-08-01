@@ -1,0 +1,109 @@
+# Example Kubernetes manifests for one MeterLogger source container (grid).
+# The deployment model is one Deployment per source. Copy the Deployment,
+# change the source label and the --source argument, and drop the serial
+# volume for network sources (solar, ventilation).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: meterlogger-config
+data:
+  # Minimal config: grid source, QuestDB sink. All source containers can
+  # share one ConfigMap; --source selects what runs.
+  config.yaml: |
+    Grid:
+      Enabled: true
+      Measurement: grid_meter
+      SerialInterface: /dev/ttyUSB0
+
+    QuestDB:
+      Enabled: true
+      Host: questdb
+      Port: 9009
+      User: admin
+      Password: quest
+
+    FlushInterval: 10s
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: meterlogger-grid
+  labels:
+    app: meterlogger
+    source: grid
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: meterlogger
+      source: grid
+  template:
+    metadata:
+      labels:
+        app: meterlogger
+        source: grid
+    spec:
+      containers:
+        - name: meterlogger
+          image: yottabyte/meterlogger:1.1.1
+          args: ["--source", "grid", "--config", "/config/config.yaml"]
+          ports:
+            # Health and metrics port. Keep it inside the pod network; it has
+            # no authentication. Do not expose it via a public Service.
+            - name: health
+              containerPort: 8080
+          # /readyz returns 503 as soon as any enabled sink is unreachable.
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+          # /healthz returns 503 only after a sink has been down continuously
+          # for HTTPServer.LivenessFailureThreshold (default 90s). These probe
+          # settings add up to 45s on top of that before the kubelet restarts
+          # the container, so transient sink blips never cause restarts.
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          securityContext:
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: config
+              mountPath: /config
+              readOnly: true
+            # Serial sources (heat, grid) need the device node in the container.
+            # Network sources (solar, ventilation) do not; remove this mount.
+            - name: serial
+              mountPath: /dev/ttyUSB0
+      volumes:
+        - name: config
+          configMap:
+            name: meterlogger-config
+        # A plain hostPath mount places the device node in the container but
+        # the kubelet does not whitelist it in the device cgroup, so opening
+        # it fails unless the container runs privileged (securityContext:
+        # privileged: true), which conflicts with the restrictions above.
+        # Prefer a device plugin such as squat/generic-device-plugin: it hands
+        # out /dev/ttyUSB0 as an extended resource, no privilege required, and
+        # replaces this volume with a resources.limits entry.
+        - name: serial
+          hostPath:
+            path: /dev/ttyUSB0
+            type: CharDevice

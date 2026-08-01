@@ -252,92 +252,25 @@ docker inspect --format='{{.State.Health.Status}}' meterlogger-heat
 
 ## Kubernetes
 
-### Liveness and readiness probes
+A complete worked example lives in [deploy/kubernetes.yaml](../deploy/kubernetes.yaml): a ConfigMap
+with a minimal grid + QuestDB config and a single-replica Deployment with probes, resource limits,
+and a restrictive security context. Copy the Deployment once per source and change the `--source`
+argument; all containers can share the ConfigMap.
 
-Use the HTTP endpoints directly - no custom binary needed in Kubernetes:
+Key points:
 
-```yaml
-livenessProbe:
-  httpGet:
-    path: /healthz
-    port: 8080
-  initialDelaySeconds: 5
-  periodSeconds: 15
-
-readinessProbe:
-  httpGet:
-    path: /readyz
-    port: 8080
-  initialDelaySeconds: 10
-  periodSeconds: 15
-```
-
-### Pod spec example
-
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: meterlogger-solar
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: meterlogger
-      source: solar
-  template:
-    metadata:
-      labels:
-        app: meterlogger
-        source: solar
-    spec:
-      containers:
-        - name: meterlogger
-          image: yottabyte/meterlogger:latest
-          args: ["--source", "solar"]
-          env:
-            - name: QUESTDB_HOST
-              value: questdb
-            - name: QUESTDB_ENABLED
-              value: "true"
-            - name: ENPHASE_ENABLED
-              value: "true"
-            - name: ENPHASE_ENVOYURL
-              value: http://envoy.local
-            - name: ENPHASE_USER
-              valueFrom:
-                secretKeyRef:
-                  name: enphase-creds
-                  key: user
-            - name: ENPHASE_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: enphase-creds
-                  key: password
-          ports:
-            - containerPort: 8080
-          resources:
-            requests:
-              cpu: 50m
-              memory: 64Mi
-            limits:
-              cpu: 200m
-              memory: 128Mi
-          livenessProbe:
-            httpGet:
-              path: /healthz
-              port: 8080
-            initialDelaySeconds: 5
-            periodSeconds: 15
-            failureThreshold: 3
-          readinessProbe:
-            httpGet:
-              path: /readyz
-              port: 8080
-            initialDelaySeconds: 10
-            periodSeconds: 15
-            failureThreshold: 3
-```
+- **One Deployment per source.** Same isolation model as Docker Compose: a failing source
+  crash-loops its own pod and nothing else.
+- **Probes.** `readinessProbe` hits `/readyz`, which flips to `503` immediately when a sink is
+  down. `livenessProbe` hits `/healthz`, which only fails after the sink has been down for
+  `HTTPServer.LivenessFailureThreshold` (default 90s), so the kubelet restarts the pod on
+  sustained failure but never on a transient blip.
+- **Serial devices (heat, grid).** A plain `hostPath` mount of `/dev/ttyUSB0` requires
+  `privileged: true` because the kubelet does not whitelist the device in the cgroup. A device
+  plugin (for example `squat/generic-device-plugin`) exposes the device as an extended resource
+  without privilege. Network sources (solar, ventilation) need neither.
+- **Do not expose port 8080 beyond the pod network.** The health/metrics endpoints have no
+  authentication. Probes and Prometheus scraping reach the pod directly; no Service is needed.
 
 ---
 
