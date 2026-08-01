@@ -1,6 +1,8 @@
 # MeterLogger
 
-[![CI](https://github.com/yottabytesolutions/meterlogger/actions/workflows/ci.yml/badge.svg)](https://github.com/yottabytesolutions/meterlogger/actions/workflows/ci.yml)
+[![CI](https://github.com/yottabytesolutions/meterlogger/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/yottabytesolutions/meterlogger/actions/workflows/ci.yml?query=branch%3Amaster)
+[![CodeQL](https://github.com/yottabytesolutions/meterlogger/actions/workflows/github-code-scanning/codeql/badge.svg?branch=master)](https://github.com/yottabytesolutions/meterlogger/security/code-scanning)
+[![Release](https://img.shields.io/github/v/release/yottabytesolutions/meterlogger)](https://github.com/yottabytesolutions/meterlogger/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 A Go service that reads data from utility meters and writes it to one or more
