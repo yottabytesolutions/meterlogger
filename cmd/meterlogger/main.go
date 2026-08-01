@@ -5,6 +5,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 
@@ -80,6 +81,10 @@ func init() {
 // initConfig loads the configuration and rebuilds the logger at the configured
 // level. Runs via cobra.OnInitialize before any command body.
 func initConfig() {
+	// Rebuild the logger now that every subcommand is registered, so
+	// logWriter can resolve the invoked command.
+	logger = newLogger(slog.LevelInfo)
+
 	loaded, err := config.Load(cfgFile, logger)
 	if err != nil {
 		logger.Error("failed to load config", slog.Any("error", err))
@@ -94,9 +99,18 @@ func initConfig() {
 	logger = newLogger(level)
 }
 
+// logWriter returns stderr when the probe command is invoked, keeping stdout
+// free for the probe's JSON reading. Every other command logs to stdout.
+func logWriter() io.Writer {
+	if cmd, _, err := rootCmd.Find(os.Args[1:]); err == nil && cmd.Name() == "probe" {
+		return os.Stderr
+	}
+	return os.Stdout
+}
+
 // newLogger builds the process logger with trace correlation and build info.
 func newLogger(level slog.Level) *slog.Logger {
-	base := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: level})
+	base := slog.NewTextHandler(logWriter(), &slog.HandlerOptions{Level: level})
 	return slog.New(tracedslog.New(base)).With(
 		slog.String("version", CommitSHA),
 		slog.String("buildTime", BuildDate),
