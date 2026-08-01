@@ -1,0 +1,40 @@
+# Template unit: one instance per source, mirroring the one-container-per-source
+# model. Enable with:
+#   systemctl enable --now meterlogger@grid
+# The instance name becomes the --source value; each instance reads
+# /etc/meterlogger/config.yaml.
+[Unit]
+Description=MeterLogger %i source
+Documentation=https://github.com/yottabytesolutions/meterlogger
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/meterlogger --source %i --config /etc/meterlogger/config.yaml
+Restart=on-failure
+# The service exits on a non-recoverable error by design and relies on the
+# supervisor to restart it with fresh connections.
+RestartSec=5
+
+User=meterlogger
+Group=meterlogger
+# Serial sources (heat, grid) read a USB device; the dialout group covers
+# /dev/ttyUSB* on Debian-family systems. Harmless for HTTP sources.
+SupplementaryGroups=dialout
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictRealtime=true
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

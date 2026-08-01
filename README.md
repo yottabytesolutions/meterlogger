@@ -104,8 +104,9 @@ CA certificates, and a non-root user record. The `HEALTHCHECK` directive runs
 `meterlogger healthcheck`, which probes `/readyz`.
 
 See [documentation/deployment.md](documentation/deployment.md) for a full
-multi-source docker-compose example, and [deploy/kubernetes.yaml](deploy/kubernetes.yaml)
-for a Kubernetes equivalent.
+multi-source docker-compose example, [deploy/kubernetes.yaml](deploy/kubernetes.yaml)
+for a Kubernetes equivalent, and [deploy/systemd/](deploy/systemd/) for running
+without containers.
 
 ## Documentation
 

@@ -10,6 +10,7 @@ Related: [configuration.md](./configuration.md) · [architecture.md](./architect
 - [Docker Compose - full example](#docker-compose--full-example)
 - [Health checks](#health-checks)
 - [Kubernetes](#kubernetes)
+- [Systemd](#systemd)
 - [Sink containers](#sink-containers)
 - [Observability infrastructure](#observability-infrastructure)
 - [Shutdown behaviour](#shutdown-behaviour)
@@ -273,6 +274,48 @@ Key points:
   authentication. Probes and Prometheus scraping reach the pod directly; no Service is needed.
 
 ---
+
+## Systemd
+
+For hosts without a container runtime, `deploy/systemd/meterlogger@.service` is a
+template unit that runs one instance per source, matching the
+one-container-per-source model.
+
+```sh
+# Install the binary from a release tarball
+tar -xzf meterlogger-linux-amd64.tar.gz
+sudo install -m 0755 meterlogger /usr/local/bin/meterlogger
+
+# User, config, unit
+sudo useradd --system --no-create-home --shell /usr/sbin/nologin meterlogger
+sudo mkdir -p /etc/meterlogger
+sudo cp config.example.yaml /etc/meterlogger/config.yaml   # then edit
+sudo cp deploy/systemd/meterlogger@.service /etc/systemd/system/
+sudo systemctl daemon-reload
+
+# One instance per source
+sudo systemctl enable --now meterlogger@grid
+sudo systemctl enable --now meterlogger@heat
+```
+
+Check a service with `systemctl status meterlogger@grid` and
+`journalctl -u meterlogger@grid -f`. Validate the config first with
+`meterlogger validate --config /etc/meterlogger/config.yaml --ping`.
+
+Every instance reads the same config file; the instance name selects the source,
+so per-source `Enabled` flags are ignored, exactly like the `--source` flag in
+containers. Instances cannot share the health port: give each one its own via a
+drop-in, using the environment override support:
+
+```sh
+sudo systemctl edit meterlogger@heat
+# [Service]
+# Environment=HTTPSERVER_PORT=8081
+```
+
+The unit grants the `dialout` group for serial devices and applies standard
+hardening. The service restarts itself on failure; that is the designed
+recovery path for lost sink connections.
 
 ## Sink containers
 
