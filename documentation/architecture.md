@@ -61,6 +61,7 @@ flowchart TD
     subgraph adapters["internal/adapters/"]
         subgraph sources["Sources"]
             gridreader["source/gridmeter/gridreader.go\nDSMR P1 serial"]
+            smlreader["source/sml/reader.go\nSML IR serial"]
             mbusreader["source/serialmbus/mbusreader.go\nM-Bus serial via gombus client"]
             mbusconv["source/serialmbus/converters/gombus.go"]
             kamstrup["source/kamstrup/\nKMP optical reader"]
@@ -123,6 +124,7 @@ flowchart LR
 
     subgraph grid["grid"]
         greader["gridmeter.NewGridReader()"]
+        smlr["sml.NewReader()"]
     end
 
     subgraph solar["solar"]

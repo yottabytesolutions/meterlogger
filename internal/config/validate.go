@@ -121,6 +121,19 @@ func sourceFieldErrors(cfg Config) []string {
 	if cfg.Grid.Enabled && cfg.Grid.SerialInterface == "" {
 		errs = append(errs, "grid source enabled but SerialInterface is empty")
 	}
+	// An empty Reader is accepted as dsmr so a Config built without Load
+	// (tests, embedding) keeps the documented default.
+	switch cfg.Grid.Reader {
+	case "", GridReaderDSMR:
+	case GridReaderSML:
+		if cfg.Grid.Gas.Enabled {
+			errs = append(errs, "Grid.Gas requires the dsmr reader; SML meters have no M-Bus subdevices")
+		}
+	default:
+		errs = append(errs, fmt.Sprintf(
+			"invalid Grid.Reader %q; valid values are %s, %s", cfg.Grid.Reader, GridReaderDSMR, GridReaderSML,
+		))
+	}
 	// Gas rides on the grid source; it only flows when the grid source runs.
 	// That dependency is not validated here because the --source filter can
 	// still select grid at runtime regardless of Grid.Enabled.

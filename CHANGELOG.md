@@ -27,7 +27,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `Grid.DecryptionKey` and `Grid.AuthenticationKey`. Frames are AES-128-GCM
   decrypted and fed through the normal telegram path. Telegrams with energy
   totals only (`1.8.0`/`2.8.0`) and the `0-0:42.0.0` equipment id are
-  accepted. Wiener Netze raw DLMS push is not supported.
+  accepted. Wiener Netze raw DLMS push is not supported.- SML reader for German electricity meters (EMH eHZ and mMe4.0, ISKRA
+  MT681, EasyMeter Q3A/Q3B, eBZ DD3 SM variant, Holley DTZ541) over an IR
+  read head, selected with `Grid.Reader: sml` (default stays `dsmr`).
+  Accepts both the standard X-25 frame CRC and the Holley Kermit variant.
+  Works with factory-state meters that send only the energy total.
+
 
 ## [1.3.0] - 2026-08-01
 

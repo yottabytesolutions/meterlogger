@@ -36,6 +36,12 @@ const (
 	HeatReaderOptical401 = "optical401"
 )
 
+// Grid.Reader values selecting the protocol spoken by the grid meter.
+const (
+	GridReaderDSMR = "dsmr"
+	GridReaderSML  = "sml"
+)
+
 // Config is the top-level application configuration.
 type Config struct {
 	Debug         bool
@@ -129,14 +135,19 @@ type Optical401Config struct {
 	FlowDecimals   int
 }
 
-// GridConfig configures the grid meter reader.
+// GridConfig configures the grid meter reader. Reader selects the
+// protocol: "dsmr" (default) for Dutch, Belgian, Luxembourgish, and
+// Austrian P1 meters, or "sml" for German SML meters read over an IR head.
 // DecryptionKey enables decryption of DLMS-encrypted P1 telegrams
 // (Luxembourg Smarty, Austrian Sagemcom T210-D); empty means plaintext only.
 // AuthenticationKey defaults to the fixed Luxembourg AK; Austrian users
 // override it with the GAK from their grid operator. Both are 32 hex chars.
+// Subdevices (Gas, Water, Thermal) only apply to the dsmr reader; SML
+// meters carry no M-Bus subdevices.
 type GridConfig struct {
 	Enabled           bool
 	Measurement       string
+	Reader            string
 	SerialInterface   string
 	DecryptionKey     string
 	AuthenticationKey string
