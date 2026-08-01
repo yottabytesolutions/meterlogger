@@ -128,6 +128,54 @@ func gasMigrations(db *sql.DB, table string) []schemastore.Migration {
 	}
 }
 
+func waterMigrations(db *sql.DB, table string) []schemastore.Migration {
+	return []schemastore.Migration{
+		{
+			Version:     1,
+			Description: "create water table",
+			Up: func(ctx context.Context) error {
+				_, err := db.ExecContext(
+					ctx, fmt.Sprintf(
+						`CREATE TABLE IF NOT EXISTS %s (
+    ts          DateTime64(9, 'UTC') NOT NULL,
+    received_at DateTime64(9, 'UTC') NOT NULL,
+    channel     Int32                NOT NULL,
+    device_type Int32                NOT NULL,
+    serial_no   String               NOT NULL,
+    reading_m3  Float64              NOT NULL
+) ENGINE = MergeTree() ORDER BY (ts)`, table,
+					),
+				)
+				return err
+			},
+		},
+	}
+}
+
+func thermalMigrations(db *sql.DB, table string) []schemastore.Migration {
+	return []schemastore.Migration{
+		{
+			Version:     1,
+			Description: "create thermal table",
+			Up: func(ctx context.Context) error {
+				_, err := db.ExecContext(
+					ctx, fmt.Sprintf(
+						`CREATE TABLE IF NOT EXISTS %s (
+    ts          DateTime64(9, 'UTC') NOT NULL,
+    received_at DateTime64(9, 'UTC') NOT NULL,
+    channel     Int32                NOT NULL,
+    device_type Int32                NOT NULL,
+    serial_no   String               NOT NULL,
+    reading_gj  Float64              NOT NULL
+) ENGINE = MergeTree() ORDER BY (ts)`, table,
+					),
+				)
+				return err
+			},
+		},
+	}
+}
+
 func solarMigrations(db *sql.DB, table string) []schemastore.Migration {
 	return []schemastore.Migration{
 		{

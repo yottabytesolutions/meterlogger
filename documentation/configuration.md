@@ -336,6 +336,10 @@ GRID_ENABLED=true
 GRID_SERIALINTERFACE=/dev/ttyUSB1
 GRID_GAS_ENABLED=true
 GRID_GAS_MEASUREMENT=gas_meter
+GRID_WATER_ENABLED=true
+GRID_WATER_MEASUREMENT=water_meter
+GRID_THERMAL_ENABLED=true
+GRID_THERMAL_MEASUREMENT=thermal_meter
 
 FLUSHINTERVAL=10s
 HTTPSERVER_PORT=8080
@@ -439,7 +443,55 @@ The gas meter updates its value every 5 minutes (DSMR 5) or hourly (DSMR 4 and o
 telegram repeats the last capture far more often. A row is stored only when the meter reports a new
 capture, so expect one row per 5 minutes or per hour, not one per second. See
 [data-model.md](./data-model.md#gas_meter-configurable-name) for the table layout and
-[meter-types.md](./meter-types.md#m-bus-subdevices-gas) for the protocol details.
+[meter-types.md](./meter-types.md#m-bus-subdevices-gas-water-thermal) for the protocol details.
+
+#### Grid.Water
+
+Water meters can be attached to the electricity meter over M-Bus, exactly like gas. This is common
+in Belgium, where Fluvius links the water meter to the digital electricity meter. Set
+`Grid.Water.Enabled: true` to store the readings. Like gas, water rides on the grid source: the readings
+only flow when the grid source (the DSMR P1 reader) runs, and there is no `--source water` value.
+
+| Key                      | Type   | Default       | Notes                              |
+|--------------------------|--------|---------------|------------------------------------|
+| `Grid.Water.Enabled`     | bool   | `false`       | Set `true` to store water readings |
+| `Grid.Water.Measurement` | string | `water_meter` | Table name in all enabled sinks    |
+
+Both cold water (device type `7`) and warm water (device type `6`) meters are stored; the
+`device_type` column tells them apart. The reading must be reported in m3.
+
+#### Grid.Thermal
+
+Heat and cooling meters (district heating) can also sit on the P1 M-Bus channels. This is rare in
+practice. Set `Grid.Thermal.Enabled: true` to store them. Like gas, thermal rides on the grid
+source: the readings only flow when the grid source (the DSMR P1 reader) runs, and there
+is no `--source thermal` value.
+
+| Key                        | Type   | Default         | Notes                                |
+|----------------------------|--------|-----------------|--------------------------------------|
+| `Grid.Thermal.Enabled`     | bool   | `false`         | Set `true` to store thermal readings |
+| `Grid.Thermal.Measurement` | string | `thermal_meter` | Table name in all enabled sinks      |
+
+Device types `4` (heat), `10` and `11` (cooling) and `12` (combined heat/cool) are stored; the
+`device_type` column tells them apart. The reading must be reported in GJ; readings with any other
+unit are skipped with a warning.
+
+```yaml
+Grid:
+  Enabled: true
+  Measurement: grid_meter
+  SerialInterface: /dev/ttyUSB1
+  Water:
+    Enabled: true
+    Measurement: water_meter
+  Thermal:
+    Enabled: true
+    Measurement: thermal_meter
+```
+
+Water and thermal readings are deduplicated on the meter-supplied capture time, exactly like gas.
+See [data-model.md](./data-model.md#water_meter-configurable-name) for the table layouts and
+[meter-types.md](./meter-types.md#m-bus-subdevices-gas-water-thermal) for the protocol details.
 
 ### Solar (Enphase)
 

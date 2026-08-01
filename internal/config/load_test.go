@@ -62,6 +62,18 @@ func TestLoad_DefaultsNoFile(t *testing.T) {
 	if cfg.Grid.Gas.Measurement != "gas_meter" {
 		t.Errorf("Grid.Gas.Measurement default = %q, want %q", cfg.Grid.Gas.Measurement, "gas_meter")
 	}
+	if cfg.Grid.Water.Enabled {
+		t.Error("Grid.Water.Enabled should default to false")
+	}
+	if cfg.Grid.Water.Measurement != "water_meter" {
+		t.Errorf("Grid.Water.Measurement default = %q, want %q", cfg.Grid.Water.Measurement, "water_meter")
+	}
+	if cfg.Grid.Thermal.Enabled {
+		t.Error("Grid.Thermal.Enabled should default to false")
+	}
+	if cfg.Grid.Thermal.Measurement != "thermal_meter" {
+		t.Errorf("Grid.Thermal.Measurement default = %q, want %q", cfg.Grid.Thermal.Measurement, "thermal_meter")
+	}
 }
 
 func TestLoad_EnvOnlyOverride(t *testing.T) {

@@ -358,3 +358,71 @@ func TestGasFieldErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestWaterThermalFieldErrors(t *testing.T) {
+	tests := []struct {
+		name    string
+		cfg     Config
+		wantErr string
+	}{
+		{
+			name: "water enabled without measurement",
+			cfg: Config{
+				Grid: GridConfig{
+					Enabled:         true,
+					SerialInterface: testSerialUSB0,
+					Water:           WaterConfig{Enabled: true},
+				},
+			},
+			wantErr: "grid water readings enabled but Grid.Water.Measurement is empty",
+		},
+		{
+			name: "water enabled with measurement produces no error",
+			cfg: Config{
+				Grid: GridConfig{
+					Enabled:         true,
+					SerialInterface: testSerialUSB0,
+					Water:           WaterConfig{Enabled: true, Measurement: "water_meter"},
+				},
+			},
+			wantErr: "",
+		},
+		{
+			name: "thermal enabled without measurement",
+			cfg: Config{
+				Grid: GridConfig{
+					Enabled:         true,
+					SerialInterface: testSerialUSB0,
+					Thermal:         ThermalConfig{Enabled: true},
+				},
+			},
+			wantErr: "grid thermal readings enabled but Grid.Thermal.Measurement is empty",
+		},
+		{
+			name: "thermal enabled with measurement produces no error",
+			cfg: Config{
+				Grid: GridConfig{
+					Enabled:         true,
+					SerialInterface: testSerialUSB0,
+					Thermal:         ThermalConfig{Enabled: true, Measurement: "thermal_meter"},
+				},
+			},
+			wantErr: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			errs := sourceFieldErrors(tt.cfg)
+			if tt.wantErr == "" {
+				if len(errs) != 0 {
+					t.Errorf("sourceFieldErrors() = %v, want empty", errs)
+				}
+				return
+			}
+			if !containsSubstring(errs, tt.wantErr) {
+				t.Errorf("sourceFieldErrors() = %v, want to contain %q", errs, tt.wantErr)
+			}
+		})
+	}
+}

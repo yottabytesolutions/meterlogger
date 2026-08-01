@@ -9,11 +9,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - Belgian (Fluvius eMUCS) grid meter support: version line on `0-0:96.1.4`,
-  gas subdevices on `0-n:24.2.3` (volume not temperature corrected), water
-  meters detected and skipped, decimal phase currents, and peak demand
-  (capaciteitstarief) fields stored in three new grid columns: `avg_demand`,
-  `max_demand_month`, `max_demand_month_at` (grid schema migration v2, added
-  automatically).
+  gas subdevices on `0-n:24.2.3` (volume not temperature corrected), decimal
+  phase currents, and peak demand (capaciteitstarief) fields stored in three
+  new grid columns: `avg_demand`, `max_demand_month`, `max_demand_month_at`
+  (grid schema migration v2, added automatically).
+- Water and thermal meter readings from the grid meter's P1 port
+  (`Grid.Water.Enabled`, `Grid.Thermal.Enabled`), alongside the existing gas
+  support. Water meters (device types 6 and 7, common on Belgian Fluvius
+  installs) store to `Grid.Water.Measurement` (default `water_meter`);
+  heat and cooling meters (device types 4, 10, 11, 12) store to
+  `Grid.Thermal.Measurement` (default `thermal_meter`). Readings are
+  deduplicated on the meter-supplied capture time, exactly like gas. Slave
+  e-meters (device type 2) are never stored from the master's telegram: read
+  them from their own P1 port.
 - Encrypted DLMS telegram support for Luxembourgish Smarty and Austrian
   Sagemcom T210-D meters (EVN, Energienetze Steiermark) via
   `Grid.DecryptionKey` and `Grid.AuthenticationKey`. Frames are AES-128-GCM

@@ -8,25 +8,25 @@ import (
 	"github.com/yottabytesolutions/meterlogger/internal/domain"
 )
 
-// QuestDBGasWriter implements domain.GasRepository for QuestDB.
-type QuestDBGasWriter struct {
+// QuestDBWaterWriter implements domain.WaterRepository for QuestDB.
+type QuestDBWaterWriter struct {
 	client      *DBClient
 	measurement string
 	logger      *slog.Logger
 }
 
-// NewQuestDBGasWriter creates a gas reading writer for the given measurement.
-func NewQuestDBGasWriter(client *DBClient, measurement string, logger *slog.Logger) *QuestDBGasWriter {
-	return &QuestDBGasWriter{
+// NewQuestDBWaterWriter creates a water reading writer for the given measurement.
+func NewQuestDBWaterWriter(client *DBClient, measurement string, logger *slog.Logger) *QuestDBWaterWriter {
+	return &QuestDBWaterWriter{
 		client:      client,
 		measurement: measurement,
 		logger:      logger,
 	}
 }
 
-// StoreGasReading buffers one gas reading into the ILP sender.
-func (w *QuestDBGasWriter) StoreGasReading(ctx context.Context, r domain.GasReading) error {
-	w.logger.DebugContext(ctx, "qdb: buffering gas reading",
+// StoreWaterReading buffers one water reading into the ILP sender.
+func (w *QuestDBWaterWriter) StoreWaterReading(ctx context.Context, r domain.WaterReading) error {
+	w.logger.DebugContext(ctx, "qdb: buffering water reading",
 		slog.String("serial_no", r.SerialNo),
 		slog.Float64("reading_m3", r.ReadingM3),
 		slog.Time("captured_at", r.CapturedAt),
@@ -41,14 +41,14 @@ func (w *QuestDBGasWriter) StoreGasReading(ctx context.Context, r domain.GasRead
 		At(ctx, r.CapturedAt)
 }
 
-// Flush sends buffered gas readings to QuestDB.
-func (w *QuestDBGasWriter) Flush(ctx context.Context) error {
-	w.logger.DebugContext(ctx, "qdb: flushing gas data to QuestDB")
+// Flush sends buffered water readings to QuestDB.
+func (w *QuestDBWaterWriter) Flush(ctx context.Context) error {
+	w.logger.DebugContext(ctx, "qdb: flushing water data to QuestDB")
 	return w.client.Flush(ctx)
 }
 
 // Close closes the shared QuestDB client.
-func (w *QuestDBGasWriter) Close() error {
+func (w *QuestDBWaterWriter) Close() error {
 	w.client.Close()
 	return nil
 }

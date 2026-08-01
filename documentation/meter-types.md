@@ -237,7 +237,7 @@ Timestamps use the `Europe/Amsterdam` timezone.
 The reader computes CRC16-CCITT over the full message (from `/` to and including `!`) and compares it against the
 4-character hex value that follows `!`.
 
-### M-Bus subdevices (gas)
+### M-Bus subdevices (gas, water, thermal)
 
 DSMR meters can carry up to four subdevices (gas, water, thermal) attached to the electricity meter over M-Bus. Their
 readings appear as extra OBIS lines in the same P1 telegram, on channels 1 to 4:
@@ -251,15 +251,33 @@ readings appear as extra OBIS lines in the same P1 telegram, on channels 1 to 4:
 Key points:
 
 - **Channels are assigned by installation order**, not by medium. The gas meter can sit on any channel.
-- **Detection is by device type, never by channel.** `0-n:24.1.0` carries the EN 13757-3 medium code: `3` gas,
-  `4` heat, `7` water. MeterLogger stores gas (`3`) when `Grid.Gas.Enabled` is set; water and thermal subdevices are
-  detected but not stored yet.
-- **Supported telegram formats:** DSMR 2.2+ through DSMR 5. DSMR 5 meters capture a new gas value every 5 minutes;
-  DSMR 4 and older capture hourly. The telegram repeats the last capture every second, so readings are deduplicated
-  on the meter-supplied capture time before storage.
+- **Detection is by device type, never by channel.** `0-n:24.1.0` carries the EN 13757-3 medium code. Routing:
 
-There is no separate gas source or serial connection. Enabling `Grid.Gas` makes the grid source store the gas lines it
-already receives. See [configuration.md](./configuration.md#gridgas) for the config keys and
+  | Device type | Medium                    | Stored when              | Unit |
+  |------------:|---------------------------|--------------------------|------|
+  | `2`         | Slave e-meter             | Never (see below)        | -    |
+  | `3`         | Gas                       | `Grid.Gas.Enabled`       | m3   |
+  | `4`         | Heat                      | `Grid.Thermal.Enabled`   | GJ   |
+  | `6`         | Warm water                | `Grid.Water.Enabled`     | m3   |
+  | `7`         | Water                     | `Grid.Water.Enabled`     | m3   |
+  | `10`        | Cooling (outlet)          | `Grid.Thermal.Enabled`   | GJ   |
+  | `11`        | Cooling (inlet)           | `Grid.Thermal.Enabled`   | GJ   |
+  | `12`        | Heat and cooling combined | `Grid.Thermal.Enabled`   | GJ   |
+
+  A reading with a unit other than the expected one is skipped with a warning. Any other device
+  type, and any device whose storage is not enabled, is skipped with one log line per channel.
+- **Slave e-meters are excluded.** A slave electricity meter (device type `2`) publishes only a
+  kWh total on the master's telegram; read the slave meter from its own P1 port instead of the
+  master's M-Bus lines.
+- **Supported telegram formats:** DSMR 2.2+ through DSMR 5. DSMR 5 meters capture a new subdevice value every
+  5 minutes; DSMR 4 and older capture hourly. The telegram repeats the last capture every second, so readings are
+  deduplicated on the meter-supplied capture time before storage.
+- **Water on P1 is common in Belgium**, where Fluvius links the water meter to the digital electricity meter.
+  Thermal subdevices are rare in practice.
+
+There is no separate gas, water, or thermal source or serial connection. Enabling `Grid.Gas`, `Grid.Water`, or
+`Grid.Thermal` makes the grid source store the subdevice lines it already receives. See
+[configuration.md](./configuration.md#gridgas) for the config keys and
 [data-model.md](./data-model.md#gasreading) for the stored fields.
 
 ### Belgium (Fluvius eMUCS)
@@ -275,8 +293,8 @@ configured. Dialect differences handled by the reader:
 - Gas subdevices publish on `0-n:24.2.3` instead of `24.2.1`. **The Belgian gas volume is not temperature
   corrected**; the DSO applies the correction in billing. Keep that in mind when comparing stored volumes against
   invoices.
-- Water meters (device type `007`) publish on `24.2.1`; they are detected and skipped with a one-time log line,
-  like on Dutch meters.
+- Water meters (device type `007`) publish on `24.2.1`; they are stored when `Grid.Water.Enabled` is set and
+  otherwise skipped with a one-time log line, like on Dutch meters.
 - Subdevice equipment ids are on `0-n:96.1.1` instead of `0-n:96.1.0`; both are accepted.
 
 ### Luxembourg (Smarty) and Austria (Sagemcom T210-D)

@@ -141,12 +141,30 @@ type GridConfig struct {
 	DecryptionKey     string
 	AuthenticationKey string
 	Gas               GasConfig
+	Water             WaterConfig
+	Thermal           ThermalConfig
 }
 
 // GasConfig configures storage of gas meter readings carried in the grid
 // meter's P1 telegrams. Gas is not a standalone source: readings only flow
 // when the grid source runs.
 type GasConfig struct {
+	Enabled     bool
+	Measurement string
+}
+
+// WaterConfig configures storage of water meter readings carried in the grid
+// meter's P1 telegrams. Water is not a standalone source: readings only flow
+// when the grid source runs.
+type WaterConfig struct {
+	Enabled     bool
+	Measurement string
+}
+
+// ThermalConfig configures storage of heat and cooling meter readings carried
+// in the grid meter's P1 telegrams. Thermal is not a standalone source:
+// readings only flow when the grid source runs.
+type ThermalConfig struct {
 	Enabled     bool
 	Measurement string
 }

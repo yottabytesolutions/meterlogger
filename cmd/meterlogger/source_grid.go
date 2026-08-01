@@ -34,6 +34,7 @@ func buildGridSinks(
 	)
 }
 
+//nolint:dupl // per-subdevice constructor sets are parallel by design, distinct domain types
 func buildGasSinks(
 	ctx context.Context, l *slog.Logger,
 	healthSrv *healthserver.Server,
@@ -48,6 +49,44 @@ func buildGasSinks(
 		},
 		func(ctx context.Context, db *clickhouse.DB, m string, l *slog.Logger) (domain.GasRepository, error) {
 			return clickhouse.NewGasStore(ctx, db, m, l)
+		},
+	)
+}
+
+//nolint:dupl // per-subdevice constructor sets are parallel by design, distinct domain types
+func buildWaterSinks(
+	ctx context.Context, l *slog.Logger,
+	healthSrv *healthserver.Server,
+	dbs dbConnections,
+) []domain.WaterRepository {
+	return buildSourceSinks(ctx, l, healthSrv, dbs, cfg.Grid.Water.Measurement,
+		func(c *qdb.DBClient, m string, l *slog.Logger) domain.WaterRepository {
+			return qdb.NewQuestDBWaterWriter(c, m, l)
+		},
+		func(ctx context.Context, db *sqlsink.DB, m string, l *slog.Logger) (domain.WaterRepository, error) {
+			return sqlsink.NewWaterStore(ctx, db, m, l)
+		},
+		func(ctx context.Context, db *clickhouse.DB, m string, l *slog.Logger) (domain.WaterRepository, error) {
+			return clickhouse.NewWaterStore(ctx, db, m, l)
+		},
+	)
+}
+
+//nolint:dupl // per-subdevice constructor sets are parallel by design, distinct domain types
+func buildThermalSinks(
+	ctx context.Context, l *slog.Logger,
+	healthSrv *healthserver.Server,
+	dbs dbConnections,
+) []domain.ThermalRepository {
+	return buildSourceSinks(ctx, l, healthSrv, dbs, cfg.Grid.Thermal.Measurement,
+		func(c *qdb.DBClient, m string, l *slog.Logger) domain.ThermalRepository {
+			return qdb.NewQuestDBThermalWriter(c, m, l)
+		},
+		func(ctx context.Context, db *sqlsink.DB, m string, l *slog.Logger) (domain.ThermalRepository, error) {
+			return sqlsink.NewThermalStore(ctx, db, m, l)
+		},
+		func(ctx context.Context, db *clickhouse.DB, m string, l *slog.Logger) (domain.ThermalRepository, error) {
+			return clickhouse.NewThermalStore(ctx, db, m, l)
 		},
 	)
 }
@@ -96,6 +135,28 @@ func runGridMeter(
 			}
 		}()
 		svc = svc.WithGas(gasRepo)
+	}
+
+	if cfg.Grid.Water.Enabled {
+		waterSinks := buildWaterSinks(ctx, l, healthSrv, dbs)
+		waterRepo := multisink.NewWaterRepository(waterSinks, l)
+		defer func() {
+			if err := waterRepo.Close(); err != nil {
+				l.ErrorContext(ctx, "water repo close error", slog.Any("error", err))
+			}
+		}()
+		svc = svc.WithWater(waterRepo)
+	}
+
+	if cfg.Grid.Thermal.Enabled {
+		thermalSinks := buildThermalSinks(ctx, l, healthSrv, dbs)
+		thermalRepo := multisink.NewThermalRepository(thermalSinks, l)
+		defer func() {
+			if err := thermalRepo.Close(); err != nil {
+				l.ErrorContext(ctx, "thermal repo close error", slog.Any("error", err))
+			}
+		}()
+		svc = svc.WithThermal(thermalRepo)
 	}
 
 	startService(ctx, l, "Grid Meter", svc.WithMetrics(appMetrics))

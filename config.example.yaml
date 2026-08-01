@@ -152,6 +152,20 @@ Grid:
     Enabled: false
     Measurement: gas_meter # table name in all enabled sinks (default)
 
+  # Water meter readings from the same P1 port, exactly like gas. Common in
+  # Belgium, where Fluvius links the water meter to the digital electricity
+  # meter. Covers cold (device type 7) and warm (device type 6) water meters.
+  # Water:
+  #   Enabled: false
+  #   Measurement: water_meter # table name in all enabled sinks (default)
+
+  # Heat and cooling (district heating) meter readings from the same P1
+  # port, exactly like gas. Rare in practice. Covers device types 4 (heat),
+  # 10/11 (cooling) and 12 (heat/cool combined); readings must be in GJ.
+  # Thermal:
+  #   Enabled: false
+  #   Measurement: thermal_meter # table name in all enabled sinks (default)
+
 # ── Solar (Enphase Envoy HTTP API) ─────────────────────────
 Enphase:
   Enabled: false

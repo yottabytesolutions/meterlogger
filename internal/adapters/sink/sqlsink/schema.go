@@ -192,16 +192,24 @@ func addColumnsMigration(
 	}
 }
 
-func gasColumns() []column {
+// subdeviceColumns is the shared shape of the M-Bus subdevice tables (gas,
+// water, thermal); only the reading column name differs.
+func subdeviceColumns(readingCol string) []column {
 	return []column{
 		{name: "ts", kind: kindTimestamp, notNull: true},
 		{name: "received_at", kind: kindTimestamp, notNull: true},
 		{name: "channel", kind: kindInt, notNull: true},
 		{name: "device_type", kind: kindInt, notNull: true},
 		{name: colSerialNo, kind: kindShortText, notNull: true},
-		{name: "reading_m3", kind: kindDouble, notNull: true},
+		{name: readingCol, kind: kindDouble, notNull: true},
 	}
 }
+
+func gasColumns() []column { return subdeviceColumns("reading_m3") }
+
+func waterColumns() []column { return subdeviceColumns("reading_m3") }
+
+func thermalColumns() []column { return subdeviceColumns("reading_gj") }
 
 func solarColumns() []column {
 	return []column{

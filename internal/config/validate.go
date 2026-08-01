@@ -127,6 +127,12 @@ func sourceFieldErrors(cfg Config) []string {
 	if cfg.Grid.Gas.Enabled && cfg.Grid.Gas.Measurement == "" {
 		errs = append(errs, "grid gas readings enabled but Grid.Gas.Measurement is empty")
 	}
+	if cfg.Grid.Water.Enabled && cfg.Grid.Water.Measurement == "" {
+		errs = append(errs, "grid water readings enabled but Grid.Water.Measurement is empty")
+	}
+	if cfg.Grid.Thermal.Enabled && cfg.Grid.Thermal.Measurement == "" {
+		errs = append(errs, "grid thermal readings enabled but Grid.Thermal.Measurement is empty")
+	}
 	if cfg.Grid.DecryptionKey != "" && !isHexKey(cfg.Grid.DecryptionKey) {
 		errs = append(errs, "Grid.DecryptionKey must be 32 hexadecimal characters (128-bit AES key)")
 	}

@@ -421,6 +421,7 @@ func TestNewQuestDBGasWriter(t *testing.T) {
 	}
 }
 
+//nolint:dupl // gas, water and thermal writer tests share the same shape but cover distinct domain types
 func TestQuestDBGasWriter_StoreGasReading(t *testing.T) {
 	client, sender := newTestDBClient()
 	writer := NewQuestDBGasWriter(client, "gas", testLogger())
@@ -470,6 +471,136 @@ func TestQuestDBGasWriter_Flush(t *testing.T) {
 func TestQuestDBGasWriter_Close(t *testing.T) {
 	client, _ := newTestDBClient()
 	writer := NewQuestDBGasWriter(client, "gas", testLogger())
+	if err := writer.Close(); err != nil {
+		t.Errorf("Close() unexpected error: %v", err)
+	}
+}
+
+// --- QuestDBWaterWriter tests ---
+
+func TestNewQuestDBWaterWriter(t *testing.T) {
+	client, _ := newTestDBClient()
+	writer := NewQuestDBWaterWriter(client, "water", testLogger())
+	if writer == nil {
+		t.Error("NewQuestDBWaterWriter returned nil")
+	}
+}
+
+//nolint:dupl // gas, water and thermal writer tests share the same shape but cover distinct domain types
+func TestQuestDBWaterWriter_StoreWaterReading(t *testing.T) {
+	client, sender := newTestDBClient()
+	writer := NewQuestDBWaterWriter(client, "water", testLogger())
+	capturedAt := time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
+	receivedAt := capturedAt.Add(90 * time.Second)
+	reading := domain.WaterReading{
+		CapturedAt: capturedAt,
+		ReceivedAt: receivedAt,
+		Channel:    2,
+		DeviceType: domain.DeviceTypeWater,
+		SerialNo:   "3853414731",
+		ReadingM3:  872.234,
+	}
+	if err := writer.StoreWaterReading(context.Background(), reading); err != nil {
+		t.Fatalf("StoreWaterReading() unexpected error: %v", err)
+	}
+
+	row := requireRows(t, sender, 1)[0]
+	assertTable(t, row, "water")
+	assertSymbol(t, row, "serial_no", "3853414731")
+	assertColumn(t, row, "channel", int64(2))
+	assertColumn(t, row, "device_type", int64(domain.DeviceTypeWater))
+	assertColumn(t, row, "reading_m3", 872.234)
+	assertColumn(t, row, "received_at", receivedAt)
+	assertAt(t, row, capturedAt)
+}
+
+func TestQuestDBWaterWriter_StoreWaterReading_WriteError(t *testing.T) {
+	client := &DBClient{
+		sender: &mockLineSender{atErr: errTest},
+		logger: testLogger(),
+	}
+	writer := NewQuestDBWaterWriter(client, "water", testLogger())
+	if err := writer.StoreWaterReading(context.Background(), domain.WaterReading{}); err == nil {
+		t.Error("StoreWaterReading should return error when sender fails")
+	}
+}
+
+func TestQuestDBWaterWriter_Flush(t *testing.T) {
+	client, _ := newTestDBClient()
+	writer := NewQuestDBWaterWriter(client, "water", testLogger())
+	if err := writer.Flush(context.Background()); err != nil {
+		t.Errorf("Flush() unexpected error: %v", err)
+	}
+}
+
+func TestQuestDBWaterWriter_Close(t *testing.T) {
+	client, _ := newTestDBClient()
+	writer := NewQuestDBWaterWriter(client, "water", testLogger())
+	if err := writer.Close(); err != nil {
+		t.Errorf("Close() unexpected error: %v", err)
+	}
+}
+
+// --- QuestDBThermalWriter tests ---
+
+func TestNewQuestDBThermalWriter(t *testing.T) {
+	client, _ := newTestDBClient()
+	writer := NewQuestDBThermalWriter(client, "thermal", testLogger())
+	if writer == nil {
+		t.Error("NewQuestDBThermalWriter returned nil")
+	}
+}
+
+//nolint:dupl // gas, water and thermal writer tests share the same shape but cover distinct domain types
+func TestQuestDBThermalWriter_StoreThermalReading(t *testing.T) {
+	client, sender := newTestDBClient()
+	writer := NewQuestDBThermalWriter(client, "thermal", testLogger())
+	capturedAt := time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
+	receivedAt := capturedAt.Add(90 * time.Second)
+	reading := domain.ThermalReading{
+		CapturedAt: capturedAt,
+		ReceivedAt: receivedAt,
+		Channel:    3,
+		DeviceType: domain.DeviceTypeHeat,
+		SerialNo:   "3253414735",
+		ReadingGJ:  12.345,
+	}
+	if err := writer.StoreThermalReading(context.Background(), reading); err != nil {
+		t.Fatalf("StoreThermalReading() unexpected error: %v", err)
+	}
+
+	row := requireRows(t, sender, 1)[0]
+	assertTable(t, row, "thermal")
+	assertSymbol(t, row, "serial_no", "3253414735")
+	assertColumn(t, row, "channel", int64(3))
+	assertColumn(t, row, "device_type", int64(domain.DeviceTypeHeat))
+	assertColumn(t, row, "reading_gj", 12.345)
+	assertColumn(t, row, "received_at", receivedAt)
+	assertAt(t, row, capturedAt)
+}
+
+func TestQuestDBThermalWriter_StoreThermalReading_WriteError(t *testing.T) {
+	client := &DBClient{
+		sender: &mockLineSender{atErr: errTest},
+		logger: testLogger(),
+	}
+	writer := NewQuestDBThermalWriter(client, "thermal", testLogger())
+	if err := writer.StoreThermalReading(context.Background(), domain.ThermalReading{}); err == nil {
+		t.Error("StoreThermalReading should return error when sender fails")
+	}
+}
+
+func TestQuestDBThermalWriter_Flush(t *testing.T) {
+	client, _ := newTestDBClient()
+	writer := NewQuestDBThermalWriter(client, "thermal", testLogger())
+	if err := writer.Flush(context.Background()); err != nil {
+		t.Errorf("Flush() unexpected error: %v", err)
+	}
+}
+
+func TestQuestDBThermalWriter_Close(t *testing.T) {
+	client, _ := newTestDBClient()
+	writer := NewQuestDBThermalWriter(client, "thermal", testLogger())
 	if err := writer.Close(); err != nil {
 		t.Errorf("Close() unexpected error: %v", err)
 	}

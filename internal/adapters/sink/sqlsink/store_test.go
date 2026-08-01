@@ -157,6 +157,8 @@ func newGasStore(t *testing.T, dc dialectCase) (*sqlsink.GasStore, sqlmock.Sqlmo
 
 // TestGasStore_InsertArgs asserts the exact argument order of the gas insert
 // for both placeholder styles, so a column/value transposition fails the test.
+//
+//nolint:dupl // gas, water and thermal insert tests share the same shape but cover distinct domain types
 func TestGasStore_InsertArgs(t *testing.T) {
 	capturedAt := time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
 	receivedAt := capturedAt.Add(2 * time.Minute)
@@ -186,6 +188,118 @@ func TestGasStore_InsertArgs(t *testing.T) {
 
 func TestGasStore_FlushAndCloseAreNoOps(t *testing.T) {
 	store, mock := newGasStore(t, dialectCases()[0])
+	if err := store.Flush(context.Background()); err != nil {
+		t.Errorf("Flush: %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Errorf("Close: %v", err)
+	}
+	if metErr := mock.ExpectationsWereMet(); metErr != nil {
+		t.Error(metErr)
+	}
+}
+
+func newWaterStore(t *testing.T, dc dialectCase) (*sqlsink.WaterStore, sqlmock.Sqlmock) {
+	t.Helper()
+	db, mock := testDB(t, dc.dialect)
+	expectMigrationAlreadyApplied(mock, dc, dc.prefix+"_water_water")
+	store, err := sqlsink.NewWaterStore(context.Background(), db, "water", testLogger())
+	if err != nil {
+		t.Fatalf("NewWaterStore: %v", err)
+	}
+	return store, mock
+}
+
+// TestWaterStore_InsertArgs asserts the exact argument order of the water
+// insert for both placeholder styles, so a column/value transposition fails
+// the test.
+//
+//nolint:dupl // gas, water and thermal insert tests share the same shape but cover distinct domain types
+func TestWaterStore_InsertArgs(t *testing.T) {
+	capturedAt := time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
+	receivedAt := capturedAt.Add(2 * time.Minute)
+	reading := domain.WaterReading{
+		CapturedAt: capturedAt,
+		ReceivedAt: receivedAt,
+		Channel:    2,
+		DeviceType: domain.DeviceTypeWater,
+		SerialNo:   "sn-water-1",
+		ReadingM3:  872.234,
+	}
+	for _, dc := range []dialectCase{dialectCases()[0], dialectCases()[1]} {
+		t.Run(dc.prefix, func(t *testing.T) {
+			store, mock := newWaterStore(t, dc)
+			mock.ExpectExec("INSERT INTO water").
+				WithArgs(capturedAt, receivedAt, 2, domain.DeviceTypeWater, "sn-water-1", 872.234).
+				WillReturnResult(sqlmock.NewResult(1, 1))
+			if err := store.StoreWaterReading(context.Background(), reading); err != nil {
+				t.Errorf("StoreWaterReading: %v", err)
+			}
+			if metErr := mock.ExpectationsWereMet(); metErr != nil {
+				t.Error(metErr)
+			}
+		})
+	}
+}
+
+func TestWaterStore_FlushAndCloseAreNoOps(t *testing.T) {
+	store, mock := newWaterStore(t, dialectCases()[0])
+	if err := store.Flush(context.Background()); err != nil {
+		t.Errorf("Flush: %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Errorf("Close: %v", err)
+	}
+	if metErr := mock.ExpectationsWereMet(); metErr != nil {
+		t.Error(metErr)
+	}
+}
+
+func newThermalStore(t *testing.T, dc dialectCase) (*sqlsink.ThermalStore, sqlmock.Sqlmock) {
+	t.Helper()
+	db, mock := testDB(t, dc.dialect)
+	expectMigrationAlreadyApplied(mock, dc, dc.prefix+"_thermal_thermal")
+	store, err := sqlsink.NewThermalStore(context.Background(), db, "thermal", testLogger())
+	if err != nil {
+		t.Fatalf("NewThermalStore: %v", err)
+	}
+	return store, mock
+}
+
+// TestThermalStore_InsertArgs asserts the exact argument order of the thermal
+// insert for both placeholder styles, so a column/value transposition fails
+// the test.
+//
+//nolint:dupl // gas, water and thermal insert tests share the same shape but cover distinct domain types
+func TestThermalStore_InsertArgs(t *testing.T) {
+	capturedAt := time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
+	receivedAt := capturedAt.Add(2 * time.Minute)
+	reading := domain.ThermalReading{
+		CapturedAt: capturedAt,
+		ReceivedAt: receivedAt,
+		Channel:    3,
+		DeviceType: domain.DeviceTypeHeat,
+		SerialNo:   "sn-thermal-1",
+		ReadingGJ:  12.345,
+	}
+	for _, dc := range []dialectCase{dialectCases()[0], dialectCases()[1]} {
+		t.Run(dc.prefix, func(t *testing.T) {
+			store, mock := newThermalStore(t, dc)
+			mock.ExpectExec("INSERT INTO thermal").
+				WithArgs(capturedAt, receivedAt, 3, domain.DeviceTypeHeat, "sn-thermal-1", 12.345).
+				WillReturnResult(sqlmock.NewResult(1, 1))
+			if err := store.StoreThermalReading(context.Background(), reading); err != nil {
+				t.Errorf("StoreThermalReading: %v", err)
+			}
+			if metErr := mock.ExpectationsWereMet(); metErr != nil {
+				t.Error(metErr)
+			}
+		})
+	}
+}
+
+func TestThermalStore_FlushAndCloseAreNoOps(t *testing.T) {
+	store, mock := newThermalStore(t, dialectCases()[0])
 	if err := store.Flush(context.Background()); err != nil {
 		t.Errorf("Flush: %v", err)
 	}
@@ -360,6 +474,26 @@ func TestDucoStore_UnknownNodeTypeSkipped(t *testing.T) {
 type unknownNode struct{}
 
 func (unknownNode) NodeDevType() string { return "UNKN" }
+
+func TestSubdeviceStore_ErrorPaths(t *testing.T) {
+	dc := dialectCases()[0]
+
+	t.Run("water", func(t *testing.T) {
+		store, mock := newWaterStore(t, dc)
+		mock.ExpectExec("INSERT INTO water").WillReturnError(errTest)
+		if err := store.StoreWaterReading(context.Background(), domain.WaterReading{}); err == nil {
+			t.Error("expected error, got nil")
+		}
+	})
+
+	t.Run("thermal", func(t *testing.T) {
+		store, mock := newThermalStore(t, dc)
+		mock.ExpectExec("INSERT INTO thermal").WillReturnError(errTest)
+		if err := store.StoreThermalReading(context.Background(), domain.ThermalReading{}); err == nil {
+			t.Error("expected error, got nil")
+		}
+	})
+}
 
 func TestStore_ErrorPaths(t *testing.T) {
 	dc := dialectCases()[0]

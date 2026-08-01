@@ -25,7 +25,7 @@ for each meter type you want to read.
 | Source        | Protocol                  | Connection                  |
 |---------------|---------------------------|-----------------------------|
 | `heat`        | M-Bus (EN 13757) or optical (Kamstrup KMP, Multical 401/66C) | USB M-Bus adapter or IR read head |
-| `grid`        | DSMR P1 smart meter (NL, BE Fluvius, LU Smarty, AT Sagemcom T210-D), plus gas meter readings via the P1 M-Bus channel when enabled | USB-to-P1 serial cable |
+| `grid`        | DSMR P1 smart meter (NL, BE Fluvius, LU Smarty, AT Sagemcom T210-D), plus gas, water and thermal meter readings via the P1 M-Bus channels when enabled | USB-to-P1 serial cable |
 | `solar`       | Enphase Envoy HTTP API    | Local network               |
 | `ventilation` | DucoBox HTTP API          | Local network               |
 

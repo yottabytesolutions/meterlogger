@@ -78,6 +78,8 @@ func setSourceDefaults() {
 	viper.SetDefault("Heat.Optical401.FlowDecimals", 1)
 
 	viper.SetDefault("Grid.Gas.Measurement", "gas_meter")
+	viper.SetDefault("Grid.Water.Measurement", "water_meter")
+	viper.SetDefault("Grid.Thermal.Measurement", "thermal_meter")
 
 	// The fixed authentication key used by all Luxembourgish Smarty meters.
 	// Austrian users override it with the GAK from their grid operator.

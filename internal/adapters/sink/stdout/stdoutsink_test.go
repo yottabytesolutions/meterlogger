@@ -51,6 +51,30 @@ func TestStoreGasReading(t *testing.T) {
 	}
 }
 
+func TestStoreWaterReading(t *testing.T) {
+	store := newTestStore()
+	reading := domain.WaterReading{
+		SerialNo:  "3853414731",
+		ReadingM3: 872.234,
+	}
+	err := store.StoreWaterReading(context.Background(), reading)
+	if err != nil {
+		t.Errorf("StoreWaterReading() unexpected error: %v", err)
+	}
+}
+
+func TestStoreThermalReading(t *testing.T) {
+	store := newTestStore()
+	reading := domain.ThermalReading{
+		SerialNo:  "3253414735",
+		ReadingGJ: 12.345,
+	}
+	err := store.StoreThermalReading(context.Background(), reading)
+	if err != nil {
+		t.Errorf("StoreThermalReading() unexpected error: %v", err)
+	}
+}
+
 func TestStoreEnvoySolarData(t *testing.T) {
 	store := newTestStore()
 	data := domain.EnvoySolarData{
@@ -83,6 +107,12 @@ func TestStdoutStore_AllMethods(t *testing.T) {
 	}
 	if err := s.StoreGasReading(ctx, domain.GasReading{CapturedAt: time.Now()}); err != nil {
 		t.Errorf("StoreGasReading: %v", err)
+	}
+	if err := s.StoreWaterReading(ctx, domain.WaterReading{CapturedAt: time.Now()}); err != nil {
+		t.Errorf("StoreWaterReading: %v", err)
+	}
+	if err := s.StoreThermalReading(ctx, domain.ThermalReading{CapturedAt: time.Now()}); err != nil {
+		t.Errorf("StoreThermalReading: %v", err)
 	}
 	if err := s.StoreEnvoySolarData(ctx, domain.EnvoySolarData{}); err != nil {
 		t.Errorf("StoreEnvoySolarData: %v", err)

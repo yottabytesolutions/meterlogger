@@ -1,4 +1,4 @@
-//nolint:dupl // gas, water and thermal store tests share the same shape but cover distinct domain types
+//nolint:dupl // water and gas tests share the same shape but cover distinct domain types
 package clickhouse_test
 
 import (
@@ -13,26 +13,26 @@ import (
 	"github.com/yottabytesolutions/meterlogger/internal/domain"
 )
 
-func TestGasStore_StoreGasReading(t *testing.T) {
+func TestWaterStore_StoreWaterReading(t *testing.T) {
 	db, mock := testDB(t)
-	expectMigrationAlreadyApplied(mock, "clickhouse_gas_gas")
+	expectMigrationAlreadyApplied(mock, "clickhouse_water_water")
 
-	store, storeErr := clickhouse.NewGasStore(context.Background(), db, "gas", testLogger())
+	store, storeErr := clickhouse.NewWaterStore(context.Background(), db, "water", testLogger())
 	if storeErr != nil {
-		t.Fatalf("NewGasStore: %v", storeErr)
+		t.Fatalf("NewWaterStore: %v", storeErr)
 	}
 
 	capturedAt := time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
-	reading := domain.GasReading{
+	reading := domain.WaterReading{
 		CapturedAt: capturedAt,
 		ReceivedAt: capturedAt.Add(time.Minute),
-		Channel:    1,
-		DeviceType: domain.DeviceTypeGas,
-		SerialNo:   "sn-gas-1",
-		ReadingM3:  1234.567,
+		Channel:    2,
+		DeviceType: domain.DeviceTypeWater,
+		SerialNo:   "sn-water-1",
+		ReadingM3:  872.234,
 	}
-	if writeErr := store.StoreGasReading(context.Background(), reading); writeErr != nil {
-		t.Errorf("StoreGasReading: %v", writeErr)
+	if writeErr := store.StoreWaterReading(context.Background(), reading); writeErr != nil {
+		t.Errorf("StoreWaterReading: %v", writeErr)
 	}
 
 	// It should only be buffered, so no Exec yet.
@@ -42,8 +42,8 @@ func TestGasStore_StoreGasReading(t *testing.T) {
 
 	// Now expect the batch insert on Flush
 	mock.ExpectBegin()
-	mock.ExpectPrepare("INSERT INTO gas")
-	mock.ExpectExec("INSERT INTO gas").
+	mock.ExpectPrepare("INSERT INTO water")
+	mock.ExpectExec("INSERT INTO water").
 		WithArgs(
 			reading.CapturedAt, reading.ReceivedAt,
 			reading.Channel, reading.DeviceType,
@@ -61,16 +61,16 @@ func TestGasStore_StoreGasReading(t *testing.T) {
 	}
 }
 
-func TestGasStore_FlushErrorRequeues(t *testing.T) {
+func TestWaterStore_FlushErrorRequeues(t *testing.T) {
 	db, mock := testDB(t)
-	expectMigrationAlreadyApplied(mock, "clickhouse_gas_gas")
+	expectMigrationAlreadyApplied(mock, "clickhouse_water_water")
 
-	store, storeErr := clickhouse.NewGasStore(context.Background(), db, "gas", testLogger())
+	store, storeErr := clickhouse.NewWaterStore(context.Background(), db, "water", testLogger())
 	if storeErr != nil {
-		t.Fatalf("NewGasStore: %v", storeErr)
+		t.Fatalf("NewWaterStore: %v", storeErr)
 	}
 
-	_ = store.StoreGasReading(context.Background(), domain.GasReading{CapturedAt: time.Now()})
+	_ = store.StoreWaterReading(context.Background(), domain.WaterReading{CapturedAt: time.Now()})
 
 	mock.ExpectBegin().WillReturnError(errors.New("connection refused"))
 
@@ -80,8 +80,8 @@ func TestGasStore_FlushErrorRequeues(t *testing.T) {
 
 	// The failed batch is re-queued: the next flush inserts it.
 	mock.ExpectBegin()
-	mock.ExpectPrepare("INSERT INTO gas")
-	mock.ExpectExec("INSERT INTO gas").WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectPrepare("INSERT INTO water")
+	mock.ExpectExec("INSERT INTO water").WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
 
 	if retryErr := store.Flush(context.Background()); retryErr != nil {
@@ -92,20 +92,20 @@ func TestGasStore_FlushErrorRequeues(t *testing.T) {
 	}
 }
 
-func TestGasStore_CloseFlushesPending(t *testing.T) {
+func TestWaterStore_CloseFlushesPending(t *testing.T) {
 	db, mock := testDB(t)
-	expectMigrationAlreadyApplied(mock, "clickhouse_gas_gas")
+	expectMigrationAlreadyApplied(mock, "clickhouse_water_water")
 
-	store, storeErr := clickhouse.NewGasStore(context.Background(), db, "gas", testLogger())
+	store, storeErr := clickhouse.NewWaterStore(context.Background(), db, "water", testLogger())
 	if storeErr != nil {
-		t.Fatalf("NewGasStore: %v", storeErr)
+		t.Fatalf("NewWaterStore: %v", storeErr)
 	}
 
-	_ = store.StoreGasReading(context.Background(), domain.GasReading{CapturedAt: time.Now()})
+	_ = store.StoreWaterReading(context.Background(), domain.WaterReading{CapturedAt: time.Now()})
 
 	mock.ExpectBegin()
-	mock.ExpectPrepare("INSERT INTO gas")
-	mock.ExpectExec("INSERT INTO gas").WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectPrepare("INSERT INTO water")
+	mock.ExpectExec("INSERT INTO water").WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
 
 	if closeErr := store.Close(); closeErr != nil {
@@ -116,13 +116,13 @@ func TestGasStore_CloseFlushesPending(t *testing.T) {
 	}
 }
 
-func TestGasStore_FlushAndCloseEmpty(t *testing.T) {
+func TestWaterStore_FlushAndCloseEmpty(t *testing.T) {
 	db, mock := testDB(t)
-	expectMigrationAlreadyApplied(mock, "clickhouse_gas_gas")
+	expectMigrationAlreadyApplied(mock, "clickhouse_water_water")
 
-	store, storeErr := clickhouse.NewGasStore(context.Background(), db, "gas", testLogger())
+	store, storeErr := clickhouse.NewWaterStore(context.Background(), db, "water", testLogger())
 	if storeErr != nil {
-		t.Fatalf("NewGasStore: %v", storeErr)
+		t.Fatalf("NewWaterStore: %v", storeErr)
 	}
 	if flushErr := store.Flush(context.Background()); flushErr != nil {
 		t.Errorf("Flush: %v", flushErr)

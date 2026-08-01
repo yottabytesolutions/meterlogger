@@ -95,8 +95,35 @@ Gas readings arrive as M-Bus subdevice lines inside the grid meter's P1 telegram
 Repeated telegrams carrying the same capture are dropped. Expect one row per capture interval, not
 one per telegram.
 
-**Device type codes** follow EN 13757-3: `3` is gas and is the only medium stored today. Subdevices
-with other codes (4 heat, 7 water) are detected but skipped.
+**Device type codes** follow EN 13757-3: `3` is gas. Water and thermal subdevices have their own
+types below; a slave e-meter (code `2`) is never stored from the master's telegram.
+
+### WaterReading and ThermalReading
+
+```go
+// internal/domain/subdevice.go
+type WaterReading struct {
+    CapturedAt time.Time // meter-supplied capture time
+    ReceivedAt time.Time // when the carrying telegram was read
+    Channel    int       // M-Bus channel (1 to 4), assigned by installation order
+    DeviceType int       // 6 = warm water, 7 = water
+    SerialNo   string
+    ReadingM3  float64   // cumulative water volume (m³)
+}
+
+type ThermalReading struct {
+    CapturedAt time.Time // meter-supplied capture time
+    ReceivedAt time.Time // when the carrying telegram was read
+    Channel    int       // M-Bus channel (1 to 4), assigned by installation order
+    DeviceType int       // 4 = heat, 10/11 = cooling, 12 = heat/cool combined
+    SerialNo   string
+    ReadingGJ  float64   // cumulative thermal energy (GJ)
+}
+```
+
+Water and thermal readings arrive on the same M-Bus subdevice lines as gas and follow the same
+timestamps and deduplication rule. Water must be reported in m3 and thermal in GJ; readings with
+any other unit are skipped with a warning.
 
 ### EnvoySolarData
 
@@ -256,6 +283,34 @@ meter capture (see the deduplication rule above).
 | `reading_m3`  | Double    | Cumulative gas volume (m³)                   |
 | `timestamp`   | Timestamp | CapturedAt: meter-supplied capture time      |
 
+### water_meter (configurable name)
+
+Written when `Grid.Water.Enabled` is set; name from `Grid.Water.Measurement`. One row per new
+water meter capture, deduplicated exactly like gas.
+
+| Column        | Type      | Notes                                        |
+|---------------|-----------|----------------------------------------------|
+| `serial_no`   | Symbol    | Water meter serial number                    |
+| `channel`     | Long      | M-Bus channel (1 to 4)                       |
+| `device_type` | Long      | `6` warm water, `7` water                    |
+| `received_at` | Timestamp | When the carrying telegram was read          |
+| `reading_m3`  | Double    | Cumulative water volume (m³)                 |
+| `timestamp`   | Timestamp | CapturedAt: meter-supplied capture time      |
+
+### thermal_meter (configurable name)
+
+Written when `Grid.Thermal.Enabled` is set; name from `Grid.Thermal.Measurement`. One row per new
+heat or cooling meter capture, deduplicated exactly like gas.
+
+| Column        | Type      | Notes                                          |
+|---------------|-----------|------------------------------------------------|
+| `serial_no`   | Symbol    | Thermal meter serial number                    |
+| `channel`     | Long      | M-Bus channel (1 to 4)                         |
+| `device_type` | Long      | `4` heat, `10`/`11` cooling, `12` heat/cool    |
+| `received_at` | Timestamp | When the carrying telegram was read            |
+| `reading_gj`  | Double    | Cumulative thermal energy (GJ)                 |
+| `timestamp`   | Timestamp | CapturedAt: meter-supplied capture time        |
+
 ### solar (configurable name)
 
 Written by `qdb_solar_writer.go`.
@@ -362,6 +417,22 @@ When `Grid.Gas.Enabled` is set, the SQL sinks and ClickHouse create a table name
 | `device_type` | int       | EN 13757-3 medium code, `3` for gas     |
 | `serial_no`   | text      | Gas meter serial number                 |
 | `reading_m3`  | double    | Cumulative gas volume (m³)              |
+
+### Water and thermal tables (SQL sinks and ClickHouse)
+
+When `Grid.Water.Enabled` or `Grid.Thermal.Enabled` is set, the SQL sinks and ClickHouse create
+tables named after `Grid.Water.Measurement` (default `water_meter`) and `Grid.Thermal.Measurement`
+(default `thermal_meter`). Both share the gas table shape:
+
+| Column        | Type      | Notes                                                      |
+|---------------|-----------|------------------------------------------------------------|
+| `ts`          | timestamp | CapturedAt: meter-supplied capture time                    |
+| `received_at` | timestamp | When the carrying telegram was read                        |
+| `channel`     | int       | M-Bus channel (1 to 4)                                     |
+| `device_type` | int       | Water: `6`/`7`. Thermal: `4`, `10`, `11`, `12`             |
+| `serial_no`   | text      | Meter serial number                                        |
+| `reading_m3`  | double    | Water table only: cumulative volume (m³)                   |
+| `reading_gj`  | double    | Thermal table only: cumulative energy (GJ)                 |
 
 Deduplication happens in the service before the write; the stores insert what they are given.
 
