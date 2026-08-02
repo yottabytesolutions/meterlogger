@@ -348,7 +348,12 @@ Written by `qdb_solar_writer.go`.
 
 ### solar_inverters (configurable base name + `_inverters`)
 
-One row per inverter per reading.
+One row per inverter per report. Microinverters report over powerline about
+every five minutes, staggered, so the solar service deduplicates on the panel
+report time: it stores a row only when a panel's report time advances, not on
+every poll. The row timestamp is the panel's report time. Dedup state is in
+memory and resets on restart, so the first poll after a restart may re-write
+each panel's current report once.
 
 | Column                 | Type      | Notes                                   |
 |------------------------|-----------|-----------------------------------------|

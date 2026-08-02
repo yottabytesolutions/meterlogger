@@ -22,6 +22,7 @@ type SolarLoggingService struct {
 	flushInterval  time.Duration
 	logger         *slog.Logger
 	metrics        *metrics.Metrics
+	dedup          *inverterDeduplicator
 	dataFlowLogged bool
 }
 
@@ -39,6 +40,7 @@ func NewSolarLoggingService(
 		flushInterval: flushInterval,
 		logger:        logger,
 		metrics:       metrics.NewNoop(),
+		dedup:         newInverterDeduplicator(),
 	}
 }
 
@@ -111,6 +113,16 @@ func (s *SolarLoggingService) runReadAndStore(ctx context.Context) error {
 
 	s.metrics.ReadsTotal.WithLabelValues("solar").Inc()
 	s.metrics.LastReadTime.WithLabelValues("solar").SetToCurrentTime()
+
+	// Deduplicate per-inverter rows so a poll faster than the ~5 minute
+	// microinverter report cadence does not store repeated identical rows. The
+	// gateway aggregate is left untouched and stored on every poll.
+	total := len(meterData.Inverters)
+	meterData = s.dedup.filter(meterData)
+	if dropped := total - len(meterData.Inverters); dropped > 0 {
+		s.logger.DebugContext(ctx, "solar: skipped inverter rows with no new report",
+			slog.Int("skipped", dropped), slog.Int("fresh", len(meterData.Inverters)))
+	}
 
 	storeErr := withStoreTimeout(ctx, func(c context.Context) error {
 		return s.sink.StoreEnvoySolarData(c, meterData)
