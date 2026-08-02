@@ -117,7 +117,12 @@ func TestNewGasStore_MigrationRuns(t *testing.T) {
 
 func TestNewSolarStore_MigrationRuns(t *testing.T) {
 	db, mock := testDB(t)
+	// Version 1 creates the solar and inverter tables; version 2 adds the
+	// per-panel device_data columns; each version records in the ledger.
 	expectCHMigrationFull(mock, "clickhouse_solar_solar", 2)
+	mock.ExpectExec("ALTER TABLE solar_inverters").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("INSERT INTO meterlogger_schema_migrations").
+		WillReturnResult(sqlmock.NewResult(1, 1))
 	_, err := clickhouse.NewSolarStore(context.Background(), db, "solar", testLogger())
 	if err != nil {
 		t.Fatalf("NewSolarStore: %v", err)

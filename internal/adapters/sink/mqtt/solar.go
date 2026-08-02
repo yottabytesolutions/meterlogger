@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/yottabytesolutions/meterlogger/internal/domain"
@@ -37,16 +38,31 @@ type solarPayload struct {
 // inverterPayload is the flat JSON state message for one microinverter row.
 // Field names match the SQL sink's inverter table columns.
 type inverterPayload struct {
-	TS             string `json:"ts"`
-	EnvoySerial    string `json:"envoy_serial"`
-	InverterSerial string `json:"inverter_serial"`
-	ChannelID      int    `json:"channel_id"`
-	Operating      bool   `json:"operating"`
-	Communicating  bool   `json:"communicating"`
-	Producing      bool   `json:"producing"`
-	Phase          string `json:"phase"`
-	Watts          int    `json:"watts"`
-	PeakWatts      int    `json:"peak_watts"`
+	TS             string  `json:"ts"`
+	EnvoySerial    string  `json:"envoy_serial"`
+	InverterSerial string  `json:"inverter_serial"`
+	ChannelID      int     `json:"channel_id"`
+	Operating      bool    `json:"operating"`
+	Communicating  bool    `json:"communicating"`
+	Producing      bool    `json:"producing"`
+	Phase          string  `json:"phase"`
+	Watts          int     `json:"watts"`
+	PeakWatts      int     `json:"peak_watts"`
+	Status         string  `json:"status"`
+	DCVoltage      float64 `json:"dc_voltage"`
+	DCCurrent      float64 `json:"dc_current"`
+	ACVoltage      float64 `json:"ac_voltage"`
+	ACCurrent      float64 `json:"ac_current"`
+	ACFrequency    float64 `json:"ac_frequency"`
+	TemperatureC   int     `json:"temperature_c"`
+	LeadingVArs    int     `json:"leading_vars"`
+	LaggingVArs    int     `json:"lagging_vars"`
+	WhToday        int     `json:"wh_today"`
+	WhYesterday    int     `json:"wh_yesterday"`
+	WhWeek         int     `json:"wh_week"`
+	WhLifetime     float64 `json:"wh_lifetime"`
+	RSSI           int     `json:"rssi"`
+	ISSI           int     `json:"issi"`
 }
 
 // StoreEnvoySolarData publishes the gateway snapshot and one message per
@@ -91,6 +107,21 @@ func (w *SolarWriter) storeInverter(
 		Phase:          inv.Phase,
 		Watts:          inv.LastReportedWatts,
 		PeakWatts:      inv.MaxReportWatts,
+		Status:         strings.Join(inv.DeviceStatus, ","),
+		DCVoltage:      inv.DCVoltage,
+		DCCurrent:      inv.DCCurrent,
+		ACVoltage:      inv.ACVoltage,
+		ACCurrent:      inv.ACCurrent,
+		ACFrequency:    inv.ACFrequency,
+		TemperatureC:   inv.TemperatureC,
+		LeadingVArs:    inv.LeadingVArs,
+		LaggingVArs:    inv.LaggingVArs,
+		WhToday:        inv.WhToday,
+		WhYesterday:    inv.WhYesterday,
+		WhWeek:         inv.WhWeek,
+		WhLifetime:     inv.WhLifetime,
+		RSSI:           inv.RSSI,
+		ISSI:           inv.ISSI,
 	})
 }
 
@@ -123,11 +154,42 @@ func (w *SolarWriter) announceInverter(
 	if inv.SerialNumber == "" || !w.announced.claim(key) {
 		return nil
 	}
-	sensors := []sensor{{
-		id: "inverter_" + sanitizeID(inv.SerialNumber) + "_watts", field: "watts",
-		name:        "Inverter " + inv.SerialNumber + " power",
-		deviceClass: classPower, stateClass: stateMeasurement, unit: unitW,
-	}}
+	prefix := "inverter_" + sanitizeID(inv.SerialNumber) + "_"
+	label := "Inverter " + inv.SerialNumber + " "
+	sensors := []sensor{
+		{
+			id: prefix + "watts", field: "watts", name: label + "power",
+			deviceClass: classPower, stateClass: stateMeasurement, unit: unitW,
+		},
+		{
+			id: prefix + "wh_today", field: "wh_today", name: label + "energy today",
+			deviceClass: classEnergy, stateClass: stateTotalIncreasing, unit: unitWh,
+		},
+		{
+			id: prefix + "dc_voltage", field: "dc_voltage", name: label + "DC voltage",
+			deviceClass: classVoltage, stateClass: stateMeasurement, unit: unitVolt, diagnostic: true,
+		},
+		{
+			id: prefix + "dc_current", field: "dc_current", name: label + "DC current",
+			deviceClass: classCurrent, stateClass: stateMeasurement, unit: unitAmpere, diagnostic: true,
+		},
+		{
+			id: prefix + "ac_voltage", field: "ac_voltage", name: label + "AC voltage",
+			deviceClass: classVoltage, stateClass: stateMeasurement, unit: unitVolt, diagnostic: true,
+		},
+		{
+			id: prefix + "ac_frequency", field: "ac_frequency", name: label + "AC frequency",
+			deviceClass: classFrequency, stateClass: stateMeasurement, unit: unitHertz, diagnostic: true,
+		},
+		{
+			id: prefix + "temperature_c", field: "temperature_c", name: label + "temperature",
+			deviceClass: classTemperature, stateClass: stateMeasurement, unit: unitCelsius, diagnostic: true,
+		},
+		{
+			id: prefix + "rssi", field: "rssi", name: label + "signal",
+			deviceClass: classSignal, stateClass: stateMeasurement, diagnostic: true,
+		},
+	}
 	if err := w.client.publishDiscovery(
 		ctx, solarNodeID(d.EnvoySerial), solarDevice(d.EnvoySerial), topic, sensors,
 	); err != nil {

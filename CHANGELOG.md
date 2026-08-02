@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-08-02
+
+### Added
+
+- Per-inverter electrical data from the Enphase Envoy `/ivp/pdm/device_data`
+  endpoint, merged into the `<measurement>_inverters` rows: DC and AC voltage
+  and current, AC frequency, panel temperature, leading and lagging reactive
+  power, energy counters (today, yesterday, week, lifetime), and powerline
+  link quality (RSSI, ISSI). Milli-units from the Envoy are converted to base
+  units (V, A, Hz) and joules to watt-hours. Owner credentials suffice; no
+  installer token is required. The joined device status is now also stored in
+  the SQL sinks, not only QuestDB. New columns are added automatically by solar
+  schema migration v2. A `device_data` fetch failure degrades gracefully: the
+  gateway aggregate and per-panel watts still collect, with zero electrical
+  fields, so older firmware without the endpoint keeps working.
+
 ## [1.4.0] - 2026-08-02
 
 ### Fixed

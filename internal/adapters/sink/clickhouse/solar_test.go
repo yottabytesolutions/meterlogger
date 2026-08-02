@@ -14,7 +14,7 @@ import (
 
 func TestSolarStore_StoreEnvoySolarData(t *testing.T) {
 	db, mock := testDB(t)
-	expectMigrationAlreadyApplied(mock, "clickhouse_solar_solar")
+	expectMigrationAppliedAt(mock, "clickhouse_solar_solar", 2)
 
 	store, storeErr := clickhouse.NewSolarStore(context.Background(), db, "solar", testLogger())
 	if storeErr != nil {
@@ -61,6 +61,10 @@ func TestSolarStore_StoreEnvoySolarData(t *testing.T) {
 			inv.ReportTime, data.EnvoySerial, inv.SerialNumber, inv.Chaneid,
 			inv.Operating, inv.Communicating, inv.Producing,
 			inv.Phase, inv.LastReportedWatts, inv.MaxReportWatts,
+			"", inv.DCVoltage, inv.DCCurrent, inv.ACVoltage, inv.ACCurrent, inv.ACFrequency,
+			inv.TemperatureC, inv.LeadingVArs, inv.LaggingVArs,
+			inv.WhToday, inv.WhYesterday, inv.WhWeek, inv.WhLifetime,
+			inv.RSSI, inv.ISSI,
 		).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
@@ -76,7 +80,7 @@ func TestSolarStore_StoreEnvoySolarData(t *testing.T) {
 
 func TestSolarStore_FlushAndClose(t *testing.T) {
 	db, mock := testDB(t)
-	expectMigrationAlreadyApplied(mock, "clickhouse_solar_solar")
+	expectMigrationAppliedAt(mock, "clickhouse_solar_solar", 2)
 
 	store, storeErr := clickhouse.NewSolarStore(context.Background(), db, "solar", testLogger())
 	if storeErr != nil {
@@ -95,7 +99,7 @@ func TestSolarStore_FlushAndClose(t *testing.T) {
 
 func TestSolarStore_InverterError(t *testing.T) {
 	db, mock := testDB(t)
-	expectMigrationAlreadyApplied(mock, "clickhouse_solar_solar")
+	expectMigrationAppliedAt(mock, "clickhouse_solar_solar", 2)
 
 	store, storeErr := clickhouse.NewSolarStore(context.Background(), db, "solar", testLogger())
 	if storeErr != nil {
@@ -144,7 +148,7 @@ func TestSolarStore_InverterError(t *testing.T) {
 
 func TestSolarStore_CloseFlushesPending(t *testing.T) {
 	db, mock := testDB(t)
-	expectMigrationAlreadyApplied(mock, "clickhouse_solar_solar")
+	expectMigrationAppliedAt(mock, "clickhouse_solar_solar", 2)
 
 	store, storeErr := clickhouse.NewSolarStore(context.Background(), db, "solar", testLogger())
 	if storeErr != nil {

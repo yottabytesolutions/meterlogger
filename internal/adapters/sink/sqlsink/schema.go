@@ -221,7 +221,13 @@ func solarColumns() []column {
 	}
 }
 
-func solarInverterColumns() []column {
+// solarInverterVersion is the solar schema version that adds the per-panel
+// electrical columns sourced from /ivp/pdm/device_data.
+const solarInverterVersion = 2
+
+// solarInverterColumnsV1 is the inverter table as created by migration version
+// 1. It must not change: version 2 adds the device_data columns on top of it.
+func solarInverterColumnsV1() []column {
 	return []column{
 		{name: "ts", kind: kindTimestamp, notNull: true},
 		{name: "envoy_serial", kind: kindText, notNull: true},
@@ -234,6 +240,34 @@ func solarInverterColumns() []column {
 		{name: "watts", kind: kindInt},
 		{name: "peak_watts", kind: kindInt},
 	}
+}
+
+// solarInverterDeviceColumns are the per-panel electrical and energy columns
+// added by solar migration version 2, sourced from device_data. Nullable:
+// rows written before a panel reports device_data carry zeros. status is the
+// joined inventory device_status, absent from version 1 in the SQL sinks.
+func solarInverterDeviceColumns() []column {
+	return []column{
+		{name: "status", kind: kindText},
+		{name: "dc_voltage", kind: kindDouble},
+		{name: "dc_current", kind: kindDouble},
+		{name: "ac_voltage", kind: kindDouble},
+		{name: "ac_current", kind: kindDouble},
+		{name: "ac_frequency", kind: kindDouble},
+		{name: "temperature_c", kind: kindInt},
+		{name: "leading_vars", kind: kindInt},
+		{name: "lagging_vars", kind: kindInt},
+		{name: "wh_today", kind: kindBigInt},
+		{name: "wh_yesterday", kind: kindBigInt},
+		{name: "wh_week", kind: kindBigInt},
+		{name: "wh_lifetime", kind: kindDouble},
+		{name: "rssi", kind: kindInt},
+		{name: "issi", kind: kindInt},
+	}
+}
+
+func solarInverterColumns() []column {
+	return append(solarInverterColumnsV1(), solarInverterDeviceColumns()...)
 }
 
 func ducoBoxGeneralColumns() []column {

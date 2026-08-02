@@ -17,8 +17,12 @@ type EnvoySolarData struct {
 	Inverters    []InverterDetails
 }
 
-// InverterDetails is a per-microinverter status row taken from the Envoy
-// inventory and production endpoints.
+// InverterDetails is a per-microinverter row taken from the Envoy inventory,
+// production, and device_data endpoints. The electrical fields (DC and AC
+// voltage, current, frequency, temperature, reactive power, energy counters,
+// link quality) come from /ivp/pdm/device_data and are zero when that endpoint
+// has not yet reported a reading for the panel. Milli-unit values from the
+// Envoy are converted to base units (V, A, Hz) at the adapter boundary.
 type InverterDetails struct {
 	SerialNumber      string
 	Chaneid           int
@@ -30,6 +34,26 @@ type InverterDetails struct {
 	ReportTime        time.Time
 	LastReportedWatts int
 	MaxReportWatts    int
+
+	// Electrical measurements from device_data lastReading.
+	DCVoltage    float64
+	DCCurrent    float64
+	ACVoltage    float64
+	ACCurrent    float64
+	ACFrequency  float64
+	TemperatureC int
+	LeadingVArs  int
+	LaggingVArs  int
+
+	// Energy counters from device_data.
+	WhToday     int
+	WhYesterday int
+	WhWeek      int
+	WhLifetime  float64
+
+	// Powerline link quality from device_data lastReading.
+	RSSI int
+	ISSI int
 }
 
 // EnvoySolarRepository writes solar gateway snapshots to a storage backend.

@@ -171,7 +171,7 @@ func TestMigrationComponentKeys(t *testing.T) {
 			_, err := sqlsink.NewThermalStore(ctx, db, "m", testLogger())
 			return err
 		}},
-		{kind: "solar", tableCount: 2, construct: func(ctx context.Context, db *sqlsink.DB) error {
+		{kind: "solar", tableCount: 2, alterCount: 15, construct: func(ctx context.Context, db *sqlsink.DB) error {
 			_, err := sqlsink.NewSolarStore(ctx, db, "m", testLogger())
 			return err
 		}},

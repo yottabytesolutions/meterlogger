@@ -19,6 +19,8 @@ const (
 	classWater       = "water"
 	classCO2         = "carbon_dioxide"
 	classHumidity    = "humidity"
+	classFrequency   = "frequency"
+	classSignal      = "signal_strength"
 
 	stateMeasurement     = "measurement"
 	stateTotalIncreasing = "total_increasing"
@@ -29,6 +31,7 @@ const (
 	unitCelsius = "°C"
 	unitVolt    = "V"
 	unitAmpere  = "A"
+	unitHertz   = "Hz"
 	unitM3      = "m³"
 	unitGJ      = "GJ"
 

@@ -3,6 +3,7 @@ package sqlsink
 import (
 	"context"
 	"log/slog"
+	"strings"
 
 	"github.com/yottabytesolutions/meterlogger/internal/domain"
 )
@@ -16,13 +17,19 @@ type SolarStore struct {
 	logger         *slog.Logger
 }
 
-// NewSolarStore creates and migrates a SolarStore.
+// NewSolarStore creates and migrates a SolarStore. Version 1 creates the solar
+// and inverter tables; version 2 adds the per-panel device_data columns to the
+// inverter table.
 func NewSolarStore(ctx context.Context, db *DB, table string, logger *slog.Logger) (*SolarStore, error) {
 	tables := []migrationTable{
 		{name: table, columns: solarColumns()},
-		{name: table + "_inverters", columns: solarInverterColumns()},
+		{name: table + "_inverters", columns: solarInverterColumnsV1()},
 	}
-	if err := migrate(ctx, db, "solar", table, "create solar tables", tables, logger); err != nil {
+	deviceCols := addColumnsMigration(
+		db.dialect, db.db, solarInverterVersion,
+		"add inverter device_data columns", table+"_inverters", solarInverterDeviceColumns(),
+	)
+	if err := migrate(ctx, db, "solar", table, "create solar tables", tables, logger, deviceCols); err != nil {
 		return nil, err
 	}
 	return &SolarStore{
@@ -52,6 +59,11 @@ func (s *SolarStore) StoreEnvoySolarData(ctx context.Context, d domain.EnvoySola
 			inv.ReportTime, d.EnvoySerial, inv.SerialNumber, inv.Chaneid,
 			inv.Operating, inv.Communicating, inv.Producing,
 			inv.Phase, inv.LastReportedWatts, inv.MaxReportWatts,
+			strings.Join(inv.DeviceStatus, ","),
+			inv.DCVoltage, inv.DCCurrent, inv.ACVoltage, inv.ACCurrent, inv.ACFrequency,
+			inv.TemperatureC, inv.LeadingVArs, inv.LaggingVArs,
+			inv.WhToday, inv.WhYesterday, inv.WhWeek, inv.WhLifetime,
+			inv.RSSI, inv.ISSI,
 		)
 		if invErr != nil {
 			s.logger.ErrorContext(ctx, s.db.dialect.name+": store inverter failed", slog.Any("error", invErr))

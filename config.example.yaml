@@ -195,6 +195,17 @@ Grid:
   #   Measurement: thermal_meter # table name in all enabled sinks (default)
 
 # ── Solar (Enphase Envoy HTTP API) ─────────────────────────
+# Writes two tables: <Measurement> (gateway aggregate) and
+# <Measurement>_inverters (one row per microinverter). The inverter rows carry
+# per-panel electrical readings (DC/AC voltage and current, frequency,
+# temperature, energy counters, powerline link quality) from the Envoy
+# device_data endpoint. Owner credentials are sufficient; no installer token is
+# needed for data collection.
+#
+# Per-panel data is bounded by the microinverter powerline duty cycle: each
+# panel reports roughly every 5 minutes, staggered across the array. Polling
+# faster than ~30s only re-reads stale values. EnvoyURL must be https on D8
+# firmware; the self-signed certificate is accepted automatically.
 Enphase:
   Enabled: false
   Measurement: solar

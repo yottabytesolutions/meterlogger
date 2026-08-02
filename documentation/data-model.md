@@ -149,8 +149,31 @@ type InverterDetails struct {
     ReportTime        time.Time
     LastReportedWatts int
     MaxReportWatts    int
+
+    // Electrical measurements from /ivp/pdm/device_data (base units).
+    DCVoltage    float64
+    DCCurrent    float64
+    ACVoltage    float64
+    ACCurrent    float64
+    ACFrequency  float64
+    TemperatureC int
+    LeadingVArs  int
+    LaggingVArs  int
+    WhToday      int
+    WhYesterday  int
+    WhWeek       int
+    WhLifetime   float64
+    RSSI         int
+    ISSI         int
 }
 ```
+
+The electrical fields come from `/ivp/pdm/device_data`, merged per inverter by
+serial number. The Envoy reports voltage, current, and frequency as milli-units
+(mV, mA, mHz); the reader converts them to base units (V, A, Hz) and converts
+lifetime joules to watt-hours. These fields are zero when device_data has not
+yet reported a reading for a panel. Freshness matches the watts: both track the
+microinverter powerline report, roughly every 5 minutes per panel, staggered.
 
 ### DucoBox types
 
@@ -340,7 +363,27 @@ One row per inverter per reading.
 | `Status`               | String    | Joined device status codes              |
 | `Watts`                | Long      | LastReportedWatts                       |
 | `PeakWatts`            | Long      | MaxReportWatts                          |
+| `DCVoltage`            | Double    | device_data, V                          |
+| `DCCurrent`            | Double    | device_data, A                          |
+| `ACVoltage`            | Double    | device_data, V                          |
+| `ACCurrent`            | Double    | device_data, A                          |
+| `ACFrequency`          | Double    | device_data, Hz                         |
+| `TemperatureC`         | Long      | device_data, °C                         |
+| `LeadingVArs`          | Long      | device_data                             |
+| `LaggingVArs`          | Long      | device_data                             |
+| `WhToday`              | Long      | device_data                             |
+| `WhYesterday`          | Long      | device_data                             |
+| `WhWeek`               | Long      | device_data                             |
+| `WhLifetime`           | Double    | device_data, Wh                         |
+| `RSSI`                 | Long      | device_data, powerline link            |
+| `ISSI`                 | Long      | device_data, powerline link            |
 | `timestamp`            | Timestamp | From inverter.ReportTime                |
+
+The SQL sinks (Postgres, MySQL, TimescaleDB, TDEngine, ClickHouse) carry the
+same fields as snake_case columns (`dc_voltage`, `ac_frequency`, `status`,
+etc.), added to the `_inverters` table by solar schema migration version 2. The
+`status` column holds the joined device status codes, which version 1 stored
+only in QuestDB.
 
 ### ventilation_box_general (configurable base + `_box_general`)
 
