@@ -309,10 +309,27 @@ func unmarshalInventoryData(body []byte) (*InventoryData, error) {
 	return &data, nil
 }
 
+// unmarshalDeviceData decodes /ivp/pdm/device_data. The response is not a pure
+// map of device id to device: it also carries scalar keys at the top level
+// (deviceCount, deviceDataLimit), so decoding straight into
+// map[string]DeviceDataDevice fails on the first number. Decode into raw
+// messages and keep only the entries that parse as a device with a name; the
+// scalars and any non-object values are skipped.
 func unmarshalDeviceData(body []byte) (DeviceData, error) {
-	var data DeviceData
-	if err := json.Unmarshal(body, &data); err != nil {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(body, &raw); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal DeviceData: %w", err)
+	}
+	data := make(DeviceData, len(raw))
+	for key, msg := range raw {
+		var device DeviceDataDevice
+		if err := json.Unmarshal(msg, &device); err != nil {
+			continue // scalar keys such as deviceCount and deviceDataLimit
+		}
+		if device.DevName == "" {
+			continue // not a device entry
+		}
+		data[key] = device
 	}
 	return data, nil
 }

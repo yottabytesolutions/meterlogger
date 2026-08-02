@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/viper"
 
 	"github.com/yottabytesolutions/meterlogger/internal/config"
+	"github.com/yottabytesolutions/meterlogger/internal/service"
 	"github.com/yottabytesolutions/meterlogger/internal/tracedslog"
 )
 
@@ -163,7 +164,15 @@ func run() {
 	logger.Info("starting MeterLogger", slog.String("version", CommitSHA))
 
 	rt := newRuntime(ctx)
-	defer rt.shutdown()
-
 	rt.serve(ctx)
+	rt.shutdown()
+
+	// A service that hit its consecutive-error threshold terminated the process
+	// via SIGTERM, which drained through the normal shutdown path above. Exit
+	// non-zero so the failure is visible to Kubernetes and alerting rather than
+	// looking like a clean stop.
+	if service.FatalOccurred() {
+		logger.Error("exiting non-zero: a service terminated on an unrecoverable error")
+		os.Exit(1)
+	}
 }
