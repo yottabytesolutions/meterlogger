@@ -14,6 +14,10 @@ import (
 // demand columns.
 const gridDemandVersion = 2
 
+// solarInverterVersion is the solar schema version that adds the per-panel
+// electrical columns sourced from device_data.
+const solarInverterVersion = 2
+
 func heatMigrations(db *sql.DB, table string) []schemastore.Migration {
 	return []schemastore.Migration{
 		{
@@ -210,6 +214,33 @@ func solarMigrations(db *sql.DB, table string) []schemastore.Migration {
     watts           Int32,
     peak_watts      Int32
 ) ENGINE = MergeTree() ORDER BY (ts, inverter_serial)`, table,
+					),
+				)
+				return err
+			},
+		},
+		{
+			Version:     solarInverterVersion,
+			Description: "add inverter device_data columns",
+			Up: func(ctx context.Context) error {
+				_, err := db.ExecContext(
+					ctx, fmt.Sprintf(
+						`ALTER TABLE %s_inverters
+    ADD COLUMN status        String,
+    ADD COLUMN dc_voltage    Float64,
+    ADD COLUMN dc_current    Float64,
+    ADD COLUMN ac_voltage    Float64,
+    ADD COLUMN ac_current    Float64,
+    ADD COLUMN ac_frequency  Float64,
+    ADD COLUMN temperature_c Int32,
+    ADD COLUMN leading_vars  Int32,
+    ADD COLUMN lagging_vars  Int32,
+    ADD COLUMN wh_today      Int64,
+    ADD COLUMN wh_yesterday  Int64,
+    ADD COLUMN wh_week       Int64,
+    ADD COLUMN wh_lifetime   Float64,
+    ADD COLUMN rssi          Int32,
+    ADD COLUMN issi          Int32`, table,
 					),
 				)
 				return err

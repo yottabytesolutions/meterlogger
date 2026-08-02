@@ -136,6 +136,12 @@ func TestFreshMigrationCreatesHypertables(t *testing.T) {
 	}
 	mock.ExpectExec("INSERT INTO meterlogger_schema_migrations").
 		WillReturnResult(sqlmock.NewResult(1, 1))
+	// Version 2 adds the per-panel device_data columns, one ALTER per column.
+	for range 15 {
+		mock.ExpectExec("ALTER TABLE").WillReturnResult(sqlmock.NewResult(0, 0))
+	}
+	mock.ExpectExec("INSERT INTO meterlogger_schema_migrations").
+		WillReturnResult(sqlmock.NewResult(1, 1))
 
 	if _, storeErr := NewSolarStore(context.Background(), db, "m", testLogger()); storeErr != nil {
 		t.Fatalf("NewSolarStore: %v", storeErr)

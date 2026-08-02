@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/yottabytesolutions/meterlogger/internal/adapters/schemastore"
 	"github.com/yottabytesolutions/meterlogger/internal/domain"
@@ -82,8 +83,11 @@ func (s *SolarStore) insertInverterRows(ctx context.Context, tx *sql.Tx, rows []
 		ctx, fmt.Sprintf(
 			`INSERT INTO %s_inverters
         (ts, envoy_serial, inverter_serial, channel_id, operating, communicating,
-         producing, phase, watts, peak_watts)
-        VALUES (?,?,?,?,?,?,?,?,?,?)`, s.table,
+         producing, phase, watts, peak_watts, status,
+         dc_voltage, dc_current, ac_voltage, ac_current, ac_frequency,
+         temperature_c, leading_vars, lagging_vars,
+         wh_today, wh_yesterday, wh_week, wh_lifetime, rssi, issi)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, s.table,
 		),
 	)
 	if err != nil {
@@ -98,6 +102,11 @@ func (s *SolarStore) insertInverterRows(ctx context.Context, tx *sql.Tx, rows []
 			inv.ReportTime, r.envoySerial, inv.SerialNumber, inv.Chaneid,
 			inv.Operating, inv.Communicating, inv.Producing,
 			inv.Phase, inv.LastReportedWatts, inv.MaxReportWatts,
+			strings.Join(inv.DeviceStatus, ","),
+			inv.DCVoltage, inv.DCCurrent, inv.ACVoltage, inv.ACCurrent, inv.ACFrequency,
+			inv.TemperatureC, inv.LeadingVArs, inv.LaggingVArs,
+			inv.WhToday, inv.WhYesterday, inv.WhWeek, inv.WhLifetime,
+			inv.RSSI, inv.ISSI,
 		)
 		if execErr != nil {
 			return fmt.Errorf("exec inverter batch insert: %w", execErr)

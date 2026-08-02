@@ -314,7 +314,7 @@ func TestThermalStore_FlushAndCloseAreNoOps(t *testing.T) {
 func TestSolarStore_InsertArgs(t *testing.T) {
 	dc := dialectCases()[0]
 	db, mock := testDB(t, dc.dialect)
-	expectMigrationAlreadyApplied(mock, dc, "postgres_solar_solar")
+	expectMigrationAppliedAt(mock, dc, "postgres_solar_solar", 2)
 	store, err := sqlsink.NewSolarStore(context.Background(), db, "solar", testLogger())
 	if err != nil {
 		t.Fatalf("NewSolarStore: %v", err)
@@ -333,7 +333,10 @@ func TestSolarStore_InsertArgs(t *testing.T) {
 		WithArgs(ts, "e1", 123.4, 567.8, 10).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectExec("INSERT INTO solar_inverters").
-		WithArgs(reportTS, "e1", "inv1", 3, true, false, true, "L1", 250, 300).
+		WithArgs(
+			reportTS, "e1", "inv1", 3, true, false, true, "L1", 250, 300,
+			"", 0.0, 0.0, 0.0, 0.0, 0.0, 0, 0, 0, 0, 0, 0, 0.0, 0, 0,
+		).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	if storeErr := store.StoreEnvoySolarData(context.Background(), data); storeErr != nil {
 		t.Errorf("StoreEnvoySolarData: %v", storeErr)
@@ -346,7 +349,7 @@ func TestSolarStore_InsertArgs(t *testing.T) {
 func TestSolarStore_InverterErrorContinues(t *testing.T) {
 	dc := dialectCases()[0]
 	db, mock := testDB(t, dc.dialect)
-	expectMigrationAlreadyApplied(mock, dc, "postgres_solar_solar")
+	expectMigrationAppliedAt(mock, dc, "postgres_solar_solar", 2)
 	store, err := sqlsink.NewSolarStore(context.Background(), db, "solar", testLogger())
 	if err != nil {
 		t.Fatalf("NewSolarStore: %v", err)
@@ -529,7 +532,7 @@ func TestStore_ErrorPaths(t *testing.T) {
 
 	t.Run("solar main", func(t *testing.T) {
 		db, mock := testDB(t, dc.dialect)
-		expectMigrationAlreadyApplied(mock, dc, "postgres_solar_solar")
+		expectMigrationAppliedAt(mock, dc, "postgres_solar_solar", 2)
 		store, err := sqlsink.NewSolarStore(context.Background(), db, "solar", testLogger())
 		if err != nil {
 			t.Fatalf("NewSolarStore: %v", err)

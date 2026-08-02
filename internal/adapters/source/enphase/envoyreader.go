@@ -26,6 +26,7 @@ const (
 	productionDataURL  = "%s/production.json?details=1"
 	inventoryDataURL   = "%s/inventory.json"
 	inverterDataURL    = "%s/api/v1/production/inverters"
+	deviceDataURL      = "%s/ivp/pdm/device_data"
 	httpClientTimeout  = 10 * time.Second
 	tokenRefreshBuffer = 3600 * time.Second // duration before expiry to refresh token
 
@@ -42,6 +43,13 @@ const (
 
 	productionTypeInverters = "inverters"
 	deviceTypePCU           = "PCU"
+	deviceNamePCU           = "pcu"
+
+	// milliUnit converts the Envoy's milli-scaled integers (mV, mA, mHz) to
+	// base units (V, A, Hz).
+	milliUnit = 1000.0
+	// joulesPerWattHour converts joules to watt-hours (1 Wh = 3600 J).
+	joulesPerWattHour = 3600.0
 )
 
 // Config holds the connection parameters for an Enphase Envoy gateway.
@@ -114,6 +122,18 @@ func (e *EnvoyReader) ReadEnvoySolarData(ctx context.Context) (domain.EnvoySolar
 		return domain.EnvoySolarData{}, err
 	}
 
+	// device_data is supplementary: it enriches inverter rows with electrical
+	// readings but the aggregate and per-panel watts come from the endpoints
+	// above. A failure here (older firmware without the endpoint, or a stalled
+	// Envoy) must not take down solar collection. Log and continue with empty
+	// electrical fields.
+	deviceData, err := e.getDeviceData(ctx)
+	if err != nil {
+		e.logger.WarnContext(ctx, "Failed to get device data, continuing without electrical fields",
+			slog.Any("error", err))
+		deviceData = nil
+	}
+
 	var inverterProductionData *Production
 	for _, production := range meterData.Production {
 		if production.Type == productionTypeInverters {
@@ -136,6 +156,8 @@ func (e *EnvoyReader) ReadEnvoySolarData(ctx context.Context) (domain.EnvoySolar
 		return domain.EnvoySolarData{}, errors.New("inverters data not found")
 	}
 
+	deviceLookup := deviceDataBySerial(deviceData)
+
 	inverters := make([]domain.InverterDetails, len(*inverterData))
 	for i, inverter := range *inverterData {
 		invDetails := serialLookup[inverter.SerialNumber]
@@ -150,6 +172,9 @@ func (e *EnvoyReader) ReadEnvoySolarData(ctx context.Context) (domain.EnvoySolar
 			ReportTime:        time.Unix(int64(inverter.LastReportDate), 0),
 			LastReportedWatts: inverter.LastReportWatts,
 			MaxReportWatts:    inverter.MaxReportWatts,
+		}
+		if reading, ok := deviceLookup[inverter.SerialNumber]; ok {
+			applyDeviceData(&inverters[i], reading)
 		}
 	}
 
@@ -214,6 +239,15 @@ func (e *EnvoyReader) getInventoryData(ctx context.Context) (*InventoryData, err
 	return unmarshalInventoryData(rawInventory)
 }
 
+func (e *EnvoyReader) getDeviceData(ctx context.Context) (DeviceData, error) {
+	rawDeviceData, err := queryEnvoy(ctx, fmt.Sprintf(deviceDataURL, e.cfg.EnvoyURL), e.token.Raw, e.logger)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get device data: %w", err)
+	}
+
+	return unmarshalDeviceData(rawDeviceData)
+}
+
 func (e *EnvoyReader) getMeterData(ctx context.Context) (*MeterReading, error) {
 	rawProductionData, err := queryEnvoy(ctx, fmt.Sprintf(productionDataURL, e.cfg.EnvoyURL), e.token.Raw, e.logger)
 	if err != nil {
@@ -273,6 +307,50 @@ func unmarshalInventoryData(body []byte) (*InventoryData, error) {
 		return nil, fmt.Errorf("failed to unmarshal Inventory data: %w", err)
 	}
 	return &data, nil
+}
+
+func unmarshalDeviceData(body []byte) (DeviceData, error) {
+	var data DeviceData
+	if err := json.Unmarshal(body, &data); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal DeviceData: %w", err)
+	}
+	return data, nil
+}
+
+// deviceDataBySerial indexes the newest PCU channel reading per inverter
+// serial. device_data is keyed by an opaque device id, so it is re-keyed by
+// serial number to match the other endpoints. Non-PCU devices (eim, nsrb) and
+// PCUs without a channel are skipped.
+func deviceDataBySerial(data DeviceData) map[string]DeviceDataChannel {
+	lookup := make(map[string]DeviceDataChannel)
+	for _, device := range data {
+		if device.DevName != deviceNamePCU || len(device.Channels) == 0 {
+			continue
+		}
+		lookup[device.SerialNum] = device.Channels[0]
+	}
+	return lookup
+}
+
+// applyDeviceData merges the electrical measurements from one device_data
+// channel into an inverter row, converting the Envoy's milli-units to base
+// units and joules to watt-hours.
+func applyDeviceData(inv *domain.InverterDetails, ch DeviceDataChannel) {
+	r := ch.LastReading
+	inv.DCVoltage = float64(r.DCVoltageMV) / milliUnit
+	inv.DCCurrent = float64(r.DCCurrentMA) / milliUnit
+	inv.ACVoltage = float64(r.ACVoltageMV) / milliUnit
+	inv.ACCurrent = float64(r.ACCurrentMA) / milliUnit
+	inv.ACFrequency = float64(r.ACFrequencyMHz) / milliUnit
+	inv.TemperatureC = r.ChannelTemp
+	inv.LeadingVArs = r.LeadingVArs
+	inv.LaggingVArs = r.LaggingVArs
+	inv.RSSI = r.RSSI
+	inv.ISSI = r.ISSI
+	inv.WhToday = ch.WattHours.Today
+	inv.WhYesterday = ch.WattHours.Yesterday
+	inv.WhWeek = ch.WattHours.Week
+	inv.WhLifetime = float64(ch.Lifetime.JoulesProduced) / joulesPerWattHour
 }
 
 func NewEnvoyReader(cfg Config, logger *slog.Logger) *EnvoyReader {
@@ -391,4 +469,63 @@ type InverterData []struct {
 	DevType         int    `json:"devType"`
 	LastReportWatts int    `json:"lastReportWatts"`
 	MaxReportWatts  int    `json:"maxReportWatts"`
+}
+
+// DeviceData is the /ivp/pdm/device_data response, a map keyed by an opaque
+// device id. Only PCU (microinverter) entries carry per-panel electrical
+// readings; eim and nsrb entries are ignored.
+type DeviceData map[string]DeviceDataDevice
+
+type DeviceDataDevice struct {
+	DevName   string              `json:"devName"`
+	SerialNum string              `json:"sn"`
+	Active    bool                `json:"active"`
+	Channels  []DeviceDataChannel `json:"channels"`
+}
+
+type DeviceDataChannel struct {
+	ChanEid     int                   `json:"chanEid"`
+	Created     int                   `json:"created"`
+	WattHours   DeviceDataWattHours   `json:"wattHours"`
+	Watts       DeviceDataWatts       `json:"watts"`
+	LastReading DeviceDataLastReading `json:"lastReading"`
+	Lifetime    DeviceDataLifetime    `json:"lifetime"`
+}
+
+type DeviceDataWattHours struct {
+	Today     int `json:"today"`
+	Yesterday int `json:"yesterday"`
+	Week      int `json:"week"`
+}
+
+type DeviceDataWatts struct {
+	Now     int `json:"now"`
+	NowUsed int `json:"nowUsed"`
+	Max     int `json:"max"`
+}
+
+// DeviceDataLastReading holds the most recent per-panel interval reading. The
+// *MV, *MA, and *MHz fields are milli-scaled integers from the Envoy. The JSON
+// tag casing is inconsistent (acVoltageINmV vs acCurrentInmA) because that is
+// how the firmware spells the keys; encoding/json matches case-insensitively.
+type DeviceDataLastReading struct {
+	EndDate        int `json:"endDate"`
+	Duration       int `json:"duration"`
+	JoulesProduced int `json:"joulesProduced"`
+	ACVoltageMV    int `json:"acVoltageINmV"`
+	ACFrequencyMHz int `json:"acFrequencyINmHz"`
+	DCVoltageMV    int `json:"dcVoltageINmV"`
+	DCCurrentMA    int `json:"dcCurrentINmA"`
+	ChannelTemp    int `json:"channelTemp"`
+	LeadingVArs    int `json:"leadingVArs"`
+	LaggingVArs    int `json:"laggingVArs"`
+	ACCurrentMA    int `json:"acCurrentInmA"`
+	RSSI           int `json:"rssi"`
+	ISSI           int `json:"issi"`
+}
+
+type DeviceDataLifetime struct {
+	CreatedTime    int   `json:"createdTime"`
+	Duration       int   `json:"duration"`
+	JoulesProduced int64 `json:"joulesProduced"`
 }

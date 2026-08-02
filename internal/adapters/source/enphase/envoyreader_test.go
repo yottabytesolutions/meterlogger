@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+
+	"github.com/yottabytesolutions/meterlogger/internal/domain"
 )
 
 const (
@@ -23,6 +25,9 @@ const (
 	testEnvoyPass               = "pass"
 	testEnvoyURL                = "http://localhost"
 	testEnvoySerial             = "serial"
+	testInverterSerial          = "inv001"
+	testInvertersPath           = "/api/v1/production/inverters"
+	testEnvoySerialNo           = "serial123"
 )
 
 func testLogger() *slog.Logger {
@@ -149,19 +154,43 @@ func TestReadEnvoySolarData_Success(t *testing.T) {
 		{
 			Type: testDeviceTypePCU,
 			Devices: []Device{
-				{SerialNum: "inv001", Producing: true, Operating: true, Communicating: true, Phase: "A", Chaneid: 1},
-				{SerialNum: "inv002", Producing: true, Operating: true, Communicating: true, Phase: "B", Chaneid: 2},
+				{
+					SerialNum: testInverterSerial, Producing: true, Operating: true,
+					Communicating: true, Phase: "A", Chaneid: 1,
+				},
+				{
+					SerialNum: "inv002", Producing: true, Operating: true,
+					Communicating: true, Phase: "B", Chaneid: 2,
+				},
 			},
 		},
 	}
+	now := int(time.Now().Unix())
 	inverterData := InverterData{
-		{SerialNumber: "inv001", LastReportDate: int(time.Now().Unix()), LastReportWatts: 150, MaxReportWatts: 200},
-		{SerialNumber: "inv002", LastReportDate: int(time.Now().Unix()), LastReportWatts: 150, MaxReportWatts: 200},
+		{SerialNumber: testInverterSerial, LastReportDate: now, LastReportWatts: 150, MaxReportWatts: 200},
+		{SerialNumber: "inv002", LastReportDate: now, LastReportWatts: 150, MaxReportWatts: 200},
+	}
+	deviceData := DeviceData{
+		"553648384": {
+			DevName: deviceNamePCU, SerialNum: testInverterSerial, Active: true,
+			Channels: []DeviceDataChannel{{
+				ChanEid:   1,
+				WattHours: DeviceDataWattHours{Today: 429, Yesterday: 1950, Week: 12871},
+				Watts:     DeviceDataWatts{Now: 150, Max: 200},
+				LastReading: DeviceDataLastReading{
+					DCVoltageMV: 30000, DCCurrentMA: 8000, ACVoltageMV: 235000,
+					ACCurrentMA: 1000, ACFrequencyMHz: 50000, ChannelTemp: 41,
+					LeadingVArs: 91, LaggingVArs: 4, RSSI: 106, ISSI: 62,
+				},
+				Lifetime: DeviceDataLifetime{JoulesProduced: 7200},
+			}},
+		},
 	}
 
 	meterBody, _ := json.Marshal(meterData)
 	inventoryBody, _ := json.Marshal(inventoryData)
 	inverterBody, _ := json.Marshal(inverterData)
+	deviceBody, _ := json.Marshal(deviceData)
 
 	server := httptest.NewServer(
 		http.HandlerFunc(
@@ -172,8 +201,10 @@ func TestReadEnvoySolarData_Success(t *testing.T) {
 					_, _ = w.Write(meterBody)
 				case testInventoryPath:
 					_, _ = w.Write(inventoryBody)
-				case "/api/v1/production/inverters":
+				case testInvertersPath:
 					_, _ = w.Write(inverterBody)
+				case "/ivp/pdm/device_data":
+					_, _ = w.Write(deviceBody)
 				default:
 					w.WriteHeader(http.StatusNotFound)
 				}
@@ -188,7 +219,7 @@ func TestReadEnvoySolarData_Success(t *testing.T) {
 	defer func() { httpClient = originalClient }()
 
 	reader := &EnvoyReader{
-		cfg:    Config{EnvoyURL: server.URL, User: testEnvoyUser, Password: testEnvoyPass, Serial: "serial123"},
+		cfg:    Config{EnvoyURL: server.URL, User: testEnvoyUser, Password: testEnvoyPass, Serial: testEnvoySerialNo},
 		logger: testLogger(),
 		token:  makeTestToken(),
 	}
@@ -204,11 +235,110 @@ func TestReadEnvoySolarData_Success(t *testing.T) {
 	if result.Watt != 300.0 {
 		t.Errorf("Watt = %v, want 300.0", result.Watt)
 	}
-	if result.EnvoySerial != "serial123" {
+	if result.EnvoySerial != testEnvoySerialNo {
 		t.Errorf("EnvoySerial = %q, want serial123", result.EnvoySerial)
 	}
 	if len(result.Inverters) != 2 {
 		t.Errorf("Inverters count = %d, want 2", len(result.Inverters))
+	}
+
+	assertDeviceDataMerged(t, result.Inverters)
+}
+
+// assertDeviceDataMerged checks that the device_data electrical fields were
+// merged into inv001 with milli-units converted to base units and joules to
+// watt-hours.
+func assertDeviceDataMerged(t *testing.T, inverters []domain.InverterDetails) {
+	t.Helper()
+	idx := -1
+	for i := range inverters {
+		if inverters[i].SerialNumber == testInverterSerial {
+			idx = i
+		}
+	}
+	if idx < 0 {
+		t.Fatalf("%s not found in result", testInverterSerial)
+	}
+	inv := inverters[idx]
+	checks := []struct {
+		name string
+		got  float64
+		want float64
+	}{
+		{"DCVoltage", inv.DCVoltage, 30.0},
+		{"DCCurrent", inv.DCCurrent, 8.0},
+		{"ACVoltage", inv.ACVoltage, 235.0},
+		{"ACCurrent", inv.ACCurrent, 1.0},
+		{"ACFrequency", inv.ACFrequency, 50.0},
+		{"WhLifetime", inv.WhLifetime, 2.0},
+		{"TemperatureC", float64(inv.TemperatureC), 41},
+		{"WhToday", float64(inv.WhToday), 429},
+		{"RSSI", float64(inv.RSSI), 106},
+	}
+	for _, c := range checks {
+		if c.got != c.want {
+			t.Errorf("%s = %v, want %v", c.name, c.got, c.want)
+		}
+	}
+}
+
+// TestReadEnvoySolarData_DeviceDataErrorDegrades verifies that a device_data
+// failure does not fail the whole read: the aggregate and per-panel watts still
+// come back, with zero electrical fields.
+func TestReadEnvoySolarData_DeviceDataErrorDegrades(t *testing.T) {
+	meterData := MeterReading{
+		Production: []Production{
+			{Type: testProductionTypeInverters, ActiveCount: 1, WNow: 100, ReadingTime: int(time.Now().Unix())},
+		},
+	}
+	inventoryData := InventoryData{}
+	inverterData := InverterData{
+		{SerialNumber: testInverterSerial, LastReportDate: int(time.Now().Unix()), LastReportWatts: 100},
+	}
+	meterBody, _ := json.Marshal(meterData)
+	inventoryBody, _ := json.Marshal(inventoryData)
+	inverterBody, _ := json.Marshal(inverterData)
+
+	server := httptest.NewServer(
+		http.HandlerFunc(
+			func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case testProductionPath:
+					_, _ = w.Write(meterBody)
+				case testInventoryPath:
+					_, _ = w.Write(inventoryBody)
+				case testInvertersPath:
+					_, _ = w.Write(inverterBody)
+				default: // device_data returns 500
+					w.WriteHeader(http.StatusInternalServerError)
+				}
+			},
+		),
+	)
+	defer server.Close()
+
+	originalClient := httpClient
+	httpClient = server.Client()
+	defer func() { httpClient = originalClient }()
+
+	reader := &EnvoyReader{
+		cfg:    Config{EnvoyURL: server.URL, Serial: testEnvoySerialNo},
+		logger: testLogger(),
+		token:  makeTestToken(),
+	}
+
+	result, err := reader.ReadEnvoySolarData(context.Background())
+	if err != nil {
+		t.Fatalf("ReadEnvoySolarData() should degrade, got error: %v", err)
+	}
+	if len(result.Inverters) != 1 {
+		t.Fatalf("Inverters count = %d, want 1", len(result.Inverters))
+	}
+	if result.Inverters[0].LastReportedWatts != 100 {
+		t.Errorf("LastReportedWatts = %d, want 100", result.Inverters[0].LastReportedWatts)
+	}
+	if result.Inverters[0].DCVoltage != 0 {
+		t.Errorf("DCVoltage = %v, want 0 (device_data failed)", result.Inverters[0].DCVoltage)
 	}
 }
 
@@ -234,7 +364,7 @@ func TestReadEnvoySolarData_MissingInvertersProduction(t *testing.T) {
 					_, _ = w.Write(meterBody)
 				case testInventoryPath:
 					_, _ = w.Write(inventoryBody)
-				case "/api/v1/production/inverters":
+				case testInvertersPath:
 					_, _ = w.Write(inverterBody)
 				default:
 					w.WriteHeader(http.StatusNotFound)

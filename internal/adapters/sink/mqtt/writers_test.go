@@ -354,7 +354,11 @@ func TestSolarWriter_PublishesSnapshotInvertersAndDiscovery(t *testing.T) {
 	invWant := map[string]any{
 		"ts": "2026-07-01T11:59:00Z", "envoy_serial": envoySerialNo, "inverter_serial": "INV1",
 		"channel_id": 7.0, "operating": true, "communicating": true, "producing": true,
-		"phase": "ph-a", "watts": 250.0, "peak_watts": 300.0,
+		"phase": "ph-a", "watts": 250.0, "peak_watts": 300.0, "status": "",
+		"dc_voltage": 0.0, "dc_current": 0.0, "ac_voltage": 0.0, "ac_current": 0.0, "ac_frequency": 0.0,
+		"temperature_c": 0.0, "leading_vars": 0.0, "lagging_vars": 0.0,
+		"wh_today": 0.0, "wh_yesterday": 0.0, "wh_week": 0.0, "wh_lifetime": 0.0,
+		"rssi": 0.0, "issi": 0.0,
 	}
 	if !reflect.DeepEqual(invGot, invWant) {
 		t.Errorf("inverter payload = %v, want %v", invGot, invWant)

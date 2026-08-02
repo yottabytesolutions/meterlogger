@@ -37,6 +37,20 @@ func (w *SolarWriter) StoreEnvoySolarData(ctx context.Context, data domain.Envoy
 			StringColumn("Status", strings.Join(inverter.DeviceStatus, ",")).
 			Int64Column("Watts", int64(inverter.LastReportedWatts)).
 			Int64Column("PeakWatts", int64(inverter.MaxReportWatts)).
+			Float64Column("DCVoltage", inverter.DCVoltage).
+			Float64Column("DCCurrent", inverter.DCCurrent).
+			Float64Column("ACVoltage", inverter.ACVoltage).
+			Float64Column("ACCurrent", inverter.ACCurrent).
+			Float64Column("ACFrequency", inverter.ACFrequency).
+			Int64Column("TemperatureC", int64(inverter.TemperatureC)).
+			Int64Column("LeadingVArs", int64(inverter.LeadingVArs)).
+			Int64Column("LaggingVArs", int64(inverter.LaggingVArs)).
+			Int64Column("WhToday", int64(inverter.WhToday)).
+			Int64Column("WhYesterday", int64(inverter.WhYesterday)).
+			Int64Column("WhWeek", int64(inverter.WhWeek)).
+			Float64Column("WhLifetime", inverter.WhLifetime).
+			Int64Column("RSSI", int64(inverter.RSSI)).
+			Int64Column("ISSI", int64(inverter.ISSI)).
 			At(ctx, inverter.ReportTime)
 		if inverterErr != nil {
 			w.logger.ErrorContext(ctx, "error writing inverter data", slog.Any("error", inverterErr))
