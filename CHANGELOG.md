@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.5.1] - 2026-08-02
+
+### Fixed
+
+- Per-inverter rows are no longer written repeatedly between microinverter
+  reports. Panels report over powerline roughly every five minutes, staggered,
+  so a poll interval shorter than that previously stored many identical
+  `<measurement>_inverters` rows per panel (same report time, same values). The
+  solar service now stores exactly one row per panel per new report, keyed on
+  the panel report time, regardless of poll rate. The gateway aggregate is
+  unchanged and still stored on every poll. State is in memory and resets on
+  restart, so the first poll after a restart writes each panel's current report
+  once even if unchanged.
+
 ## [1.5.0] - 2026-08-02
 
 ### Added
