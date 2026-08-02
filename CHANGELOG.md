@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.5.2] - 2026-08-02
+
+### Fixed
+
+- Per-inverter electrical fields (added in 1.5.0) landed as zeros. The
+  `/ivp/pdm/device_data` response mixes scalar keys (`deviceCount`,
+  `deviceDataLimit`) in at the top level alongside the device entries, so
+  decoding into `map[string]DeviceDataDevice` failed on the first number and the
+  reader fell back to empty electrical fields. The decoder now reads the body as
+  raw messages and keeps only the entries that parse as a device, skipping the
+  scalars and non-device values. Verified live against the gateway: all panels
+  report DC/AC voltage and current, frequency, temperature, and energy again.
+- A service that hit its consecutive-error threshold terminated the process with
+  SIGTERM, which the normal shutdown path handled and exited 0, making a fatal
+  condition look like a clean stop to Kubernetes and alerting. The process now
+  exits non-zero when a service terminates on an unrecoverable error.
+
 ## [1.5.1] - 2026-08-02
 
 ### Fixed

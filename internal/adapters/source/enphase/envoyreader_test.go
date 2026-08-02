@@ -30,6 +30,33 @@ const (
 	testEnvoySerialNo           = "serial123"
 )
 
+// testDeviceDataPayload is the raw /ivp/pdm/device_data body as the Envoy
+// actually returns it: scalar keys (deviceCount, deviceDataLimit) mixed in at
+// the top level, eim and nsrb devices alongside the pcu entries, and the
+// milli-unit keys with Enphase's inconsistent casing (acVoltageINmV vs
+// acCurrentInmA). This shape must not fail the whole decode.
+const testDeviceDataPayload = `{
+	"deviceCount": 14,
+	"deviceDataLimit": 50,
+	"704643328": {"devName": "eim", "sn": "eim1", "channels": []},
+	"704643584": {"devName": "nsrb", "sn": "nsrb1", "channels": []},
+	"553648384": {
+		"devName": "pcu", "sn": "inv001", "active": true,
+		"channels": [{
+			"chanEid": 1,
+			"wattHours": {"today": 429, "yesterday": 1950, "week": 12871},
+			"watts": {"now": 150, "nowUsed": 0, "max": 200},
+			"lastReading": {
+				"dcVoltageINmV": 30000, "dcCurrentINmA": 8000,
+				"acVoltageINmV": 235000, "acCurrentInmA": 1000,
+				"acFrequencyINmHz": 50000, "channelTemp": 41,
+				"leadingVArs": 91, "laggingVArs": 4, "rssi": 106, "issi": 62
+			},
+			"lifetime": {"joulesProduced": 7200}
+		}]
+	}
+}`
+
 func testLogger() *slog.Logger {
 	return slog.New(slog.DiscardHandler)
 }
@@ -140,6 +167,40 @@ func TestUnmarshalInventoryData_Invalid(t *testing.T) {
 	}
 }
 
+func TestUnmarshalDeviceData_MixedScalarsAndDevices(t *testing.T) {
+	// The real endpoint mixes scalar keys with device objects and includes
+	// non-pcu devices. The scalars must be skipped, not fail the decode.
+	body := []byte(`{
+		"deviceCount": 14,
+		"deviceDataLimit": 50,
+		"704643328": {"devName": "eim", "sn": "eim1"},
+		"553648384": {"devName": "pcu", "sn": "inv001",
+			"channels": [{"lastReading": {"dcVoltageINmV": 30000}}]}
+	}`)
+	data, err := unmarshalDeviceData(body)
+	if err != nil {
+		t.Fatalf("unmarshalDeviceData() error: %v", err)
+	}
+	if len(data) != 2 {
+		t.Errorf("device entries = %d, want 2 (eim + pcu, scalars skipped)", len(data))
+	}
+	lookup := deviceDataBySerial(data)
+	ch, ok := lookup["inv001"]
+	if !ok {
+		t.Fatal("pcu inv001 not found in lookup")
+	}
+	if ch.LastReading.DCVoltageMV != 30000 {
+		t.Errorf("DCVoltageMV = %d, want 30000", ch.LastReading.DCVoltageMV)
+	}
+}
+
+func TestUnmarshalDeviceData_Invalid(t *testing.T) {
+	_, err := unmarshalDeviceData([]byte(`{invalid}`))
+	if err == nil {
+		t.Error("unmarshalDeviceData should return error for invalid JSON")
+	}
+}
+
 func TestReadEnvoySolarData_Success(t *testing.T) {
 	// Set up mock HTTP responses
 	meterData := MeterReading{
@@ -170,27 +231,11 @@ func TestReadEnvoySolarData_Success(t *testing.T) {
 		{SerialNumber: testInverterSerial, LastReportDate: now, LastReportWatts: 150, MaxReportWatts: 200},
 		{SerialNumber: "inv002", LastReportDate: now, LastReportWatts: 150, MaxReportWatts: 200},
 	}
-	deviceData := DeviceData{
-		"553648384": {
-			DevName: deviceNamePCU, SerialNum: testInverterSerial, Active: true,
-			Channels: []DeviceDataChannel{{
-				ChanEid:   1,
-				WattHours: DeviceDataWattHours{Today: 429, Yesterday: 1950, Week: 12871},
-				Watts:     DeviceDataWatts{Now: 150, Max: 200},
-				LastReading: DeviceDataLastReading{
-					DCVoltageMV: 30000, DCCurrentMA: 8000, ACVoltageMV: 235000,
-					ACCurrentMA: 1000, ACFrequencyMHz: 50000, ChannelTemp: 41,
-					LeadingVArs: 91, LaggingVArs: 4, RSSI: 106, ISSI: 62,
-				},
-				Lifetime: DeviceDataLifetime{JoulesProduced: 7200},
-			}},
-		},
-	}
+	deviceBody := []byte(testDeviceDataPayload)
 
 	meterBody, _ := json.Marshal(meterData)
 	inventoryBody, _ := json.Marshal(inventoryData)
 	inverterBody, _ := json.Marshal(inverterData)
-	deviceBody, _ := json.Marshal(deviceData)
 
 	server := httptest.NewServer(
 		http.HandlerFunc(

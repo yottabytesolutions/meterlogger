@@ -93,12 +93,61 @@ Shipped in this change set:
   the SQL sinks, not only QuestDB.
 - Migrations auto-run on deploy; existing `_inverters` tables gain the columns.
 
+## Curtailment (the right tool for negative-price export avoidance)
+
+Investigated 2026-08-02. Hard shutdown is unfit (IQ microinverters often do not
+resume until the next morning after re-enable). Curtailment keeps the inverters
+running and throttles output, so it has no restart problem and can be toggled
+dynamically.
+
+Mechanism: `POST /ivp/ss/dpel` (dynamic power export limit). Undocumented;
+Dutch Enphase support called it an "unintended flaw" in Envoy v8, but multiple
+metered-Envoy owners drive it successfully. Working body (from Enphase-API
+issue #31):
+
+```
+POST /ivp/ss/dpel   (firmware 8.x, Bearer token)
+{
+  "dynamic_pel_settings": {
+    "enable": true,
+    "export_limit": true,
+    "limit_value_W": 0.0,     // 0 = zero export; raise to lift the cap
+    "slew_rate": 50.0,        // W/s ramp
+    "enable_dynamic_limiting": false
+  },
+  "filename": "site_settings",
+  "version": "00.00.01"
+}
+```
+
+meterlogger could set `limit_value_W` low/zero during negative-price windows and
+lift it otherwise. Resumes immediately (curtail, not shutdown).
+
+Hard requirement, currently unmet: a metered Envoy with production AND
+consumption CT clamps ("Load with Solar", consumption CT between utility and
+main panel). Export limiting must measure net export at the grid tie. This
+site's two CT meters are `state: disabled` (never installed), so `dpel` cannot
+function yet. The Envoy model is CT-capable; the clamps must be physically
+installed and the meters enabled.
+
+Caveats: undocumented and finicky. some accounts get 401 on the POST even with
+CTs (a rights/provisioning issue), and one report shows the setting accepted but
+production unchanged. Needs live verification after CTs are installed. Do not
+change the grid profile.
+
+Alternative: some grid profiles support a digital-input-triggered zero-export;
+a price-driven smart relay on the Envoy DI could trigger it. Hardware path, not
+investigated in depth.
+
 ## Status
 
 - Live sweep: done (2026-08-02). Findings above.
-- Richer per-inverter reader + schema across all sinks: DONE. Build, tests, lint
-  green. Not yet released (needs a version bump + tag).
-- Whole-array control (MQTT switch + CLI): not started. Blocked on a live
-  write-test authorization to confirm restart delay.
+- Richer per-inverter reader + schema across all sinks: SHIPPED in v1.5.0.
+- Per-inverter dedup on report time: SHIPPED in v1.5.1.
+- Hard shutdown: format found (`mode/power` `{"length":1,"arr":[1]}`) but
+  rejected. IQ restart strands to next morning. Not implemented.
+- Curtailment via `/ivp/ss/dpel`: the right path. Blocked on CT hardware install
+  + meter enable + export-limit provisioning. meterlogger side implementable
+  once hardware is in.
 - Per-panel control: dropped, not achievable on this hardware (devtype=1).
 - `/stream/meter` consumer: dropped, CTs disabled so the stream reads zero.
