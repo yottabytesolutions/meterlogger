@@ -70,6 +70,28 @@ func TestCheck(t *testing.T) {
 	}
 }
 
+// While paho is reconnecting a publish neither fails nor completes for QoS>0,
+// and silently succeeds while dropping the message for QoS 0. Both stall or lie
+// to the caller, so publish must refuse to hand the message to paho at all.
+func TestPublish_FailsFastWhileDisconnected(t *testing.T) {
+	fp := newFakePaho()
+	fp.open = false
+	c := newTestClient(fp, testConfig())
+
+	err := c.publish(context.Background(), "meterlogger/grid", false, []byte("{}"))
+	if !errors.Is(err, ErrNotConnected) {
+		t.Errorf("publish while disconnected = %v, want ErrNotConnected", err)
+	}
+	if len(fp.published) != 0 {
+		t.Errorf("published %d messages while disconnected, want 0", len(fp.published))
+	}
+
+	fp.open = true
+	if reconnectErr := c.publish(context.Background(), "meterlogger/grid", false, []byte("{}")); reconnectErr != nil {
+		t.Errorf("publish after reconnect = %v, want nil", reconnectErr)
+	}
+}
+
 func TestClose_PublishesOfflineAndDisconnects(t *testing.T) {
 	fp := newFakePaho()
 	c := newTestClient(fp, testConfig())

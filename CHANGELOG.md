@@ -6,6 +6,39 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.5.3] - 2026-08-11
+
+### Fixed
+
+- The QuestDB sink never reconnected after the server closed the ILP/TCP
+  connection. A QuestDB restart left every later flush failing with
+  `broken pipe` on the same dead socket, forever, on the same source port. The
+  process stayed healthy, nothing crashed, and the only symptom was a table
+  that quietly stopped growing until someone restarted the pod. The sink now
+  closes the dead sender and redials with exponential backoff, from 1s up to
+  60s. Rows written while the connection is down are dropped and counted, and
+  the count plus the total downtime is logged on the reconnect.
+- The QuestDB health check could report healthy while the sink was dead. It
+  reported the outcome of the most recent flush, and a flush with an empty
+  buffer writes no bytes, so it always succeeded even on a closed socket. Any
+  tick that buffered no rows reset the failure state, which kept `/readyz`
+  green and stopped `/healthz` from ever crossing its threshold. The check now
+  tracks the connection state and reports unhealthy after five consecutive
+  failed writes or flushes.
+- The MQTT sink blocked for the full 10s store timeout on every reading while
+  the broker was down. With QoS above 0, paho leaves the publish token pending
+  during a reconnect instead of failing it, which stalled the source feeding
+  the sink. With QoS 0 it was worse: paho completed the token successfully and
+  dropped the message, so a lost Home Assistant discovery config was never
+  retried. Publishing now fails fast when the broker connection is not open,
+  and a single publish is bounded at 2s.
+
+### Changed
+
+- QuestDB writers no longer reach into the shared line sender directly. All row
+  building goes through `DBClient.Write`, which serialises access and can swap
+  the sender on reconnect. Internal change, no configuration impact.
+
 ## [1.5.2] - 2026-08-02
 
 ### Fixed

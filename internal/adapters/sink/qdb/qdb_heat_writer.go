@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 
+	qdbclient "github.com/questdb/go-questdb-client/v3"
+
 	"github.com/yottabytesolutions/meterlogger/internal/debuglog"
 	"github.com/yottabytesolutions/meterlogger/internal/domain"
 )
@@ -38,21 +40,23 @@ func NewQuestDBHeatTelegramWriter(
 
 func (store *HeatTelegramStore) StoreHeatTelegram(ctx context.Context, telegram domain.HeatTelegram) error {
 	store.logger.DebugContext(ctx, "qdb: buffering heat telegram", debuglog.HeatAttrs(telegram))
-	return store.client.sender.Table(store.table).
-		Symbol("device", fmt.Sprintf("Multical %s", telegram.MeterID)).
-		Symbol("serial", telegram.SerialNo).
-		Symbol("location", "meterkast").
-		Int64Column("power", telegram.ActualPower).
-		Int64Column("energy", telegram.Joules/heatEnergyScale).
-		Float64Column("t1", telegram.Tforward*heatTempScale).
-		Float64Column("t2", telegram.Treturn*heatTempScale).
-		Float64Column("t1mint2", telegram.Tdiff*heatTempScale).
-		Int64Column("volume", int64(telegram.VolumeCm3*heatVolumeScale)).
-		Int64Column("hours", telegram.SecondsCounter/heatSecondsPerHour).
-		Float64Column("max_flow", telegram.MaxFlow*heatFlowScale).
-		Int64Column("max_power", telegram.MaxPower).
-		Int64Column("seconds", telegram.SecondsCounter).
-		At(ctx, telegram.Timestamp)
+	return store.client.Write(ctx, func(sender qdbclient.LineSender) error {
+		return sender.Table(store.table).
+			Symbol("device", fmt.Sprintf("Multical %s", telegram.MeterID)).
+			Symbol("serial", telegram.SerialNo).
+			Symbol("location", "meterkast").
+			Int64Column("power", telegram.ActualPower).
+			Int64Column("energy", telegram.Joules/heatEnergyScale).
+			Float64Column("t1", telegram.Tforward*heatTempScale).
+			Float64Column("t2", telegram.Treturn*heatTempScale).
+			Float64Column("t1mint2", telegram.Tdiff*heatTempScale).
+			Int64Column("volume", int64(telegram.VolumeCm3*heatVolumeScale)).
+			Int64Column("hours", telegram.SecondsCounter/heatSecondsPerHour).
+			Float64Column("max_flow", telegram.MaxFlow*heatFlowScale).
+			Int64Column("max_power", telegram.MaxPower).
+			Int64Column("seconds", telegram.SecondsCounter).
+			At(ctx, telegram.Timestamp)
+	})
 }
 
 func (store *HeatTelegramStore) Flush(ctx context.Context) error {

@@ -5,6 +5,8 @@ import (
 	"context"
 	"log/slog"
 
+	qdbclient "github.com/questdb/go-questdb-client/v3"
+
 	"github.com/yottabytesolutions/meterlogger/internal/domain"
 )
 
@@ -31,14 +33,16 @@ func (w *QuestDBWaterWriter) StoreWaterReading(ctx context.Context, r domain.Wat
 		slog.Float64("reading_m3", r.ReadingM3),
 		slog.Time("captured_at", r.CapturedAt),
 	)
-	return w.client.sender.
-		Table(w.measurement).
-		Symbol("serial_no", r.SerialNo).
-		Int64Column("channel", int64(r.Channel)).
-		Int64Column("device_type", int64(r.DeviceType)).
-		Float64Column("reading_m3", r.ReadingM3).
-		TimestampColumn("received_at", r.ReceivedAt).
-		At(ctx, r.CapturedAt)
+	return w.client.Write(ctx, func(sender qdbclient.LineSender) error {
+		return sender.
+			Table(w.measurement).
+			Symbol("serial_no", r.SerialNo).
+			Int64Column("channel", int64(r.Channel)).
+			Int64Column("device_type", int64(r.DeviceType)).
+			Float64Column("reading_m3", r.ReadingM3).
+			TimestampColumn("received_at", r.ReceivedAt).
+			At(ctx, r.CapturedAt)
+	})
 }
 
 // Flush sends buffered water readings to QuestDB.

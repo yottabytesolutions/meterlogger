@@ -97,11 +97,24 @@ func (m *mockLineSender) Close(_ context.Context) error { return nil }
 
 func newTestDBClient() (*DBClient, *mockLineSender) {
 	sender := &mockLineSender{}
-	return &DBClient{
-		sender: sender,
-		logger: testLogger(),
-	}, sender
+	return newTestDBClientWith(sender), sender
 }
+
+// newTestDBClientWith builds a client around a given sender with the reconnect
+// machinery wired to fail loudly: the default dial returns an error, so a test
+// that unexpectedly loses its connection does not silently get a fresh one.
+func newTestDBClientWith(sender qdbclient.LineSender) *DBClient {
+	return &DBClient{
+		cfg:            Config{Host: "questdb.test", Port: 9009},
+		logger:         testLogger(),
+		now:            time.Now,
+		dial:           func(context.Context, Config) (qdbclient.LineSender, error) { return nil, errNoDial },
+		sender:         sender,
+		reconnectDelay: initialReconnectDelay,
+	}
+}
+
+var errNoDial = errors.New("dial not configured in test")
 
 func testLogger() *slog.Logger {
 	return slog.New(slog.DiscardHandler)
@@ -450,10 +463,7 @@ func TestQuestDBGasWriter_StoreGasReading(t *testing.T) {
 }
 
 func TestQuestDBGasWriter_StoreGasReading_WriteError(t *testing.T) {
-	client := &DBClient{
-		sender: &mockLineSender{atErr: errTest},
-		logger: testLogger(),
-	}
+	client := newTestDBClientWith(&mockLineSender{atErr: errTest})
 	writer := NewQuestDBGasWriter(client, "gas", testLogger())
 	if err := writer.StoreGasReading(context.Background(), domain.GasReading{}); err == nil {
 		t.Error("StoreGasReading should return error when sender fails")
@@ -515,10 +525,7 @@ func TestQuestDBWaterWriter_StoreWaterReading(t *testing.T) {
 }
 
 func TestQuestDBWaterWriter_StoreWaterReading_WriteError(t *testing.T) {
-	client := &DBClient{
-		sender: &mockLineSender{atErr: errTest},
-		logger: testLogger(),
-	}
+	client := newTestDBClientWith(&mockLineSender{atErr: errTest})
 	writer := NewQuestDBWaterWriter(client, "water", testLogger())
 	if err := writer.StoreWaterReading(context.Background(), domain.WaterReading{}); err == nil {
 		t.Error("StoreWaterReading should return error when sender fails")
@@ -580,10 +587,7 @@ func TestQuestDBThermalWriter_StoreThermalReading(t *testing.T) {
 }
 
 func TestQuestDBThermalWriter_StoreThermalReading_WriteError(t *testing.T) {
-	client := &DBClient{
-		sender: &mockLineSender{atErr: errTest},
-		logger: testLogger(),
-	}
+	client := newTestDBClientWith(&mockLineSender{atErr: errTest})
 	writer := NewQuestDBThermalWriter(client, "thermal", testLogger())
 	if err := writer.StoreThermalReading(context.Background(), domain.ThermalReading{}); err == nil {
 		t.Error("StoreThermalReading should return error when sender fails")
@@ -760,19 +764,13 @@ func TestDBClient_Close(_ *testing.T) {
 }
 
 func TestDBClient_Close_FlushError(_ *testing.T) {
-	client := &DBClient{
-		sender: &mockLineSender{flushErr: errTest},
-		logger: testLogger(),
-	}
+	client := newTestDBClientWith(&mockLineSender{flushErr: errTest})
 	// Should not panic; errors are logged
 	client.Close()
 }
 
 func TestDBClient_Close_SenderCloseError(_ *testing.T) {
-	client := &DBClient{
-		sender: &mockLineSenderWithCloseErr{},
-		logger: testLogger(),
-	}
+	client := newTestDBClientWith(&mockLineSenderWithCloseErr{})
 	client.Close()
 }
 
@@ -788,10 +786,7 @@ func (m *mockLineSenderWithCloseErr) Close(_ context.Context) error {
 }
 
 func TestSolarWriter_StoreEnvoySolarData_WriteError(t *testing.T) {
-	client := &DBClient{
-		sender: &mockLineSender{atErr: errTest},
-		logger: testLogger(),
-	}
+	client := newTestDBClientWith(&mockLineSender{atErr: errTest})
 	writer := NewQuestDBSolarWriter(client, "solar", testLogger())
 	data := domain.EnvoySolarData{
 		EnvoySerial:  "serial",
