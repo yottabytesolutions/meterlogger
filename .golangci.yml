@@ -369,6 +369,8 @@ linters:
         - github.com/yottabytesolutions/meterlogger/internal/domain.DucoNodeStatus
         # Frame is returned by Prepare() builder methods on concrete frame structs.
         - github.com/yottabytesolutions/meterlogger/internal/adapters/source/serialmbus/protocol.Frame
+        # LineSender is the only type the QuestDB client exposes; there is no concrete type to return.
+        - github.com/questdb/go-questdb-client/v3.LineSender
 
     mnd:
       # List of function patterns to exclude from analysis.

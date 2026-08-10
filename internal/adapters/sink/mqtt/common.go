@@ -24,9 +24,18 @@ const (
 	// Disconnect, in milliseconds.
 	disconnectQuiesceMs = 250
 
+	// publishTimeout bounds a single publish so a broker that accepts the TCP
+	// connection but never acknowledges cannot hold up the flush loop.
+	publishTimeout = 2 * time.Second
+
 	payloadOnline  = "online"
 	payloadOffline = "offline"
 )
+
+// ErrNotConnected is returned when a publish is attempted while the broker
+// connection is down. paho reconnects in the background, so the next reading
+// retries on its own.
+var ErrNotConnected = errors.New("mqtt: not connected to broker")
 
 // Config holds the connection and topic parameters for the MQTT sink.
 type Config struct {
@@ -130,7 +139,21 @@ func (c *Client) publishState(ctx context.Context, topic string, payload any) er
 	return c.publish(ctx, topic, c.cfg.RetainState, body)
 }
 
+// publish sends one message with the configured QoS.
+//
+// The connection check is not an optimisation. While paho is reconnecting it
+// neither fails nor completes a QoS>0 publish: the token stays pending until
+// the broker comes back, so the caller blocks for the whole store timeout on
+// every reading, which stalls the source that feeds it. With QoS 0 it is worse
+// than blocking: paho completes the token successfully and drops the message,
+// so a failed publish looks like a success and a Home Assistant discovery
+// config is never retried. Failing fast keeps both honest.
 func (c *Client) publish(ctx context.Context, topic string, retain bool, body []byte) error {
+	if !c.pc.IsConnectionOpen() {
+		return fmt.Errorf("mqtt publish %s: %w", topic, ErrNotConnected)
+	}
+	ctx, cancel := context.WithTimeout(ctx, publishTimeout)
+	defer cancel()
 	return c.wait(ctx, c.pc.Publish(topic, c.cfg.QoS, retain, body), "publish "+topic)
 }
 

@@ -5,6 +5,8 @@ import (
 	"log/slog"
 	"strings"
 
+	qdbclient "github.com/questdb/go-questdb-client/v3"
+
 	"github.com/yottabytesolutions/meterlogger/internal/domain"
 )
 
@@ -15,20 +17,32 @@ type SolarWriter struct {
 }
 
 func (w *SolarWriter) StoreEnvoySolarData(ctx context.Context, data domain.EnvoySolarData) error {
-	err := w.client.sender.Table(w.table).
-		Symbol("EnvoySerialNumber", data.EnvoySerial).
-		Float64Column("ProductionWattHours", data.ProductionWh).
-		Float64Column("ProductionWatt", data.Watt).
-		Int64Column("PanelCount", int64(data.PanelCount)).
-		At(ctx, data.ReadingTime)
+	err := w.client.Write(ctx, func(sender qdbclient.LineSender) error {
+		return sender.Table(w.table).
+			Symbol("EnvoySerialNumber", data.EnvoySerial).
+			Float64Column("ProductionWattHours", data.ProductionWh).
+			Float64Column("ProductionWatt", data.Watt).
+			Int64Column("PanelCount", int64(data.PanelCount)).
+			At(ctx, data.ReadingTime)
+	})
 	if err != nil {
 		w.logger.ErrorContext(ctx, "error writing data", slog.Any("error", err))
 	}
 
 	for _, inverter := range data.Inverters {
-		inverterErr := w.client.sender.Table(w.table+"_inverters").
+		inverterErr := w.storeInverter(ctx, data.EnvoySerial, inverter)
+		if inverterErr != nil {
+			w.logger.ErrorContext(ctx, "error writing inverter data", slog.Any("error", inverterErr))
+		}
+	}
+	return err
+}
+
+func (w *SolarWriter) storeInverter(ctx context.Context, envoySerial string, inverter domain.InverterDetails) error {
+	return w.client.Write(ctx, func(sender qdbclient.LineSender) error {
+		return sender.Table(w.table+"_inverters").
 			Symbol("InverterSerialNumber", inverter.SerialNumber).
-			StringColumn("EnvoySerialNumber", data.EnvoySerial).
+			StringColumn("EnvoySerialNumber", envoySerial).
 			Int64Column("ChannelID", int64(inverter.Chaneid)).
 			BoolColumn("Operating", inverter.Operating).
 			BoolColumn("Communicating", inverter.Communicating).
@@ -52,11 +66,7 @@ func (w *SolarWriter) StoreEnvoySolarData(ctx context.Context, data domain.Envoy
 			Int64Column("RSSI", int64(inverter.RSSI)).
 			Int64Column("ISSI", int64(inverter.ISSI)).
 			At(ctx, inverter.ReportTime)
-		if inverterErr != nil {
-			w.logger.ErrorContext(ctx, "error writing inverter data", slog.Any("error", inverterErr))
-		}
-	}
-	return err
+	})
 }
 
 func (w *SolarWriter) Flush(ctx context.Context) error {

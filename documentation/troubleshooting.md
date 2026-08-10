@@ -155,6 +155,12 @@ For a QuestDB connection problem, note there is no explicit "failed to connect" 
 QuestDB uses ILP/TCP and reports failures through `/readyz` and the write-error metrics described
 below.
 
+If QuestDB restarts while meterlogger is running, expect one `questdb: connection lost, will reconnect`
+error followed by `questdb: reconnecting` and `questdb: reconnected` with the downtime and the number of
+rows dropped in the gap. Repeated `questdb: reconnect failed` lines mean the server is still unreachable;
+the retry interval grows to a maximum of 60s. A continuous stream of `broken pipe` write errors on the same
+source port is the pre-1.5.3 behaviour and means the pod is running an old image.
+
 ---
 
 ## "At least one source/sink must be enabled" startup errors

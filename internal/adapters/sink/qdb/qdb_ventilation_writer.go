@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"time"
 
+	qdbclient "github.com/questdb/go-questdb-client/v3"
+
 	"github.com/yottabytesolutions/meterlogger/internal/domain"
 )
 
@@ -28,7 +30,17 @@ func NewDucoQuestDBRepository(
 }
 
 func (repo *DucoQuestDBRepository) StoreBoxStatus(ctx context.Context, boxStatus domain.DucoBoxStatus) error {
-	return repo.client.sender.Table(repo.table+"_box_general").
+	return repo.client.Write(ctx, func(sender qdbclient.LineSender) error {
+		return repo.buildBoxRow(ctx, sender, boxStatus)
+	})
+}
+
+func (repo *DucoQuestDBRepository) buildBoxRow(
+	ctx context.Context,
+	sender qdbclient.LineSender,
+	boxStatus domain.DucoBoxStatus,
+) error {
+	return sender.Table(repo.table+"_box_general").
 		Symbol("rfHomeId", boxStatus.General.RFHomeID).
 		Int64Column("CalibKinZone1", int64(boxStatus.EnergyCalib.CalibKinZone1)).
 		Int64Column("CalibKinZone2", int64(boxStatus.EnergyCalib.CalibKinZone2)).
@@ -69,10 +81,18 @@ func (repo *DucoQuestDBRepository) StoreBoxStatus(ctx context.Context, boxStatus
 		At(ctx, time.Now())
 }
 
-//nolint:dupl // DucoRFSensorStatus and DucoNodeBoxStatus have similar but distinct fields
 func (repo *DucoQuestDBRepository) StoreNodeData(ctx context.Context, nodeData domain.DucoNodeStatus) error {
-	sender := repo.client.sender
+	return repo.client.Write(ctx, func(sender qdbclient.LineSender) error {
+		return repo.buildNodeRow(ctx, sender, nodeData)
+	})
+}
 
+//nolint:dupl // DucoRFSensorStatus and DucoNodeBoxStatus have similar but distinct fields
+func (repo *DucoQuestDBRepository) buildNodeRow(
+	ctx context.Context,
+	sender qdbclient.LineSender,
+	nodeData domain.DucoNodeStatus,
+) error {
 	switch data := nodeData.(type) {
 	case domain.DucoRFSensorStatus:
 		return sender.Table(repo.table+"_node").

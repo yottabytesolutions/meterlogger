@@ -19,10 +19,18 @@ The health server starts automatically on `HTTPServer.Port` (default `8080`).
 
 `/readyz` checks reachability of every enabled sink. SQL sinks (PostgreSQL, MySQL, TimescaleDB, ClickHouse,
 TDEngine) use a database ping issued over the shared connection pool - no fresh TCP connection or DNS lookup
-is required. QuestDB reports the outcome of the most recent `Flush` against its persistent ILP/TCP sender;
-this reuses the already-open connection instead of dialling a new one per probe. Each check runs with a
-1-second timeout; if any sink fails, the endpoint returns `503 Service Unavailable` with details in the JSON
-body.
+is required. QuestDB reports the state of its persistent ILP/TCP connection and goes red after five
+consecutive failed writes or flushes; this reuses the already-open connection instead of dialling a new one
+per probe. MQTT reports whether the broker connection is open. Each check runs with a 1-second timeout; if
+any sink fails, the endpoint returns `503 Service Unavailable` with details in the JSON body.
+
+### QuestDB connection loss
+
+QuestDB ILP runs over a single long-lived TCP connection. When the server closes it (restart, upgrade, host
+reboot) the sink closes the dead socket and redials with exponential backoff, from 1s up to 60s. Rows handed
+to the sink while the connection is down are dropped and counted; the count and the total downtime are
+logged on the successful reconnect. Because a flush with an empty buffer writes no bytes, it cannot detect a
+closed peer, so the loss surfaces on the first row written after the server went away.
 
 ### Liveness detail
 

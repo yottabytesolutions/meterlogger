@@ -4,6 +4,8 @@ import (
 	"context"
 	"log/slog"
 
+	qdbclient "github.com/questdb/go-questdb-client/v3"
+
 	"github.com/yottabytesolutions/meterlogger/internal/debuglog"
 	"github.com/yottabytesolutions/meterlogger/internal/domain"
 )
@@ -16,7 +18,13 @@ type GridStore struct {
 
 func (w *GridStore) StoreGridTelegram(ctx context.Context, telegram domain.GridTelegram) error {
 	w.logger.DebugContext(ctx, "qdb: buffering grid telegram", debuglog.GridAttrs(telegram))
-	sender := w.client.sender.
+	return w.client.Write(ctx, func(sender qdbclient.LineSender) error {
+		return w.buildRow(ctx, sender, telegram)
+	})
+}
+
+func (w *GridStore) buildRow(ctx context.Context, sender qdbclient.LineSender, telegram domain.GridTelegram) error {
+	sender = sender.
 		Table(w.table).
 		Symbol("MeterMerkType", telegram.MeterMerkType).
 		Symbol("Serienummer", telegram.Serienummer).
