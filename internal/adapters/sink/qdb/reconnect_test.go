@@ -1,6 +1,7 @@
 package qdb
 
 import (
+	"context"
 	"errors"
 	"io"
 	"net"
@@ -113,8 +114,8 @@ func TestDBClient_RedialsAfterServerClosesConnection(t *testing.T) {
 	}
 
 	writeRow := func(value int64) error {
-		return client.Write(t.Context(), func(sender qdbclient.LineSender) error {
-			return sender.Table("heat").Int64Column("power", value).At(t.Context(), time.Unix(value, 0))
+		return client.Write(t.Context(), func(ctx context.Context, sender qdbclient.LineSender) error {
+			return sender.Table("heat").Int64Column("power", value).At(ctx, time.Unix(value, 0))
 		})
 	}
 
@@ -166,6 +167,83 @@ func TestDBClient_RedialsAfterServerClosesConnection(t *testing.T) {
 	}
 	if checkErr := client.Check(t.Context()); checkErr != nil {
 		t.Errorf("Check() after the redial = %v, want nil", checkErr)
+	}
+}
+
+// TestDBClient_ReplaysBufferedRowsOverTheWire is the end-to-end proof that a
+// reading taken while QuestDB was down actually reaches QuestDB afterwards.
+func TestDBClient_ReplaysBufferedRowsOverTheWire(t *testing.T) {
+	srv := newILPServer(t)
+	host, port := srv.hostPort(t)
+
+	client, err := NewDBClient(
+		t.Context(),
+		Config{Host: host, Port: port, MaxBufferBytes: 1 << 20},
+		testLogger(),
+	)
+	if err != nil {
+		t.Fatalf("NewDBClient: %v", err)
+	}
+
+	writeRow := func(value int64) error {
+		return client.Write(t.Context(), func(ctx context.Context, sender qdbclient.LineSender) error {
+			return sender.Table("heat").Int64Column("power", value).At(ctx, time.Unix(value, 0))
+		})
+	}
+
+	now := time.Now()
+	client.now = func() time.Time { return now }
+	waitFor(t, func() bool { return srv.connections() == 1 }, "the server to accept the first connection")
+	closeAcceptedConns(t, srv)
+
+	// Write and flush the way a source does until the flush reports the loss.
+	// A write to a socket the peer closed can succeed once before the RST
+	// arrives, and ILP over TCP has no server acknowledgement, so the rows
+	// carried by that last falsely-successful flush are gone for good. From
+	// the first reported failure on, every row is held for the replay.
+	var flushErr error
+	for value := int64(1); value <= 50 && flushErr == nil; value++ {
+		if writeErr := writeRow(value); writeErr != nil {
+			t.Fatalf("write %d during the outage: %v", value, writeErr)
+		}
+		flushErr = client.Flush(t.Context())
+		time.Sleep(5 * time.Millisecond)
+	}
+	if flushErr == nil {
+		t.Fatal("flushing into a closed connection never failed")
+	}
+
+	for value := int64(51); value <= 55; value++ {
+		if writeErr := writeRow(value); writeErr != nil {
+			t.Fatalf("write %d while disconnected: %v", value, writeErr)
+		}
+	}
+
+	client.senderMu.Lock()
+	buffered := client.buffer.len()
+	client.senderMu.Unlock()
+	if buffered == 0 {
+		t.Fatal("nothing was buffered during the outage")
+	}
+	if !client.Degraded() {
+		t.Error("Degraded() while buffering = false, want true")
+	}
+
+	// QuestDB comes back.
+	now = now.Add(maxReconnectDelay)
+	if recoveryErr := client.Flush(t.Context()); recoveryErr != nil {
+		t.Fatalf("flush after the outage: %v", recoveryErr)
+	}
+	waitFor(t, func() bool { return srv.bytesOn(1) > 0 }, "buffered rows to reach the server")
+
+	client.senderMu.Lock()
+	remaining := client.buffer.len()
+	client.senderMu.Unlock()
+	if remaining != 0 {
+		t.Errorf("%d rows still buffered after the replay, want 0", remaining)
+	}
+	if got := srv.bytesOn(1); got < buffered {
+		t.Errorf("second connection received %d bytes for %d replayed rows", got, buffered)
 	}
 }
 

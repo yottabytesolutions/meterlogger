@@ -83,9 +83,9 @@ func newGetRequest(t *testing.T, target string) *http.Request {
 	return req
 }
 
-func newServerWithClock(t *testing.T, threshold time.Duration, now func() time.Time) *healthserver.Server {
+func newServerWithClock(t *testing.T, now func() time.Time) *healthserver.Server {
 	t.Helper()
-	srv := healthserver.New(":0", testLogger(), prometheus.NewRegistry(), threshold)
+	srv := healthserver.New(":0", testLogger(), prometheus.NewRegistry(), testThreshold)
 	if now != nil {
 		healthserver.SetNow(srv, now)
 	}
@@ -122,7 +122,7 @@ func TestLiveness_HealthyChecker(t *testing.T) {
 func TestLiveness_TransientFailureStaysGreen(t *testing.T) {
 	now := time.Now()
 	clock := func() time.Time { return now }
-	srv := newServerWithClock(t, testThreshold, clock)
+	srv := newServerWithClock(t, clock)
 	srv.Register(&unhealthyChecker{name: testCheckerName})
 
 	w := httptest.NewRecorder()
@@ -138,7 +138,7 @@ func TestLiveness_TransientFailureStaysGreen(t *testing.T) {
 func TestLiveness_SustainedFailureTrips(t *testing.T) {
 	current := time.Now()
 	clock := func() time.Time { return current }
-	srv := newServerWithClock(t, testThreshold, clock)
+	srv := newServerWithClock(t, clock)
 	srv.Register(&unhealthyChecker{name: testCheckerName})
 
 	w := httptest.NewRecorder()
@@ -162,13 +162,62 @@ func TestLiveness_SustainedFailureTrips(t *testing.T) {
 	}
 }
 
+// degradingChecker is unhealthy and reports whether it is recovering in place.
+type degradingChecker struct {
+	name     string
+	degraded bool
+}
+
+func (d *degradingChecker) Name() string                  { return d.name }
+func (d *degradingChecker) Check(_ context.Context) error { return errors.New("buffering") }
+func (d *degradingChecker) Degraded() bool                { return d.degraded }
+
+// A degraded checker is failing, so it must fail readiness, but restarting it
+// would destroy the state it is recovering with. Liveness has to leave it
+// alone no matter how long it stays that way.
+func TestLiveness_DegradedCheckerIsNotStuck(t *testing.T) {
+	current := time.Now()
+	clock := func() time.Time { return current }
+	srv := newServerWithClock(t, clock)
+
+	checker := &degradingChecker{name: testCheckerName, degraded: true}
+	srv.Register(checker)
+
+	current = current.Add(10 * testThreshold)
+
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, newGetRequest(t, "/healthz"))
+	if w.Code != http.StatusOK {
+		t.Errorf("degraded checker well past the threshold: want 200, got %d; body: %s", w.Code, w.Body.String())
+	}
+
+	w = httptest.NewRecorder()
+	srv.ServeHTTP(w, newGetRequest(t, "/readyz"))
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("degraded checker readiness: want 503, got %d", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), `"degraded":true`) {
+		t.Errorf("readiness body should mark the checker degraded: %s", w.Body.String())
+	}
+
+	// Once it stops recovering in place, the restart is allowed.
+	checker.degraded = false
+	current = current.Add(testThreshold + time.Second)
+
+	w = httptest.NewRecorder()
+	srv.ServeHTTP(w, newGetRequest(t, "/healthz"))
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("no longer degraded: want 503, got %d; body: %s", w.Code, w.Body.String())
+	}
+}
+
 // TestLiveness_RecoveryClearsState ensures that once a checker recovers, the
 // failure timer resets so a fresh blip later does not immediately trip
 // liveness.
 func TestLiveness_RecoveryClearsState(t *testing.T) {
 	current := time.Now()
 	clock := func() time.Time { return current }
-	srv := newServerWithClock(t, testThreshold, clock)
+	srv := newServerWithClock(t, clock)
 
 	flaky := &flakyChecker{name: testCheckerName}
 	flaky.unhealthy = true

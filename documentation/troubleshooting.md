@@ -156,10 +156,15 @@ QuestDB uses ILP/TCP and reports failures through `/readyz` and the write-error 
 below.
 
 If QuestDB restarts while meterlogger is running, expect one `questdb: connection lost, will reconnect`
-error followed by `questdb: reconnecting` and `questdb: reconnected` with the downtime and the number of
-rows dropped in the gap. Repeated `questdb: reconnect failed` lines mean the server is still unreachable;
-the retry interval grows to a maximum of 60s. A continuous stream of `broken pipe` write errors on the same
-source port is the pre-1.5.3 behaviour and means the pod is running an old image.
+error followed by `questdb: reconnecting`, then `questdb: reconnected` with the downtime and
+`questdb: replayed buffered rows` with the number of readings recovered from the write buffer. Repeated
+`questdb: reconnect failed` lines mean the server is still unreachable; the retry interval grows to a
+maximum of 60s. A continuous stream of `broken pipe` write errors on the same source port is the pre-1.5.3
+behaviour and means the pod is running an old image.
+
+`questdb: write buffer full, dropping oldest rows` means the outage outlasted `QuestDB.MaxBufferBytes` of
+readings. From that point data is being lost and the pod will restart itself. Raise `MaxBufferBytes` if the
+deployment needs to ride out longer outages, keeping in mind that it is process memory.
 
 ---
 

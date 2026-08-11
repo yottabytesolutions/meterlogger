@@ -17,7 +17,7 @@ type SolarWriter struct {
 }
 
 func (w *SolarWriter) StoreEnvoySolarData(ctx context.Context, data domain.EnvoySolarData) error {
-	err := w.client.Write(ctx, func(sender qdbclient.LineSender) error {
+	err := w.client.Write(ctx, func(ctx context.Context, sender qdbclient.LineSender) error {
 		return sender.Table(w.table).
 			Symbol("EnvoySerialNumber", data.EnvoySerial).
 			Float64Column("ProductionWattHours", data.ProductionWh).
@@ -39,7 +39,7 @@ func (w *SolarWriter) StoreEnvoySolarData(ctx context.Context, data domain.Envoy
 }
 
 func (w *SolarWriter) storeInverter(ctx context.Context, envoySerial string, inverter domain.InverterDetails) error {
-	return w.client.Write(ctx, func(sender qdbclient.LineSender) error {
+	return w.client.Write(ctx, func(ctx context.Context, sender qdbclient.LineSender) error {
 		return sender.Table(w.table+"_inverters").
 			Symbol("InverterSerialNumber", inverter.SerialNumber).
 			StringColumn("EnvoySerialNumber", envoySerial).

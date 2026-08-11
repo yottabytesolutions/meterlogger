@@ -56,6 +56,12 @@ func TestLoad_DefaultsNoFile(t *testing.T) {
 	if cfg.HTTPServer.Port != 8080 {
 		t.Errorf("HTTPServer.Port default = %d, want 8080", cfg.HTTPServer.Port)
 	}
+	if cfg.QuestDB.MaxBufferBytes != DefaultQuestDBMaxBufferBytes {
+		t.Errorf(
+			"QuestDB.MaxBufferBytes default = %d, want %d",
+			cfg.QuestDB.MaxBufferBytes, DefaultQuestDBMaxBufferBytes,
+		)
+	}
 	if cfg.Grid.Gas.Enabled {
 		t.Error("Grid.Gas.Enabled should default to false")
 	}

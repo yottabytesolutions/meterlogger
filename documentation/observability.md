@@ -27,10 +27,29 @@ any sink fails, the endpoint returns `503 Service Unavailable` with details in t
 ### QuestDB connection loss
 
 QuestDB ILP runs over a single long-lived TCP connection. When the server closes it (restart, upgrade, host
-reboot) the sink closes the dead socket and redials with exponential backoff, from 1s up to 60s. Rows handed
-to the sink while the connection is down are dropped and counted; the count and the total downtime are
-logged on the successful reconnect. Because a flush with an empty buffer writes no bytes, it cannot detect a
-closed peer, so the loss surfaces on the first row written after the server went away.
+reboot) the sink closes the dead socket and redials with exponential backoff, from 1s up to 60s.
+
+Rows are held in memory until a flush confirms them, so an outage does not lose the readings taken during
+it. On reconnect the held rows are replayed in order and the downtime is logged. `QuestDB.MaxBufferBytes`
+caps the buffer, 4 MiB by default. Past the cap the oldest rows are evicted, the drop is logged, and the
+store call starts returning errors, which the service escalates to a process exit after five in a row. The
+pod then crash-loops until QuestDB is reachable again. Set `MaxBufferBytes` to 0 to drop rows during an
+outage instead of holding them.
+
+| State                         | `/readyz` | `/healthz` | Result                                    |
+|-------------------------------|-----------|------------|-------------------------------------------|
+| Connected                     | 200       | 200        | Normal                                    |
+| Disconnected, buffer has room | 503       | 200        | Pod keeps running, readings held in memory |
+| Disconnected, buffer full     | 503       | 503        | Pod restarts, readings dropped            |
+
+A buffering sink deliberately keeps `/healthz` green. Restarting the pod would throw away the buffer that is
+holding the data, so liveness leaves it alone until the buffer overflows.
+
+Two limits are worth knowing. A flush with an empty buffer writes no bytes, so it cannot detect a closed
+peer; the loss surfaces on the next flush that actually carries rows. And ILP over TCP has no server
+acknowledgement, so the last flush before the socket error is reported as successful even though QuestDB
+never stored it. Those rows are not recoverable. The buffer protects everything from the first reported
+failure onwards.
 
 ### Liveness detail
 

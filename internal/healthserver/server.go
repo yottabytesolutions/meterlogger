@@ -36,6 +36,17 @@ type Checker interface {
 	Check(ctx context.Context) error
 }
 
+// Degrader is an optional Checker extension for components that can be
+// unhealthy without being stuck. A checker that reports Degraded is failing,
+// so it fails /readyz, but it is recovering in place and /healthz will not
+// count it towards a restart no matter how long it stays that way.
+//
+// The QuestDB sink uses this while it buffers rows through an outage: a
+// restart would throw away the buffer that is holding the data.
+type Degrader interface {
+	Degraded() bool
+}
+
 // Server is a small HTTP server exposing /healthz, /readyz, and /metrics.
 //
 // /readyz reflects the current state of every registered checker. /healthz
@@ -43,7 +54,9 @@ type Checker interface {
 // kubelet does not restart pods on every short outage, but flips to 503 once
 // any checker has been continuously unhealthy for livenessThreshold. That
 // turns a stuck Running-but-NotReady pod into a CrashLoopBackOff that the
-// orchestrator can act on.
+// orchestrator can act on. A checker that implements Degrader is exempt from
+// the liveness threshold while it reports Degraded, because restarting it
+// would destroy the in-process state it is using to recover.
 type Server struct {
 	addr              string
 	checkers          []Checker
@@ -139,6 +152,7 @@ func (s *Server) Wait() {
 type checkResult struct {
 	Name       string `json:"name"`
 	Healthy    bool   `json:"healthy"`
+	Degraded   bool   `json:"degraded,omitempty"`
 	Error      string `json:"error,omitempty"`
 	FailingFor string `json:"failingFor,omitempty"`
 
@@ -164,6 +178,9 @@ func (s *Server) runChecks(ctx context.Context) []checkResult {
 		if checkErr := s.runCheck(ctx, c); checkErr != nil {
 			res.Healthy = false
 			res.Error = checkErr.Error()
+			if d, ok := c.(Degrader); ok {
+				res.Degraded = d.Degraded()
+			}
 		}
 		results = append(results, res)
 	}
@@ -201,7 +218,10 @@ func (s *Server) handleLiveness(w http.ResponseWriter, r *http.Request) {
 
 	stuck := make([]string, 0)
 	for _, res := range results {
-		if !res.Healthy && res.failingDur >= s.livenessThreshold {
+		if res.Healthy || res.Degraded {
+			continue
+		}
+		if res.failingDur >= s.livenessThreshold {
 			stuck = append(stuck, res.Name)
 		}
 	}

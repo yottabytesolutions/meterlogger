@@ -30,7 +30,7 @@ func NewDucoQuestDBRepository(
 }
 
 func (repo *DucoQuestDBRepository) StoreBoxStatus(ctx context.Context, boxStatus domain.DucoBoxStatus) error {
-	return repo.client.Write(ctx, func(sender qdbclient.LineSender) error {
+	return repo.client.Write(ctx, func(ctx context.Context, sender qdbclient.LineSender) error {
 		return repo.buildBoxRow(ctx, sender, boxStatus)
 	})
 }
@@ -82,7 +82,7 @@ func (repo *DucoQuestDBRepository) buildBoxRow(
 }
 
 func (repo *DucoQuestDBRepository) StoreNodeData(ctx context.Context, nodeData domain.DucoNodeStatus) error {
-	return repo.client.Write(ctx, func(sender qdbclient.LineSender) error {
+	return repo.client.Write(ctx, func(ctx context.Context, sender qdbclient.LineSender) error {
 		return repo.buildNodeRow(ctx, sender, nodeData)
 	})
 }

@@ -103,14 +103,21 @@ func newTestDBClient() (*DBClient, *mockLineSender) {
 // newTestDBClientWith builds a client around a given sender with the reconnect
 // machinery wired to fail loudly: the default dial returns an error, so a test
 // that unexpectedly loses its connection does not silently get a fresh one.
+// Buffering is off; tests that exercise it call newTestDBClientBuffered.
 func newTestDBClientWith(sender qdbclient.LineSender) *DBClient {
+	return newTestDBClientBuffered(sender, 0)
+}
+
+func newTestDBClientBuffered(sender qdbclient.LineSender, maxBufferBytes int) *DBClient {
+	cfg := Config{Host: "questdb.test", Port: 9009, MaxBufferBytes: maxBufferBytes}
 	return &DBClient{
-		cfg:            Config{Host: "questdb.test", Port: 9009},
+		cfg:            cfg,
 		logger:         testLogger(),
 		now:            time.Now,
 		dial:           func(context.Context, Config) (qdbclient.LineSender, error) { return nil, errNoDial },
 		sender:         sender,
 		reconnectDelay: initialReconnectDelay,
+		buffer:         newRowBuffer(maxBufferBytes),
 	}
 }
 

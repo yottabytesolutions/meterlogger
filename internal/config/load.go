@@ -90,6 +90,7 @@ func setSourceDefaults() {
 
 func setSinkDefaults() {
 	viper.SetDefault("QuestDB.Port", 9009) //nolint:mnd // documented default ILP port
+	viper.SetDefault("QuestDB.MaxBufferBytes", DefaultQuestDBMaxBufferBytes)
 
 	viper.SetDefault("Postgres.Port", 5432) //nolint:mnd // documented default PostgreSQL port
 	viper.SetDefault("Postgres.SSLMode", "disable")

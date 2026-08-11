@@ -46,6 +46,13 @@ func Validate(cfg Config, sourceFilter string) []string {
 		)
 	}
 
+	if cfg.QuestDB.Enabled && cfg.QuestDB.MaxBufferBytes < 0 {
+		errs = append(errs, fmt.Sprintf(
+			"QuestDB.MaxBufferBytes is %d; use 0 to disable buffering or a positive byte count",
+			cfg.QuestDB.MaxBufferBytes,
+		))
+	}
+
 	errs = append(errs, sinkFieldErrors(cfg)...)
 	errs = append(errs, sourceFieldErrors(cfg)...)
 

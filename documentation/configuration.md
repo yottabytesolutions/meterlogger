@@ -120,6 +120,9 @@ QuestDB:
   Port: 9009                 # ILP (InfluxDB line protocol) TCP port
   User: admin
   Password: quest
+  MaxBufferBytes: 4194304    # hold up to 4 MiB of rows in memory while QuestDB
+                             # is unreachable and replay them on reconnect.
+                             # 0 drops rows during an outage instead.
 
 # ── PostgreSQL sink ──────────────────────────────────────────
 # Tables are created/migrated automatically on startup.
@@ -575,13 +578,18 @@ See [data-model.md](./data-model.md#water_meter-configurable-name) for the table
 
 ### QuestDB
 
-| Key                | Type   | Default | Notes                   |
-|--------------------|--------|---------|-------------------------|
-| `QuestDB.Enabled`  | bool   | `false` | Must be set explicitly  |
-| `QuestDB.Host`     | string |         | Hostname or IP          |
-| `QuestDB.Port`     | int    | 9009    | ILP TCP port            |
-| `QuestDB.User`     | string |         |                         |
-| `QuestDB.Password` | string |         |                         |
+| Key                      | Type   | Default   | Notes                                                  |
+|--------------------------|--------|-----------|--------------------------------------------------------|
+| `QuestDB.Enabled`        | bool   | `false`   | Must be set explicitly                                 |
+| `QuestDB.Host`           | string |           | Hostname or IP                                         |
+| `QuestDB.Port`           | int    | 9009      | ILP TCP port                                           |
+| `QuestDB.User`           | string |           |                                                        |
+| `QuestDB.Password`       | string |           |                                                        |
+| `QuestDB.MaxBufferBytes` | int    | `4194304` | Write buffer held during an outage; `0` disables it    |
+
+The write buffer holds rows that QuestDB has not confirmed, so an outage does not lose data.
+See [observability.md - QuestDB connection loss](./observability.md#questdb-connection-loss)
+for what happens when it fills up.
 
 ### PostgreSQL
 

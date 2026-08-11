@@ -6,6 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-08-11
+
+### Added
+
+- The QuestDB sink holds readings in memory while the connection is down and
+  replays them when it comes back, so a QuestDB restart no longer leaves a gap
+  in the data. Rows are held until a flush confirms them: the ILP client keeps
+  written rows in its own buffer until the next flush and discards them when
+  that flush fails, which is where the readings were being lost.
+  `QuestDB.MaxBufferBytes` caps the buffer at 4 MiB by default. Past the cap
+  the oldest rows are evicted and the store call starts failing, which the
+  service escalates to a process exit, so the pod crash-loops instead of
+  growing until the kernel kills it. Set it to 0 for the previous
+  drop-on-disconnect behaviour.
+- `/healthz` no longer restarts a pod whose sink is recovering in place. A
+  health checker can implement the new `healthserver.Degrader` interface to
+  report that it is failing but holding data, and the liveness threshold skips
+  it. `/readyz` still goes red immediately. Without this the liveness probe
+  would restart the pod after 90s and throw away the buffer that is holding
+  the readings. Probe responses carry a `degraded` field.
+
+### Known limits
+
+- ILP over TCP has no server acknowledgement. The last flush before a socket
+  error is reported as successful even though QuestDB never stored those rows,
+  so they cannot be replayed. The buffer covers everything from the first
+  reported failure onwards.
+
 ## [1.5.3] - 2026-08-11
 
 ### Fixed

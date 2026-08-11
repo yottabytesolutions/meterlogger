@@ -32,6 +32,9 @@ QuestDB:
   Port: 9009
   User: admin
   Password: quest
+  # Rows are held in memory while QuestDB is unreachable and replayed when it
+  # returns. Set to 0 to drop them instead.
+  MaxBufferBytes: 4194304
 
 # ── Stdout sink (debug) ──────────────────────────────────────
 # Logs readings instead of persisting them. Not for production.
