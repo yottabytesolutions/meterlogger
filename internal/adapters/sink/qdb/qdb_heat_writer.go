@@ -40,7 +40,7 @@ func NewQuestDBHeatTelegramWriter(
 
 func (store *HeatTelegramStore) StoreHeatTelegram(ctx context.Context, telegram domain.HeatTelegram) error {
 	store.logger.DebugContext(ctx, "qdb: buffering heat telegram", debuglog.HeatAttrs(telegram))
-	return store.client.Write(ctx, func(sender qdbclient.LineSender) error {
+	return store.client.Write(ctx, func(ctx context.Context, sender qdbclient.LineSender) error {
 		return sender.Table(store.table).
 			Symbol("device", fmt.Sprintf("Multical %s", telegram.MeterID)).
 			Symbol("serial", telegram.SerialNo).

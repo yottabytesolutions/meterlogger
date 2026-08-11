@@ -33,7 +33,7 @@ func (w *QuestDBThermalWriter) StoreThermalReading(ctx context.Context, r domain
 		slog.Float64("reading_gj", r.ReadingGJ),
 		slog.Time("captured_at", r.CapturedAt),
 	)
-	return w.client.Write(ctx, func(sender qdbclient.LineSender) error {
+	return w.client.Write(ctx, func(ctx context.Context, sender qdbclient.LineSender) error {
 		return sender.
 			Table(w.measurement).
 			Symbol("serial_no", r.SerialNo).

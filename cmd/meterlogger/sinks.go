@@ -104,10 +104,11 @@ func newQuestDBClient(
 	healthSrv *healthserver.Server,
 ) (*qdb.DBClient, error) {
 	client, err := qdb.NewDBClient(ctx, qdb.Config{
-		Host:     cfg.QuestDB.Host,
-		Port:     cfg.QuestDB.Port,
-		User:     cfg.QuestDB.User,
-		Password: cfg.QuestDB.Password,
+		Host:           cfg.QuestDB.Host,
+		Port:           cfg.QuestDB.Port,
+		User:           cfg.QuestDB.User,
+		Password:       cfg.QuestDB.Password,
+		MaxBufferBytes: cfg.QuestDB.MaxBufferBytes,
 	}, l)
 	if err != nil {
 		return nil, err

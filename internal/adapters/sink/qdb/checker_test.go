@@ -122,8 +122,8 @@ func TestDBClient_Write_RedialsAfterConnectionLoss(t *testing.T) {
 	}
 
 	writeRow := func() error {
-		return c.Write(t.Context(), func(sender qdbclient.LineSender) error {
-			return sender.Table("t").Symbol("s", "v").At(t.Context(), now)
+		return c.Write(t.Context(), func(ctx context.Context, sender qdbclient.LineSender) error {
+			return sender.Table("t").Symbol("s", "v").At(ctx, now)
 		})
 	}
 
@@ -142,10 +142,10 @@ func TestDBClient_Write_RedialsAfterConnectionLoss(t *testing.T) {
 		t.Fatalf("dialled %d times during the backoff window, want 0", dials)
 	}
 	c.senderMu.Lock()
-	dropped := c.droppedRows
+	dropped := c.buffer.dropped
 	c.senderMu.Unlock()
-	if dropped != 1 {
-		t.Errorf("droppedRows = %d, want 1", dropped)
+	if dropped != 2 {
+		t.Errorf("dropped rows = %d, want 2 (buffering is off in this test)", dropped)
 	}
 
 	now = now.Add(initialReconnectDelay)

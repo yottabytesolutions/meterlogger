@@ -191,6 +191,11 @@ type VentilationConfig struct {
 	Nodes               []int
 }
 
+// DefaultQuestDBMaxBufferBytes is the default size of the QuestDB write
+// buffer that holds rows while the ILP connection is down. Roughly an hour of
+// readings for a typical single-source deployment.
+const DefaultQuestDBMaxBufferBytes = 4 << 20 // 4 MiB
+
 // QuestDBConfig configures the QuestDB sink.
 type QuestDBConfig struct {
 	Enabled  bool
@@ -198,6 +203,11 @@ type QuestDBConfig struct {
 	Port     int
 	User     string
 	Password string
+
+	// MaxBufferBytes caps the memory used to hold rows while the ILP
+	// connection is down. Rows are replayed when it comes back. Set to 0 to
+	// drop rows during an outage instead of buffering them.
+	MaxBufferBytes int
 }
 
 // PostgresConfig configures the PostgreSQL sink.

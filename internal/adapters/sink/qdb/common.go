@@ -33,11 +33,16 @@ const (
 	// before Check reports unhealthy. One failed flush followed by a successful
 	// redial is normal during a QuestDB restart and must not flap /readyz.
 	unhealthyAfterFailures = 5
+
+	// replayChunkRows is how many buffered rows are flushed per batch on
+	// reconnect. The ILP client discards its buffer when a flush fails, so a
+	// failed chunk is lost; chunking bounds that loss.
+	replayChunkRows = 1000
 )
 
 // ErrDisconnected is returned by Write and Flush while the ILP connection is
-// down and the next redial is not due yet. Rows handed to Write in that window
-// are dropped.
+// down and the next redial is not due yet. When buffering is enabled, Write
+// returns it only once the buffer has overflowed and rows are being dropped.
 var ErrDisconnected = errors.New("questdb: ILP connection is down")
 
 // DBClient wraps a QuestDB line sender and owns its reconnect state.
@@ -63,13 +68,14 @@ type DBClient struct {
 	sender         qdbclient.LineSender
 	nextDialAt     time.Time
 	reconnectDelay time.Duration
-	droppedRows    int64
 	downSince      time.Time
+	buffer         *rowBuffer
 
 	// stateMu guards the health fields only.
 	stateMu             sync.RWMutex
 	consecutiveFailures int
 	lastErr             error
+	buffering           bool
 }
 
 // Config holds the connection parameters for a QuestDB ILP client.
@@ -78,6 +84,11 @@ type Config struct {
 	Port     int
 	User     string
 	Password string
+
+	// MaxBufferBytes caps the estimated ILP payload held in memory while the
+	// connection is down. Zero disables buffering, and rows written during an
+	// outage are dropped.
+	MaxBufferBytes int
 }
 
 // NewDBClient opens a persistent ILP/TCP line sender to QuestDB.
@@ -94,6 +105,7 @@ func NewDBClient(ctx context.Context, cfg Config, logger *slog.Logger) (*DBClien
 		now:            time.Now,
 		sender:         sender,
 		reconnectDelay: initialReconnectDelay,
+		buffer:         newRowBuffer(cfg.MaxBufferBytes),
 	}, nil
 }
 
@@ -128,30 +140,99 @@ func (c *DBClient) Check(_ context.Context) error {
 	if c.consecutiveFailures < unhealthyAfterFailures {
 		return nil
 	}
+	if c.buffering {
+		return fmt.Errorf("%d consecutive QuestDB failures, buffering rows: %w", c.consecutiveFailures, c.lastErr)
+	}
 	return fmt.Errorf("%d consecutive QuestDB failures: %w", c.consecutiveFailures, c.lastErr)
+}
+
+// Degraded implements healthserver.Degrader. While rows are being buffered the
+// sink is unhealthy but recovering in place, and restarting the process would
+// throw away exactly the data the buffer exists to protect. Once the buffer
+// overflows there is nothing left to protect and the restart is allowed.
+func (c *DBClient) Degraded() bool {
+	c.stateMu.RLock()
+	defer c.stateMu.RUnlock()
+	return c.buffering
+}
+
+func (c *DBClient) setBuffering(buffering bool) {
+	c.stateMu.Lock()
+	defer c.stateMu.Unlock()
+	c.buffering = buffering
 }
 
 // Write runs build against the current line sender to buffer one row. It is the
 // only way writers may reach the sender: DBClient swaps the sender on reconnect
 // and serialises access, which a cached reference would defeat.
 //
-// While the connection is down and the next redial is not due, the row is
-// dropped and ErrDisconnected is returned.
-func (c *DBClient) Write(ctx context.Context, build func(sender qdbclient.LineSender) error) error {
+// While the connection is down the row is held in memory and replayed on the
+// next successful redial. Write returns an error only once the buffer has
+// overflowed and rows are being dropped, which lets the service escalate to a
+// process restart instead of quietly losing data.
+func (c *DBClient) Write(ctx context.Context, build RowBuilder) error {
 	c.senderMu.Lock()
 	defer c.senderMu.Unlock()
 
-	sender, err := c.ensureSender(ctx)
+	size, err := measure(ctx, build)
 	if err != nil {
-		c.droppedRows++
+		// The builder rejected the row, so replaying it would fail the same
+		// way. This is a data error and never touches the connection.
 		return err
 	}
+	row := bufferedRow{build: build, size: size}
 
-	if buildErr := build(sender); buildErr != nil {
-		c.connectionFailed(ctx, buildErr)
-		return buildErr
+	sender, connErr := c.ensureSender(ctx)
+	if connErr != nil {
+		return c.hold(ctx, row, connErr)
 	}
-	return nil
+
+	if buildErr := build(ctx, sender); buildErr != nil {
+		c.connectionFailed(ctx, buildErr)
+		return c.hold(ctx, row, buildErr)
+	}
+	return c.hold(ctx, row, nil)
+}
+
+// hold keeps a row until a flush confirms it reached QuestDB.
+//
+// Rows handed to the ILP client sit in its buffer until the next flush, and it
+// discards that buffer when a flush fails. So a row that Write accepted is not
+// safe yet: the outage is usually discovered by the flush, after the rows it
+// would have carried are already gone. Holding every row until the flush
+// succeeds is what makes those rows replayable.
+//
+// connErr is non-nil when the row never reached a live sender. Callers must
+// hold senderMu.
+func (c *DBClient) hold(ctx context.Context, row bufferedRow, connErr error) error {
+	if !c.buffer.enabled() {
+		if connErr != nil {
+			c.buffer.dropped++
+		}
+		return connErr
+	}
+
+	if c.buffer.add(row) {
+		if connErr != nil {
+			c.setBuffering(true)
+		}
+		return nil
+	}
+
+	// Evicting while connected only costs the replay copy of a row the sender
+	// already has. Evicting while disconnected loses the row itself.
+	if connErr == nil {
+		return nil
+	}
+
+	c.logger.WarnContext(
+		ctx,
+		"questdb: write buffer full, dropping oldest rows",
+		slog.Int("max_bytes", c.buffer.maxBytes),
+		slog.Int64("dropped_rows", c.buffer.dropped),
+	)
+	c.setBuffering(false)
+	return fmt.Errorf("questdb: write buffer full after %d dropped rows: %w", c.buffer.dropped, connErr)
 }
 
 // Flush flushes the underlying line sender. On failure the connection is
@@ -167,9 +248,12 @@ func (c *DBClient) Flush(ctx context.Context) error {
 	}
 
 	if flushErr := sender.Flush(ctx); flushErr != nil {
+		// Everything still held is unconfirmed and stays queued for the replay.
 		c.connectionFailed(ctx, flushErr)
 		return flushErr
 	}
+	// The rows are in QuestDB, so the replay copies can go.
+	c.buffer.reset()
 	c.recordSuccess()
 	return nil
 }
@@ -207,14 +291,65 @@ func (c *DBClient) ensureSender(ctx context.Context) (qdbclient.LineSender, erro
 		ctx,
 		"questdb: reconnected",
 		slog.Duration("down_for", now.Sub(c.downSince)),
-		slog.Int64("dropped_rows", c.droppedRows),
+		slog.Int("buffered_rows", c.buffer.len()),
+		slog.Int64("dropped_rows", c.buffer.dropped),
 	)
 	c.sender = sender
-	c.droppedRows = 0
 	c.reconnectDelay = initialReconnectDelay
 	c.nextDialAt = time.Time{}
 	c.recordSuccess()
-	return sender, nil
+
+	if replayErr := c.replay(ctx); replayErr != nil {
+		return nil, replayErr
+	}
+	c.setBuffering(false)
+	return c.sender, nil
+}
+
+// replay writes the buffered rows to the fresh connection, oldest first, and
+// flushes every chunk. Callers must hold senderMu.
+func (c *DBClient) replay(ctx context.Context) error {
+	replayed := 0
+	for c.buffer.len() > 0 {
+		batch := c.buffer.take(replayChunkRows)
+		sent, err := c.replayBatch(ctx, batch)
+		if err != nil {
+			// Rows before sent were handed to the ILP client, which discards
+			// its buffer on a failed flush, so they are gone. Keep the rest.
+			c.buffer.pushFront(batch[sent:])
+			c.buffer.dropped += int64(sent)
+			c.connectionFailed(ctx, err)
+			c.logger.ErrorContext(
+				ctx,
+				"questdb: replay failed",
+				slog.Any("error", err),
+				slog.Int("replayed_rows", replayed),
+				slog.Int("remaining_rows", c.buffer.len()),
+			)
+			return err
+		}
+		replayed += sent
+	}
+
+	if replayed > 0 {
+		c.logger.InfoContext(ctx, "questdb: replayed buffered rows", slog.Int("replayed_rows", replayed))
+	}
+	c.buffer.reset()
+	return nil
+}
+
+// replayBatch writes one chunk and flushes it. It returns how many rows were
+// handed to the ILP client, which are lost if the error came from the flush.
+func (c *DBClient) replayBatch(ctx context.Context, batch []bufferedRow) (int, error) {
+	for i, row := range batch {
+		if err := row.build(ctx, c.sender); err != nil {
+			return i, err
+		}
+	}
+	if err := c.sender.Flush(ctx); err != nil {
+		return len(batch), err
+	}
+	return len(batch), nil
 }
 
 // connectionFailed tears down the dead sender and schedules a redial. Callers
@@ -270,6 +405,17 @@ func (c *DBClient) Close() {
 
 	c.senderMu.Lock()
 	defer c.senderMu.Unlock()
+
+	// Buffered rows only live in memory. Shutting down with rows still held is
+	// a real data loss and has to be visible in the logs, not silent.
+	if remaining := c.buffer.len(); remaining > 0 {
+		c.logger.Error(
+			"questdb: discarding buffered rows on shutdown",
+			slog.Int("rows", remaining),
+			slog.Int("bytes", c.buffer.bytes),
+		)
+	}
+
 	if c.sender == nil {
 		return
 	}

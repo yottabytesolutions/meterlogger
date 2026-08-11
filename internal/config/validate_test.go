@@ -53,6 +53,28 @@ func TestValidate_NoSources(t *testing.T) {
 	}
 }
 
+func TestValidate_NegativeQuestDBBuffer(t *testing.T) {
+	cfg := Config{
+		QuestDB: QuestDBConfig{
+			Enabled:        true,
+			Host:           testQuestDBHost,
+			User:           testAdminUser,
+			MaxBufferBytes: -1,
+		},
+	}
+
+	errs := Validate(cfg, "")
+	if !containsSubstring(errs, "QuestDB.MaxBufferBytes") {
+		t.Errorf("Validate() = %v, want a MaxBufferBytes error", errs)
+	}
+
+	cfg.QuestDB.MaxBufferBytes = 0
+	disabled := Validate(cfg, "")
+	if containsSubstring(disabled, "QuestDB.MaxBufferBytes") {
+		t.Errorf("Validate() rejected 0, which disables buffering: %v", disabled)
+	}
+}
+
 func TestValidate_InvalidSourceFilter(t *testing.T) {
 	cfg := Config{QuestDB: QuestDBConfig{Enabled: true, Host: testQuestDBHost, User: testAdminUser}}
 

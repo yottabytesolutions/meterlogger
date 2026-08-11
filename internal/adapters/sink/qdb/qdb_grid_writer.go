@@ -18,7 +18,7 @@ type GridStore struct {
 
 func (w *GridStore) StoreGridTelegram(ctx context.Context, telegram domain.GridTelegram) error {
 	w.logger.DebugContext(ctx, "qdb: buffering grid telegram", debuglog.GridAttrs(telegram))
-	return w.client.Write(ctx, func(sender qdbclient.LineSender) error {
+	return w.client.Write(ctx, func(ctx context.Context, sender qdbclient.LineSender) error {
 		return w.buildRow(ctx, sender, telegram)
 	})
 }
