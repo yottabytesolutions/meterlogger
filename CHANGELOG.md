@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.6.1] - 2026-08-24
+
+### Changed
+
+- Go toolchain moves from 1.26.5 to 1.26.7. The `go` directive in `go.mod` is what
+  every workflow feeds to `setup-go`, so CI was building against the 1.26.5 standard
+  library and govulncheck failed the Security workflow on seven advisories
+  (GO-2026-6218, GO-2026-6091, GO-2026-6090, GO-2026-6089, GO-2026-6088,
+  GO-2026-5972, GO-2026-5026). All are fixed in 1.26.6. The Dockerfile builder image
+  moves to `golang:1.26.7` to match.
+- Dependencies updated: ClickHouse/clickhouse-go v2.48.0, grafana/pyroscope-go v1.4.2,
+  grpc-gateway v2.30.0, klauspost/compress v1.19.2, pierrec/lz4 v4.1.29,
+  golang.org/x/net v0.58.0, golang.org/x/text v0.41.0, google.golang.org/grpc v1.83.1,
+  google.golang.org/protobuf v1.36.12, and the genproto googleapis modules.
+- `docker/setup-buildx-action` pinned to v4.3.0.
+
 ## [1.6.0] - 2026-08-11
 
 ### Added
