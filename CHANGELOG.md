@@ -20,6 +20,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   with `errors.AsType`, which the 1.27 standard library adds.
 - Every GitHub Action was checked against its latest release. All were already
   pinned to the newest version by commit SHA, so none needed to move.
+- CodeQL moves from default setup to a workflow in the repository. Default setup
+  pins its own Go toolchain and runs the extractor with `GOTOOLCHAIN=local`, so it
+  could not build a module whose `go` directive asks for 1.27.0. The workflow runs
+  `setup-go` against `go.mod` first, so a future Go bump will not block code
+  scanning. Same languages, same `security-extended` query suite as before.
 
 ### Known limits
 
