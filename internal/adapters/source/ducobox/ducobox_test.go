@@ -18,10 +18,10 @@ func testLogger() *slog.Logger {
 
 func TestParseDucoNodeStatus_Box(t *testing.T) {
 	node := nodeBoxStatusDTO{
-		baseNodeStatusDTO: baseNodeStatusDTO{Node: 1, DevType: devTypeBox},
-		Trgt:              100,
-		Actl:              80,
-		Rh:                55.5,
+		Node: 1, DevType: devTypeBox,
+		Trgt: 100,
+		Actl: 80,
+		Rh:   55.5,
 	}
 	data, err := json.Marshal(node)
 	if err != nil {
@@ -63,9 +63,9 @@ func TestParseDucoNodeStatus_BoxLowercase(t *testing.T) {
 
 func TestParseDucoNodeStatus_VLV(t *testing.T) {
 	node := nodeBoxValveStatusDTO{
-		baseNodeStatusDTO: baseNodeStatusDTO{Node: 2, DevType: devTypeValve},
-		Trgt:              50,
-		Actl:              45,
+		Node: 2, DevType: devTypeValve,
+		Trgt: 50,
+		Actl: 45,
 	}
 	data, err := json.Marshal(node)
 	if err != nil {
@@ -88,9 +88,9 @@ func TestParseDucoNodeStatus_VLV(t *testing.T) {
 
 func TestParseDucoNodeStatus_UCCO2(t *testing.T) {
 	node := rfSensorStatusDTO{
-		baseNodeStatusDTO: baseNodeStatusDTO{Node: 3, DevType: devTypeUCCO2},
-		Co2:               800.0,
-		Rh:                0,
+		Node: 3, DevType: devTypeUCCO2,
+		Co2: 800.0,
+		Rh:  0,
 	}
 	data, err := json.Marshal(node)
 	if err != nil {
@@ -113,9 +113,9 @@ func TestParseDucoNodeStatus_UCCO2(t *testing.T) {
 
 func TestParseDucoNodeStatus_UCRH(t *testing.T) {
 	node := rfSensorStatusDTO{
-		baseNodeStatusDTO: baseNodeStatusDTO{Node: 4, DevType: devTypeUCRH},
-		Co2:               0,
-		Rh:                65.0,
+		Node: 4, DevType: devTypeUCRH,
+		Co2: 0,
+		Rh:  65.0,
 	}
 	data, err := json.Marshal(node)
 	if err != nil {
@@ -259,8 +259,8 @@ func TestDucoReader_ReadBoxStatus_InvalidJSON(t *testing.T) {
 
 func TestDucoReader_ReadNodeStatus_Success(t *testing.T) {
 	node := nodeBoxStatusDTO{
-		baseNodeStatusDTO: baseNodeStatusDTO{Node: 1, DevType: devTypeBox},
-		Trgt:              100,
+		Node: 1, DevType: devTypeBox,
+		Trgt: 100,
 	}
 	body, _ := json.Marshal(node)
 

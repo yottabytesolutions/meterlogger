@@ -664,14 +664,12 @@ func TestDucoQuestDBRepository_StoreNodeData_RFSensor(t *testing.T) {
 	client, sender := newTestDBClient()
 	repo := NewDucoQuestDBRepository(client, "ventilation", testLogger())
 	node := domain.DucoRFSensorStatus{
-		BaseDucoNodeStatus: domain.BaseDucoNodeStatus{
-			Node:     3,
-			DevType:  "UCCO2",
-			Location: "living room",
-		},
-		Co2:  800.0,
-		Temp: 21.5,
-		Rh:   55.0,
+		Node:     3,
+		DevType:  "UCCO2",
+		Location: "living room",
+		Co2:      800.0,
+		Temp:     21.5,
+		Rh:       55.0,
 	}
 	if err := repo.StoreNodeData(context.Background(), node); err != nil {
 		t.Fatalf("StoreNodeData(RFSensor) unexpected error: %v", err)
@@ -691,13 +689,11 @@ func TestDucoQuestDBRepository_StoreNodeData_BoxNode(t *testing.T) {
 	client, sender := newTestDBClient()
 	repo := NewDucoQuestDBRepository(client, "ventilation", testLogger())
 	node := domain.DucoNodeBoxStatus{
-		BaseDucoNodeStatus: domain.BaseDucoNodeStatus{
-			Node:    1,
-			DevType: "BOX",
-		},
-		Trgt: 100,
-		Actl: 80,
-		Co2:  600.0,
+		Node:    1,
+		DevType: "BOX",
+		Trgt:    100,
+		Actl:    80,
+		Co2:     600.0,
 	}
 	if err := repo.StoreNodeData(context.Background(), node); err != nil {
 		t.Fatalf("StoreNodeData(BoxNode) unexpected error: %v", err)
@@ -716,12 +712,10 @@ func TestDucoQuestDBRepository_StoreNodeData_Valve(t *testing.T) {
 	client, sender := newTestDBClient()
 	repo := NewDucoQuestDBRepository(client, "ventilation", testLogger())
 	node := domain.DucoNodeBoxValveStatus{
-		BaseDucoNodeStatus: domain.BaseDucoNodeStatus{
-			Node:    2,
-			DevType: "VLV",
-		},
-		Trgt: 50,
-		Actl: 45,
+		Node:    2,
+		DevType: "VLV",
+		Trgt:    50,
+		Actl:    45,
 	}
 	if err := repo.StoreNodeData(context.Background(), node); err != nil {
 		t.Fatalf("StoreNodeData(Valve) unexpected error: %v", err)
