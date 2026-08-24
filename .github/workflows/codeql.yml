@@ -16,6 +16,9 @@ on:
     # Weekly, Tuesday 05:44 UTC. Off the top of the hour and off the Security
     # workflow's Monday slot.
     - cron: '44 5 * * 2'
+  # On demand, so a scanning change can be verified green without pushing a
+  # commit to trigger it.
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
