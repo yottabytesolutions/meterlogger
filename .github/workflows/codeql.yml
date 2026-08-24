@@ -1,0 +1,68 @@
+name: CodeQL
+
+# Replaces CodeQL default setup. Default setup pins its own Go toolchain and
+# runs the extractor with GOTOOLCHAIN=local, so it cannot build a module whose
+# go directive is newer than the bundle. Driving it here lets setup-go install
+# the toolchain go.mod asks for, so a Go bump never blocks code scanning.
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+  schedule:
+    # Weekly, Tuesday 05:44 UTC. Off the top of the hour and off the Security
+    # workflow's Monday slot.
+    - cron: '44 5 * * 2'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze
+    runs-on: ubuntu-latest
+    permissions:
+      # Uploading results to the code scanning API.
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: go
+            build-mode: manual
+          - language: actions
+            build-mode: none
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Set up Go
+        if: matrix.language == 'go'
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@c16c0f3f2812ec4bb3750a5ed64873fe2ce0fbef  # codeql-bundle-v2.26.3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          # Matches the query suite and threat model the previous default
+          # setup ran with.
+          queries: security-extended
+
+      - name: Build
+        if: matrix.build-mode == 'manual'
+        run: go build ./...
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@c16c0f3f2812ec4bb3750a5ed64873fe2ce0fbef  # codeql-bundle-v2.26.3
+        with:
+          category: /language:${{ matrix.language }}

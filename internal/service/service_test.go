@@ -565,7 +565,7 @@ func TestDucoLoggingService_Start_Flushes(t *testing.T) {
 func TestDucoLoggingService_Start_WithNodes(t *testing.T) {
 	boxStatus := domain.DucoBoxStatus{}
 	nodeData := domain.DucoNodeBoxStatus{
-		BaseDucoNodeStatus: domain.BaseDucoNodeStatus{Node: 1, DevType: "BOX"},
+		Node: 1, DevType: "BOX",
 	}
 	reader := &mockDucoReader{
 		boxStatus: boxStatus,

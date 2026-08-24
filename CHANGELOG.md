@@ -6,6 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-08-24
+
+### Changed
+
+- Go toolchain moves to 1.27.0, from the 1.26 line. The `go` directive in `go.mod`
+  is what every workflow feeds to `setup-go`, so this sets the language version and
+  the standard library CI builds against. The Dockerfile builder image moves to
+  `golang:1.27.0` to match.
+- golangci-lint moves from v2.12.2 to v2.13.1. Its `modernize` linter flagged twelve
+  issues in the test suite, all now fixed: embedded fields written through the
+  promoted-field shorthand in composite literals, and one `errors.As` call replaced
+  with `errors.AsType`, which the 1.27 standard library adds.
+- Every GitHub Action was checked against its latest release. All were already
+  pinned to the newest version by commit SHA, so none needed to move.
+- CodeQL moves from default setup to a workflow in the repository. Default setup
+  pins its own Go toolchain and runs the extractor with `GOTOOLCHAIN=local`, so it
+  could not build a module whose `go` directive asks for 1.27.0. The workflow runs
+  `setup-go` against `go.mod` first, so a future Go bump will not block code
+  scanning. Same languages, same `security-extended` query suite as before.
+
+### Known limits
+
+- `errors.AsType` means the test suite no longer builds on Go 1.26.
+
 ## [1.6.1] - 2026-08-24
 
 ### Changed

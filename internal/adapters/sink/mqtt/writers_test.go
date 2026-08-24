@@ -449,9 +449,10 @@ func TestDucoWriter_Nodes(t *testing.T) {
 	ctx := context.Background()
 
 	// RF sensor node.
-	rf := domain.DucoRFSensorStatus{BaseDucoNodeStatus: ducoBase(), Temp: 21.5, Co2: 600, Rh: 55}
-	rf.Node = 3
-	rf.DevType = "SENSO"
+	rfBase := ducoBase()
+	rfBase.Node = 3
+	rfBase.DevType = "SENSO"
+	rf := domain.DucoRFSensorStatus{BaseDucoNodeStatus: rfBase, Temp: 21.5, Co2: 600, Rh: 55}
 	if err := w.StoreNodeData(ctx, rf); err != nil {
 		t.Fatalf("StoreNodeData rf: %v", err)
 	}
@@ -472,8 +473,9 @@ func TestDucoWriter_Nodes(t *testing.T) {
 	}
 
 	// Box node and valve node land on their own topics.
-	boxNode := domain.DucoNodeBoxStatus{BaseDucoNodeStatus: ducoBase(), Trgt: 30, Actl: 20, Temp: 20, Co2: 450, Rh: 40}
-	boxNode.Node = 1
+	boxBase := ducoBase()
+	boxBase.Node = 1
+	boxNode := domain.DucoNodeBoxStatus{BaseDucoNodeStatus: boxBase, Trgt: 30, Actl: 20, Temp: 20, Co2: 450, Rh: 40}
 	if err := w.StoreNodeData(ctx, boxNode); err != nil {
 		t.Fatalf("StoreNodeData box node: %v", err)
 	}

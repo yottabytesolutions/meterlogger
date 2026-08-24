@@ -249,8 +249,7 @@ func TestCloudClient_RejectsSelfSignedTLS(t *testing.T) {
 		_ = resp.Body.Close()
 		t.Fatal("cloud client should reject self-signed TLS")
 	}
-	var certErr *tls.CertificateVerificationError
-	if !errors.As(err, &certErr) {
+	if _, ok := errors.AsType[*tls.CertificateVerificationError](err); !ok {
 		t.Errorf("expected certificate verification error, got: %v", err)
 	}
 }
