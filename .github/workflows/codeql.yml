@@ -1,9 +1,17 @@
 name: CodeQL
 
-# Replaces CodeQL default setup. Default setup pins its own Go toolchain and
-# runs the extractor with GOTOOLCHAIN=local, so it cannot build a module whose
-# go directive is newer than the bundle. Driving it here lets setup-go install
-# the toolchain go.mod asks for, so a Go bump never blocks code scanning.
+# Replaces CodeQL default setup. Both of them: Settings has a Code security
+# default setup and a separate Code quality default setup, and each one spawns
+# its own CodeQL run. Both are now off, and both are replaced by this workflow.
+#
+# They pin their own Go toolchain and run the extractor with GOTOOLCHAIN=local,
+# so neither can build a module whose go directive is newer than the bundle.
+# Driving CodeQL here lets setup-go install the toolchain go.mod asks for, so a
+# Go bump never blocks code scanning.
+#
+# Their runs are titled "Code Quality: ..." and "PR #N" in the Actions list and
+# have event "dynamic". If one reappears, a default setup got re-enabled in
+# Settings; neither is fully manageable over the REST API.
 
 on:
   push:
@@ -16,6 +24,9 @@ on:
     # Weekly, Tuesday 05:44 UTC. Off the top of the hour and off the Security
     # workflow's Monday slot.
     - cron: '44 5 * * 2'
+  # On demand, so a scanning change can be verified green without pushing a
+  # commit to trigger it.
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

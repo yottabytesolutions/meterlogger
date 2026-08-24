@@ -7,6 +7,9 @@ on:
   pull_request:
     branches:
       - master
+  # On demand, so a CI change can be verified green without pushing a commit
+  # to trigger it.
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

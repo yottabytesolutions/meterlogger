@@ -81,6 +81,25 @@ Follow the patterns documented in `AGENTS.md` and `documentation/architecture.md
 - The PR description must include a clear summary, a test plan, and any breaking change notes.
 - Do not push generated artefacts (`out/`, `bin/`, `.env`, IDE files). The `.gitignore` covers these.
 
+## Merging
+
+`master` is protected. `lint`, `test`, `Analyze (go, manual)` and `Analyze (actions, none)`
+must pass before a PR can merge, and the branch must be up to date with `master` first.
+Force-pushing and deleting `master` are blocked. Administrators can override, for
+emergencies only.
+
+Two rules the protection cannot enforce on its own:
+
+- Never merge on a red check, including one you believe is stale. A check that is
+  genuinely obsolete still has to be re-run green before the merge. If it cannot
+  re-run, push a commit so the checks re-evaluate on a fresh SHA.
+- After changing CI or code scanning configuration, confirm a fresh fully green run
+  before merging the change that depends on it. Configuration changes on the GitHub
+  side can take minutes to take effect, so a run started near the change may still
+  reflect the old setup. CI, Security, Integration and CodeQL all carry a
+  `workflow_dispatch` trigger for exactly this check. Release is driven by its tag
+  and is deliberately not dispatchable.
+
 ## Reporting bugs
 
 Open an issue with:
