@@ -85,6 +85,14 @@ func (s *SolarLoggingService) handleTick(ctx context.Context, consecutiveErrors 
 	if ctx.Err() != nil {
 		return true
 	}
+	// Restarting cannot repair a temporarily unavailable gateway. Keep polling;
+	// read-error/freshness metrics and readiness continue to expose the outage.
+	if transientDeviceRead(err) {
+		*consecutiveErrors = 0
+		s.metrics.ReadErrorsTotal.WithLabelValues("solar").Inc()
+		s.logger.WarnContext(ctx, "solar gateway unavailable; retrying next poll", slog.Any("error", err))
+		return false
+	}
 	*consecutiveErrors++
 	s.logger.ErrorContext(ctx, "error processing envoy data",
 		slog.Any("error", err),
@@ -108,7 +116,7 @@ func (s *SolarLoggingService) runReadAndStore(ctx context.Context) error {
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "read solar data failed")
-		return err
+		return deviceReadError{err}
 	}
 
 	s.metrics.ReadsTotal.WithLabelValues("solar").Inc()
