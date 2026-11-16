@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- Keep solar and ventilation polling alive during temporary device network outages.
+  Source timeouts no longer trigger process restart loops; readiness, read errors and
+  sample freshness still expose the outage. Storage and permanent device failures
+  retain fail-fast handling, and no samples are written while reads fail.
+
 ## [1.7.0] - 2026-08-24
 
 ### Changed
