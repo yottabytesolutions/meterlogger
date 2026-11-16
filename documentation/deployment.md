@@ -40,6 +40,22 @@ contains only the meterlogger binary, CA certificates, and a non-root user
 record. Timezone data is embedded into the binary via the `time/tzdata`
 import.
 
+The image refreshes Debian's CA bundle at build time and excludes all emSign
+roots and Sectigo's AAA Certificate Services root. This also blocks the
+cross-signed path to the compromised eMudhra intermediates; Go does not fetch
+certificate revocation lists or browser OneCRL updates. See the
+[incident record](https://bugzilla.mozilla.org/show_bug.cgi?id=2083449).
+
+**Breaking change:** endpoints that require an emSign or AAA Certificate Services
+trust anchor must migrate to another trusted chain. Other Sectigo chains remain
+usable when they terminate at a different trusted root. Do not mount an older CA
+bundle over the container's `/etc/ssl/certs` directory.
+
+Standalone binaries use the operating system trust store. Update that store and
+remove emSign and AAA Certificate Services trust anchors before deploying this
+release; upgrading the binary alone does not update host certificates. The local
+Enphase Envoy connection still permits its device's self-signed certificate.
+
 ```sh
 docker build --build-arg GIT_SHA=$(git rev-parse --short HEAD) -t yottabyte/meterlogger .
 ```

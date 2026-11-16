@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.7.1] - 2026-11-16
+
+### Changed
+- Upgrade gombus to v1.2.1 and Go to 1.27.4, its new minimum requirement.
+- Upgrade all direct Go dependencies with available releases, including
+  ClickHouse v2.51.0, MySQL v1.10.1, pgx v5.13.0, Pyroscope v1.5.0,
+  Prometheus v1.25.0 and OpenTelemetry v1.47.0, plus their transitive dependencies.
+  gRPC v1.85.0 includes the security update requested by Dependabot.
+- Upgrade golangci-lint to v2.15.0.
+
+### Security
+- Refresh the Docker CA bundle and explicitly exclude emSign roots and Sectigo's
+  AAA Certificate Services root, blocking both direct and cross-signed trust paths
+  to the compromised eMudhra intermediates.
+- **Breaking change:** endpoints requiring those roots need another trusted chain.
+  Standalone binary users must update their host trust store separately; see
+  [deployment instructions](documentation/deployment.md#docker-image).
+
 ### Fixed
 - Keep solar and ventilation polling alive during temporary device network outages.
   Source timeouts no longer trigger process restart loops; readiness, read errors and

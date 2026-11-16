@@ -1,5 +1,18 @@
 ARG GIT_SHA="no-sha"
-FROM --platform=$BUILDPLATFORM golang:1.27.0 AS build-env
+FROM --platform=$BUILDPLATFORM golang:1.27.4 AS build-env
+# Refresh the Debian trust store and remove eMudhra/emSign roots. The compromised
+# intermediates were also cross-signed by Sectigo's AAA Certificate Services, so
+# remove that trust anchor too: Go does not fetch CRLs or browser OneCRL updates.
+# https://bugzilla.mozilla.org/show_bug.cgi?id=2083449
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y ca-certificates \
+    && sed -i -E '/emSign|AAA_Certificate_Services/s/^([^!])/!\1/' /etc/ca-certificates.conf \
+    && update-ca-certificates --fresh \
+    && openssl crl2pkcs7 -nocrl -certfile /etc/ssl/certs/ca-certificates.crt -out /tmp/ca.p7b \
+    && openssl pkcs7 -in /tmp/ca.p7b -print_certs -noout -out /tmp/ca-subjects \
+    && test -s /tmp/ca-subjects \
+    && ! grep -Ei 'emSign|eMudhra|AAA Certificate Services' /tmp/ca-subjects \
+    && rm -rf /var/lib/apt/lists/* /tmp/ca.p7b /tmp/ca-subjects
 WORKDIR /app
 ARG GIT_SHA
 ARG TARGETARCH
