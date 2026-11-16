@@ -71,25 +71,38 @@ func (s *DucoLoggingService) Start(ctx context.Context) {
 				return
 			}
 		case <-ticker.C:
-			if err := s.runReadAndStore(ctx); err != nil {
-				if ctx.Err() != nil {
-					return
-				}
-				if errorCounter >= maxErrorCount {
-					s.logger.ErrorContext(ctx, "too many errors, stopping service")
-					processKiller()
-					<-ctx.Done()
-					return
-				}
-				errorCounter++
-				continue
+			if s.handleRead(ctx, &errorCounter) {
+				return
 			}
-			errorCounter = 0
 		case <-ctx.Done():
 			s.logger.InfoContext(ctx, "DucoLoggingService stopping due to context cancellation")
 			return
 		}
 	}
+}
+
+// handleRead keeps temporary device unavailability separate from persistent failures.
+func (s *DucoLoggingService) handleRead(ctx context.Context, errorCounter *int) bool {
+	err := s.runReadAndStore(ctx)
+	if err == nil {
+		*errorCounter = 0
+		return false
+	}
+	if ctx.Err() != nil {
+		return true
+	}
+	if transientDeviceRead(err) {
+		*errorCounter = 0
+		return false
+	}
+	if *errorCounter >= maxErrorCount {
+		s.logger.ErrorContext(ctx, "too many errors, stopping service")
+		processKiller()
+		<-ctx.Done()
+		return true
+	}
+	*errorCounter++
+	return false
 }
 
 // handleFlush flushes the sink and escalates after maxConsecutiveErrors
@@ -123,7 +136,7 @@ func (s *DucoLoggingService) runReadAndStore(ctx context.Context) error {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "read box status failed")
 		s.metrics.ReadErrorsTotal.WithLabelValues("ventilation").Inc()
-		return err
+		return deviceReadError{err}
 	}
 
 	s.metrics.ReadsTotal.WithLabelValues("ventilation").Inc()
