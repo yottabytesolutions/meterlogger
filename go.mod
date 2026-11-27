@@ -6,7 +6,7 @@ require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.51.0
 	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/eclipse/paho.mqtt.golang v1.5.1
-	github.com/go-sql-driver/mysql v1.10.1
+	github.com/go-sql-driver/mysql v1.10.2
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/grafana/pyroscope-go v1.5.0
 	github.com/jackc/pgx/v5 v5.13.0
